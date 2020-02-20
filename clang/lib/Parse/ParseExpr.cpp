@@ -1419,6 +1419,7 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
         Diag(Tok, diag::err_amp_illegal_keyword_dynamiccast);
       }
     }
+    LLVM_FALLTHROUGH;
   case tok::kw_const_cast:
   case tok::kw_reinterpret_cast:
   case tok::kw_static_cast:
