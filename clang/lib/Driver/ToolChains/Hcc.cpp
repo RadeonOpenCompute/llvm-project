@@ -20,6 +20,8 @@
 
 #include <sstream>
 #include <string>
+#include <fstream>
+#include <iostream>
 
 using namespace clang;
 using namespace clang::driver;
@@ -154,17 +156,30 @@ namespace
         return r;
     }
 
+    /* This function gets the gfx target IDs 
+     * from the gfxtarget.txt
+     */
     std::vector<std::string> detect_and_add_targets(
         const Compilation& c, const ToolChain& tc)
     {
-        constexpr const char null_agent[] = "gfx000";
+        std::vector<std::string> detected_targets;
+        std::string InstalledPath = c.getDriver().getInstalledDir();
+        std::string str;  
 
-        const auto detected_targets = detect_gfxip(c, tc);
-        if (detected_targets.empty()) {
-            c.getDriver().Diag(diag::warn_amdgpu_agent_detector_failed);
+        //Lets read gfx IDs from a file
+        //this way we are compiling for all the targets
+        //the .txt has all the targets
+        InstalledPath = InstalledPath + "/gfxtargets.txt";
+        std::ifstream in(InstalledPath);
+
+        while (std::getline(in, str)) {
+	        // Line contains string of length > 0 then save it in vector
+	        if(str.size() > 0)
+		          detected_targets.push_back(str);
         }
-        else if (detected_targets[0] == null_agent) {
-            c.getDriver().Diag(diag::err_amdgpu_no_agent_available);
+
+        if (detected_targets.empty()) {
+           c.getDriver().Diag(diag::err_amdgpu_no_agent_available);
         }
 
         return detected_targets;
