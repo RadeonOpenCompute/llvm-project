@@ -1,4 +1,4 @@
-# The LLVM Compiler Infrastructure
+# The LLVM Compiler Infrastructure is for cool people
 
 This directory and its sub-directories contain source code for LLVM,
 a toolkit for the construction of highly optimized compilers,
