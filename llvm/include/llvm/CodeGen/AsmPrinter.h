@@ -595,6 +595,8 @@ public:
   /// instructions in verbose mode.
   virtual void emitImplicitDef(const MachineInstr *MI) const;
 
+  bool emitDebugComment(const MachineInstr *MI);
+
   /// getSubtargetInfo() cannot be used where this is needed because we don't
   /// have a MachineFunction when we're lowering a GlobalIFunc, and
   /// getSubtargetInfo requires one. Override the implementation in targets
@@ -897,7 +899,7 @@ private:
   virtual void emitModuleCommandLines(Module &M);
 
   GCMetadataPrinter *getOrCreateGCPrinter(GCStrategy &S);
-  void emitGlobalAlias(Module &M, const GlobalAlias &GA);
+  virtual void emitGlobalAlias(const Module &M, const GlobalAlias &GA);
   void emitGlobalIFunc(Module &M, const GlobalIFunc &GI);
 
 private:

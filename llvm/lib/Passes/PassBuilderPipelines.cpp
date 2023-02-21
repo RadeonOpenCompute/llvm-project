@@ -23,6 +23,7 @@
 #include "llvm/Analysis/ProfileSummaryInfo.h"
 #include "llvm/Analysis/ScopedNoAliasAA.h"
 #include "llvm/Analysis/TypeBasedAliasAnalysis.h"
+#include "llvm/IR/HeterogeneousDebugVerify.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -1496,6 +1497,13 @@ PassBuilder::buildPerModuleDefaultPipeline(OptimizationLevel Level,
     return buildO0DefaultPipeline(Level, LTOPreLink);
 
   ModulePassManager MPM;
+
+  auto OptimizationLevelAsOptLevel =
+      CodeGenOpt::getLevel(Level.getSpeedupLevel());
+  auto CodeGenOptLevel =
+      TM ? TM->getOptLevel()
+         : OptimizationLevelAsOptLevel.value_or(CodeGenOptLevel::Aggressive);
+  MPM.addPass(HeterogeneousDebugVerify(CodeGenOptLevel));
 
   // Convert @llvm.global.annotations to !annotation metadata.
   MPM.addPass(Annotation2MetadataPass());

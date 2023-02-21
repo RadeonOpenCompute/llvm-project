@@ -15,16 +15,19 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitmaskEnum.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/PseudoProbe.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Discriminator.h"
 #include <cassert>
 #include <climits>
@@ -33,30 +36,49 @@
 #include <iterator>
 #include <optional>
 #include <vector>
+#include <variant>
 
 // Helper macros for defining get() overrides.
 #define DEFINE_MDNODE_GET_UNPACK_IMPL(...) __VA_ARGS__
 #define DEFINE_MDNODE_GET_UNPACK(ARGS) DEFINE_MDNODE_GET_UNPACK_IMPL ARGS
-#define DEFINE_MDNODE_GET_DISTINCT_TEMPORARY(CLASS, FORMAL, ARGS)              \
+// FIXME: When the DEFINE_MDNODE_GET alias below is removed this could be
+// renamed to just DEFINE_MDNODE_GET.
+#define DEFINE_MDNODE_GET_ONLY(CLASS, FORMAL, ARGS)                            \
+  static CLASS *get(LLVMContext &Context, DEFINE_MDNODE_GET_UNPACK(FORMAL)) {  \
+    return getImpl(Context, DEFINE_MDNODE_GET_UNPACK(ARGS), Uniqued);          \
+  }
+#define DEFINE_MDNODE_GET_IF_EXISTS(CLASS, FORMAL, ARGS)                       \
+  static CLASS *getIfExists(LLVMContext &Context,                              \
+                            DEFINE_MDNODE_GET_UNPACK(FORMAL)) {                \
+    return getImpl(Context, DEFINE_MDNODE_GET_UNPACK(ARGS), Uniqued,           \
+                   /* ShouldCreate */ false);                                  \
+  }
+#define DEFINE_MDNODE_GET_DISTINCT(CLASS, FORMAL, ARGS)                        \
   static CLASS *getDistinct(LLVMContext &Context,                              \
                             DEFINE_MDNODE_GET_UNPACK(FORMAL)) {                \
     return getImpl(Context, DEFINE_MDNODE_GET_UNPACK(ARGS), Distinct);         \
-  }                                                                            \
+  }
+#define DEFINE_MDNODE_GET_TEMPORARY(CLASS, FORMAL, ARGS)                       \
   static Temp##CLASS getTemporary(LLVMContext &Context,                        \
                                   DEFINE_MDNODE_GET_UNPACK(FORMAL)) {          \
     return Temp##CLASS(                                                        \
         getImpl(Context, DEFINE_MDNODE_GET_UNPACK(ARGS), Temporary));          \
   }
-#define DEFINE_MDNODE_GET(CLASS, FORMAL, ARGS)                                 \
-  static CLASS *get(LLVMContext &Context, DEFINE_MDNODE_GET_UNPACK(FORMAL)) {  \
-    return getImpl(Context, DEFINE_MDNODE_GET_UNPACK(ARGS), Uniqued);          \
-  }                                                                            \
-  static CLASS *getIfExists(LLVMContext &Context,                              \
-                            DEFINE_MDNODE_GET_UNPACK(FORMAL)) {                \
-    return getImpl(Context, DEFINE_MDNODE_GET_UNPACK(ARGS), Uniqued,           \
-                   /* ShouldCreate */ false);                                  \
-  }                                                                            \
-  DEFINE_MDNODE_GET_DISTINCT_TEMPORARY(CLASS, FORMAL, ARGS)
+#define DEFINE_ALL_MDNODE_GET_METHODS(CLASS, FORMAL, ARGS)                     \
+  DEFINE_MDNODE_GET_ONLY(CLASS, FORMAL, ARGS)                                  \
+  DEFINE_MDNODE_GET_IF_EXISTS(CLASS, FORMAL, ARGS)                             \
+  DEFINE_MDNODE_GET_DISTINCT(CLASS, FORMAL, ARGS)                              \
+  DEFINE_MDNODE_GET_TEMPORARY(CLASS, FORMAL, ARGS)
+// FIXME: This old naming is retained as an alias to make the diff smaller, but
+// could eventually be eliminated and the references updated.
+#define DEFINE_MDNODE_GET(CLASS, FORMAL, ARGS) DEFINE_ALL_MDNODE_GET_METHODS(CLASS, FORMAL, ARGS)
+#define DEFINE_ALWAYS_DISTINCT_MDNODE_GET_METHODS(CLASS, FORMAL, ARGS)         \
+  DEFINE_MDNODE_GET_DISTINCT(CLASS, FORMAL, ARGS)                              \
+  DEFINE_MDNODE_GET_TEMPORARY(CLASS, FORMAL, ARGS)
+#define DEFINE_ALWAYS_UNIQUED_MDNODE_GET_METHODS(CLASS, FORMAL, ARGS)          \
+  DEFINE_MDNODE_GET_ONLY(CLASS, FORMAL, ARGS)                                  \
+  DEFINE_MDNODE_GET_IF_EXISTS(CLASS, FORMAL, ARGS)                             \
+  DEFINE_MDNODE_GET_TEMPORARY(CLASS, FORMAL, ARGS)
 
 namespace llvm {
 
@@ -219,6 +241,7 @@ public:
     case DIModuleKind:
     case DIGenericSubrangeKind:
     case DIAssignIDKind:
+    case DILifetimeKind:
       return true;
     }
   }
@@ -978,41 +1001,43 @@ class DIDerivedType : public DIType {
   /// The DWARF address space of the memory pointed to or referenced by a
   /// pointer or reference type respectively.
   std::optional<unsigned> DWARFAddressSpace;
+  dwarf::MemorySpace DWARFMemorySpace;
 
   DIDerivedType(LLVMContext &C, StorageType Storage, unsigned Tag,
                 unsigned Line, uint64_t SizeInBits, uint32_t AlignInBits,
                 uint64_t OffsetInBits,
-                std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
-                ArrayRef<Metadata *> Ops)
+                std::optional<unsigned> DWARFAddressSpace,
+                dwarf::MemorySpace MS, DIFlags Flags, ArrayRef<Metadata *> Ops)
       : DIType(C, DIDerivedTypeKind, Storage, Tag, Line, SizeInBits,
                AlignInBits, OffsetInBits, Flags, Ops),
-        DWARFAddressSpace(DWARFAddressSpace) {}
+        DWARFAddressSpace(DWARFAddressSpace), DWARFMemorySpace(MS) {}
   ~DIDerivedType() = default;
   static DIDerivedType *
   getImpl(LLVMContext &Context, unsigned Tag, StringRef Name, DIFile *File,
           unsigned Line, DIScope *Scope, DIType *BaseType, uint64_t SizeInBits,
           uint32_t AlignInBits, uint64_t OffsetInBits,
-          std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
-          Metadata *ExtraData, DINodeArray Annotations, StorageType Storage,
-          bool ShouldCreate = true) {
+          std::optional<unsigned> DWARFAddressSpace, dwarf::MemorySpace MS,
+          DIFlags Flags, Metadata *ExtraData, DINodeArray Annotations,
+          StorageType Storage, bool ShouldCreate = true) {
     return getImpl(Context, Tag, getCanonicalMDString(Context, Name), File,
                    Line, Scope, BaseType, SizeInBits, AlignInBits, OffsetInBits,
-                   DWARFAddressSpace, Flags, ExtraData, Annotations.get(),
+                   DWARFAddressSpace, MS, Flags, ExtraData, Annotations.get(),
                    Storage, ShouldCreate);
   }
   static DIDerivedType *
   getImpl(LLVMContext &Context, unsigned Tag, MDString *Name, Metadata *File,
           unsigned Line, Metadata *Scope, Metadata *BaseType,
           uint64_t SizeInBits, uint32_t AlignInBits, uint64_t OffsetInBits,
-          std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
-          Metadata *ExtraData, Metadata *Annotations, StorageType Storage,
-          bool ShouldCreate = true);
+          std::optional<unsigned> DWARFAddressSpace, dwarf::MemorySpace MS,
+          DIFlags Flags, Metadata *ExtraData, Metadata *Annotations,
+          StorageType Storage, bool ShouldCreate = true);
 
   TempDIDerivedType cloneImpl() const {
-    return getTemporary(
-        getContext(), getTag(), getName(), getFile(), getLine(), getScope(),
-        getBaseType(), getSizeInBits(), getAlignInBits(), getOffsetInBits(),
-        getDWARFAddressSpace(), getFlags(), getExtraData(), getAnnotations());
+    return getTemporary(getContext(), getTag(), getName(), getFile(), getLine(),
+                        getScope(), getBaseType(), getSizeInBits(),
+                        getAlignInBits(), getOffsetInBits(),
+                        getDWARFAddressSpace(), getDWARFMemorySpace(),
+                        getFlags(), getExtraData(), getAnnotations());
   }
 
 public:
@@ -1021,19 +1046,21 @@ public:
       (unsigned Tag, MDString *Name, Metadata *File, unsigned Line,
        Metadata *Scope, Metadata *BaseType, uint64_t SizeInBits,
        uint32_t AlignInBits, uint64_t OffsetInBits,
-       std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
-       Metadata *ExtraData = nullptr, Metadata *Annotations = nullptr),
+       std::optional<unsigned> DWARFAddressSpace, dwarf::MemorySpace MS,
+       DIFlags Flags, Metadata *ExtraData = nullptr,
+       Metadata *Annotations = nullptr),
       (Tag, Name, File, Line, Scope, BaseType, SizeInBits, AlignInBits,
-       OffsetInBits, DWARFAddressSpace, Flags, ExtraData, Annotations))
+       OffsetInBits, DWARFAddressSpace, MS, Flags, ExtraData, Annotations))
   DEFINE_MDNODE_GET(DIDerivedType,
                     (unsigned Tag, StringRef Name, DIFile *File, unsigned Line,
                      DIScope *Scope, DIType *BaseType, uint64_t SizeInBits,
                      uint32_t AlignInBits, uint64_t OffsetInBits,
-                     std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
+                     std::optional<unsigned> DWARFAddressSpace,
+                     dwarf::MemorySpace MS, DIFlags Flags,
                      Metadata *ExtraData = nullptr,
                      DINodeArray Annotations = nullptr),
                     (Tag, Name, File, Line, Scope, BaseType, SizeInBits,
-                     AlignInBits, OffsetInBits, DWARFAddressSpace, Flags,
+                     AlignInBits, OffsetInBits, DWARFAddressSpace, MS, Flags,
                      ExtraData, Annotations))
 
   TempDIDerivedType clone() const { return cloneImpl(); }
@@ -1047,6 +1074,10 @@ public:
   std::optional<unsigned> getDWARFAddressSpace() const {
     return DWARFAddressSpace;
   }
+
+  /// \returns The DWARF memory space of the memory pointed to or referenced by
+  /// a pointer or reference type respectively.
+  dwarf::MemorySpace getDWARFMemorySpace() const { return DWARFMemorySpace; }
 
   /// Get extra data associated with this derived type.
   ///
@@ -1461,7 +1492,7 @@ public:
   static void get() = delete;
   static void getIfExists() = delete;
 
-  DEFINE_MDNODE_GET_DISTINCT_TEMPORARY(
+  DEFINE_ALWAYS_DISTINCT_MDNODE_GET_METHODS(
       DICompileUnit,
       (unsigned SourceLanguage, DIFile *File, StringRef Producer,
        bool IsOptimized, StringRef Flags, unsigned RuntimeVersion,
@@ -1477,7 +1508,7 @@ public:
        GlobalVariables, ImportedEntities, Macros, DWOId, SplitDebugInlining,
        DebugInfoForProfiling, (unsigned)NameTableKind, RangesBaseAddress,
        SysRoot, SDK))
-  DEFINE_MDNODE_GET_DISTINCT_TEMPORARY(
+  DEFINE_ALWAYS_DISTINCT_MDNODE_GET_METHODS(
       DICompileUnit,
       (unsigned SourceLanguage, Metadata *File, MDString *Producer,
        bool IsOptimized, MDString *Flags, unsigned RuntimeVersion,
@@ -2593,12 +2624,66 @@ public:
 /// Base class for variables.
 ///
 /// Uses the SubclassData32 Metadata slot.
-class DIVariable : public DINode {
+class DIObject : public DINode {
+protected:
+  DIObject(LLVMContext &C, unsigned ID, StorageType Storage, unsigned Tag,
+           ArrayRef<Metadata *> Ops)
+      : DINode(C, ID, Storage, Tag, Ops) {}
+  ~DIObject() = default;
+
+public:
+  static bool classof(const Metadata *MD) {
+    switch (MD->getMetadataID()) {
+    default:
+      return false;
+    case DIFragmentKind:
+    case DILocalVariableKind:
+    case DIGlobalVariableKind:
+      return true;
+    }
+  }
+};
+
+/// Non-source program objects, and pieces of source program objects.
+class DIFragment : public DIObject {
+  friend class LLVMContextImpl;
+  friend class MDNode;
+
+private:
+  static DIFragment *getImpl(LLVMContext &Context, StorageType Storage);
+
+protected:
+  DIFragment(LLVMContext &C, StorageType Storage);
+  ~DIFragment() = default;
+
+public:
+  static void get() = delete;
+  static void getIfExists() = delete;
+
+  static DIFragment *getDistinct(LLVMContext &Context) {
+    return getImpl(Context, Distinct);
+  }
+
+  static TempDIFragment getTemporary(LLVMContext &Context) {
+    return TempDIFragment(getImpl(Context, Temporary));
+  }
+
+  TempDIFragment cloneImpl() const { return getTemporary(getContext()); }
+
+  static bool classof(const Metadata *MD) {
+    return MD->getMetadataID() == DIFragmentKind;
+  }
+};
+
+/// Base class for source variable program objects.
+class DIVariable : public DIObject {
   unsigned Line;
+  dwarf::MemorySpace MemorySpace;
 
 protected:
   DIVariable(LLVMContext &C, unsigned ID, StorageType Storage, signed Line,
-             ArrayRef<Metadata *> Ops, uint32_t AlignInBits = 0);
+             ArrayRef<Metadata *> Ops, dwarf::MemorySpace MS,
+             uint32_t AlignInBits = 0);
   ~DIVariable() = default;
 
 public:
@@ -2637,6 +2722,9 @@ public:
       return F->getSource();
     return std::nullopt;
   }
+
+  /// \returns The DWARF memory space in which the variable resides.
+  dwarf::MemorySpace getDWARFMemorySpace() const { return MemorySpace; }
 
   Metadata *getRawScope() const { return getOperand(0); }
   MDString *getRawName() const { return getOperandAs<MDString>(1); }
@@ -3093,6 +3181,283 @@ template <> struct DenseMapInfo<DIExpression::FragmentInfo> {
   static bool isEqual(const FragInfo &A, const FragInfo &B) { return A == B; }
 };
 
+namespace DIOp {
+
+// These are the concrete alternatives that a DIOp::Variant encapsulates.
+#define HANDLE_OP0(NAME)                                                       \
+  class NAME {                                                                 \
+  public:                                                                      \
+    explicit constexpr NAME() {}                                               \
+    bool operator==(const NAME &O) const { return true; }                      \
+    friend hash_code hash_value(const NAME &O);                                \
+    static constexpr StringRef getAsmName();                                   \
+    static constexpr unsigned getBitcodeID();                                  \
+  };
+#define HANDLE_OP1(NAME, TYPE1, NAME1)                                         \
+  class NAME {                                                                 \
+    TYPE1 NAME1;                                                               \
+                                                                               \
+  public:                                                                      \
+    explicit constexpr NAME(TYPE1 NAME1) : NAME1(NAME1) {}                     \
+    bool operator==(const NAME &O) const { return NAME1 == O.NAME1; }          \
+    friend hash_code hash_value(const NAME &O);                                \
+    static constexpr StringRef getAsmName();                                   \
+    static constexpr unsigned getBitcodeID();                                  \
+    TYPE1 get##NAME1() const { return NAME1; }                                 \
+    void set##NAME1(TYPE1 NAME1) { this->NAME1 = NAME1; }                      \
+  };
+#define HANDLE_OP2(NAME, TYPE1, NAME1, TYPE2, NAME2)                           \
+  class NAME {                                                                 \
+    TYPE1 NAME1;                                                               \
+    TYPE2 NAME2;                                                               \
+                                                                               \
+  public:                                                                      \
+    explicit constexpr NAME(TYPE1 NAME1, TYPE2 NAME2)                          \
+        : NAME1(NAME1), NAME2(NAME2) {}                                        \
+    bool operator==(const NAME &O) const {                                     \
+      return NAME1 == O.NAME1 && NAME2 == O.NAME2;                             \
+    }                                                                          \
+    friend hash_code hash_value(const NAME &O);                                \
+    static constexpr StringRef getAsmName();                                   \
+    static constexpr unsigned getBitcodeID();                                  \
+    TYPE1 get##NAME1() const { return NAME1; }                                 \
+    void set##NAME1(TYPE1 NAME1) { this->NAME1 = NAME1; }                      \
+    TYPE2 get##NAME2() const { return NAME2; }                                 \
+    void set##NAME2(TYPE2 NAME2) { this->NAME2 = NAME2; }                      \
+  };
+LLVM_PACKED_START
+#include "llvm/IR/DIExprOps.def"
+LLVM_PACKED_END
+
+/// Container for a runtime-variant DIOp
+using Variant = std::variant<
+#define HANDLE_OP_NAME(NAME) NAME
+#define SEPARATOR ,
+#include "llvm/IR/DIExprOps.def"
+    >;
+
+#define HANDLE_OP_NAME(NAME)                                                   \
+  constexpr StringRef DIOp::NAME::getAsmName() { return "DIOp" #NAME; }
+#include "llvm/IR/DIExprOps.def"
+
+StringRef getAsmName(const Variant &V);
+
+#define DEFINE_BC_ID(NAME, ID)                                                 \
+  constexpr unsigned DIOp::NAME::getBitcodeID() { return ID; }
+DEFINE_BC_ID(Referrer, 1u)
+DEFINE_BC_ID(Arg, 2u)
+DEFINE_BC_ID(TypeObject, 3u)
+DEFINE_BC_ID(Constant, 4u)
+DEFINE_BC_ID(Convert, 5u)
+DEFINE_BC_ID(Reinterpret, 6u)
+DEFINE_BC_ID(BitOffset, 7u)
+DEFINE_BC_ID(ByteOffset, 8u)
+DEFINE_BC_ID(Composite, 9u)
+DEFINE_BC_ID(Extend, 10u)
+DEFINE_BC_ID(Select, 11u)
+DEFINE_BC_ID(AddrOf, 12u)
+DEFINE_BC_ID(Deref, 13u)
+DEFINE_BC_ID(Read, 14u)
+DEFINE_BC_ID(Add, 15u)
+DEFINE_BC_ID(Sub, 16u)
+DEFINE_BC_ID(Mul, 17u)
+DEFINE_BC_ID(Div, 18u)
+DEFINE_BC_ID(Shr, 19u)
+DEFINE_BC_ID(Shl, 20u)
+DEFINE_BC_ID(PushLane, 21u)
+#undef DEFINE_BC_ID
+
+unsigned getBitcodeID(const Variant &V);
+
+// The sizeof of `Op` is the size of the largest union variant, which
+// should essentially be defined as a packed struct equivalent to:
+//
+//    uint8_t Index; // Internal to std::variant, but we expect this to be
+//                   // the smallest available integral type which
+//                   // can represent our set of alternatives.
+//    uint32_t I;
+//    void* P;
+//
+// Note that there is no public interface which lets a pointer to the members
+// of the alternative types escape, and so we can safely pack them. This
+// means huge performance benefits (smaller memory footprint and more
+// cache-friendly traversal).
+//
+// This static_assert tries to catch issues where the struct is not packed into
+// at most two 64-bit words, as we would expect it to be.
+//
+// FIXME: If we can constrain `I` further to <= 16 bits we should also
+// fit in two 32-bit words on 32-bit targets.
+static_assert(sizeof(DIOp::Variant) <= 16);
+
+} // namespace DIOp
+
+template <class NodeTy> struct MDNodeKeyImpl;
+
+  /// Mutable buffer to manipulate debug info expressions.
+  ///
+  /// Example of creating a new expression from scratch:
+  ///
+  /// LLVMContext Ctx;
+  ///
+  /// DIExpr::Builder Builder(Ctx);
+  /// Builder.append(DIOp::InPlaceAdd).intoExpr();
+  ///
+  /// Example of creating a new expression:
+  ///
+  /// DIExpr *Expr = ...;
+  /// ...
+  /// DIExpr *NewExpr = Expr.builder()
+  ///     .append(DIOp::InPlaceDeref)
+  ///     .intoExpr();
+class DIExprBuilder {
+  LLVMContext &C;
+  SmallVector<DIOp::Variant> Elements;
+#ifndef NDEBUG
+  bool StateIsUnspecified = false;
+#endif
+public:
+  /// Create a builder for a new, initially empty expression.
+  explicit DIExprBuilder(LLVMContext &C);
+  /// Create a builder for a new expression for the sequence of ops in \p IL.
+  explicit DIExprBuilder(LLVMContext &C,
+                         std::initializer_list<DIOp::Variant> IL);
+  /// Create a builder for a new expression, initially a copy of \p E.
+  explicit DIExprBuilder(const DIExpr &E);
+
+  class Iterator
+      : public iterator_facade_base<Iterator, std::random_access_iterator_tag,
+                                    DIOp::Variant> {
+    friend DIExprBuilder;
+    DIOp::Variant *Op = nullptr;
+    Iterator(DIOp::Variant *Op) : Op(Op) {}
+
+  public:
+    Iterator() = delete;
+    Iterator(const Iterator &) = default;
+    Iterator &operator=(const Iterator &) = default;
+    bool operator==(const Iterator &R) const { return R.Op == Op; }
+    DIOp::Variant &operator*() const { return *Op; }
+    friend iterator_facade_base::difference_type operator-(Iterator LHS,
+                                                           Iterator RHS) {
+      return LHS.Op - RHS.Op;
+    }
+    Iterator &operator+=(iterator_facade_base::difference_type D) {
+      Op += D;
+      return *this;
+    }
+    Iterator &operator-=(iterator_facade_base::difference_type D) {
+      Op -= D;
+      return *this;
+    }
+  };
+
+  Iterator begin() { return Elements.begin(); }
+  Iterator end() { return Elements.end(); }
+  iterator_range<Iterator> range() { return make_range(begin(), end()); }
+
+  Iterator insert(Iterator I, DIOp::Variant O);
+
+  template <typename T, typename... ArgsT>
+  Iterator insert(Iterator I, ArgsT &&...Args) {
+    // FIXME: SmallVector doesn't define an ::emplace(iterator, ...)
+    return Elements.insert(
+        I.Op, DIOp::Variant{std::in_place_type<T>, std::forward<ArgsT>(Args)...});
+  }
+
+  template <typename RangeTy> Iterator insert(Iterator I, RangeTy &&R) {
+    return Elements.insert(I.Op, R.begin(), R.end());
+  }
+
+  template <typename ItTy> Iterator insert(Iterator I, ItTy &&From, ItTy &&To) {
+    return Elements.insert(I.Op, std::forward<ItTy>(From),
+                           std::forward<ItTy>(To));
+  }
+
+  Iterator insert(Iterator I, std::initializer_list<DIOp::Variant> IL) {
+    return Elements.insert(I.Op, IL.begin(), IL.end());
+  }
+
+  /// Appends \p O to the expression being built.
+  DIExprBuilder &append(DIOp::Variant O);
+
+  /// Appends a new DIOp of type T to the expression being built. The new
+  /// DIOp is constructed in-place by forwarding the provided arguments Args.
+  template <typename T, typename... ArgsT>
+  DIExprBuilder &append(ArgsT &&...Args) {
+    Elements.emplace_back(std::in_place_type<T>, std::forward<ArgsT>(Args)...);
+    return *this;
+  }
+
+  Iterator erase(Iterator I);
+  Iterator erase(Iterator From, Iterator To);
+
+  /// Returns true if the expression being built contains DIOp of type T,
+  /// false otherwise.
+  template <typename T> bool contains() const {
+    return any_of(Elements,
+                  [](auto &&E) { return std::holds_alternative<T>(E); });
+  }
+
+  /// Update the expression to reflect the removal of one level of indirection
+  /// from the value acting as the referrer.
+  ///
+  /// The referrer must be of pointer type, as the expression is logically
+  /// updated by replacing the @c DIOpReferrer result type with its pointee
+  /// type, provided as @c PointeeType, and inserting @p
+  /// DIOpAddrOf(<pointer-address-space>) after it.
+  ///
+  /// Returns @c *this to permit chaining with other methods.
+  DIExprBuilder &removeReferrerIndirection(Type *PointeeType);
+
+  /// Get the uniqued, immutable expression metadata from the current state
+  /// of the builder.
+  ///
+  /// This leaves the Builder in a valid but unspecified state, as if it were
+  /// moved from.
+  DIExpr *intoExpr();
+};
+
+/// Immutable debug info expression.
+///
+/// This is an opaque, uniqued metadata node type defined by an immutable
+/// sequence of DIOp. In order to view or mutate an expression, use
+/// DIExpr::Builder.
+class DIExpr : public MDNode {
+  friend class LLVMContextImpl;
+  friend class MDNode;
+  friend struct MDNodeKeyImpl<DIExpr>;
+  friend class DIExprBuilder;
+
+  const SmallVector<DIOp::Variant> Elements;
+
+  DIExpr(LLVMContext &C, StorageType Storage,
+         SmallVector<DIOp::Variant> &&Elements)
+      : MDNode(C, DIExprKind, Storage, std::nullopt), Elements(std::move(Elements)) {}
+  ~DIExpr() = default;
+
+  static DIExpr *getImpl(LLVMContext &Context,
+                         SmallVector<DIOp::Variant> &&Elements,
+                         StorageType Storage, bool ShouldCreate = true);
+
+  TempDIExpr cloneImpl() const {
+    auto Copy = Elements;
+    return getTemporary(getContext(), std::move(Copy));
+  }
+
+  DEFINE_ALWAYS_UNIQUED_MDNODE_GET_METHODS(
+      DIExpr, (SmallVector<DIOp::Variant> && Elements), (std::move(Elements)))
+
+public:
+  static bool classof(const Metadata *MD) {
+    return MD->getMetadataID() == DIExprKind;
+  }
+  TempDIExpr clone() const { return cloneImpl(); }
+
+  /// Convenience method to get a builder by copying the current expression.
+  DIExprBuilder builder() const { return DIExprBuilder(*this); }
+};
+
 /// Global variables.
 ///
 /// TODO: Remove DisplayName.  It's always equal to Name.
@@ -3104,9 +3469,10 @@ class DIGlobalVariable : public DIVariable {
   bool IsDefinition;
 
   DIGlobalVariable(LLVMContext &C, StorageType Storage, unsigned Line,
-                   bool IsLocalToUnit, bool IsDefinition, uint32_t AlignInBits,
-                   ArrayRef<Metadata *> Ops)
-      : DIVariable(C, DIGlobalVariableKind, Storage, Line, Ops, AlignInBits),
+                   bool IsLocalToUnit, bool IsDefinition, dwarf::MemorySpace MS,
+                   uint32_t AlignInBits, ArrayRef<Metadata *> Ops)
+      : DIVariable(C, DIGlobalVariableKind, Storage, Line, Ops, MS,
+                   AlignInBits),
         IsLocalToUnit(IsLocalToUnit), IsDefinition(IsDefinition) {}
   ~DIGlobalVariable() = default;
 
@@ -3115,12 +3481,12 @@ class DIGlobalVariable : public DIVariable {
           StringRef LinkageName, DIFile *File, unsigned Line, DIType *Type,
           bool IsLocalToUnit, bool IsDefinition,
           DIDerivedType *StaticDataMemberDeclaration, MDTuple *TemplateParams,
-          uint32_t AlignInBits, DINodeArray Annotations, StorageType Storage,
-          bool ShouldCreate = true) {
+          dwarf::MemorySpace MS, uint32_t AlignInBits, DINodeArray Annotations,
+          StorageType Storage, bool ShouldCreate = true) {
     return getImpl(Context, Scope, getCanonicalMDString(Context, Name),
                    getCanonicalMDString(Context, LinkageName), File, Line, Type,
                    IsLocalToUnit, IsDefinition, StaticDataMemberDeclaration,
-                   cast_or_null<Metadata>(TemplateParams), AlignInBits,
+                   cast_or_null<Metadata>(TemplateParams), MS, AlignInBits,
                    Annotations.get(), Storage, ShouldCreate);
   }
   static DIGlobalVariable *
@@ -3128,34 +3494,38 @@ class DIGlobalVariable : public DIVariable {
           MDString *LinkageName, Metadata *File, unsigned Line, Metadata *Type,
           bool IsLocalToUnit, bool IsDefinition,
           Metadata *StaticDataMemberDeclaration, Metadata *TemplateParams,
-          uint32_t AlignInBits, Metadata *Annotations, StorageType Storage,
-          bool ShouldCreate = true);
+          dwarf::MemorySpace MS, uint32_t AlignInBits, Metadata *Annotations,
+          StorageType Storage, bool ShouldCreate = true);
 
   TempDIGlobalVariable cloneImpl() const {
     return getTemporary(getContext(), getScope(), getName(), getLinkageName(),
                         getFile(), getLine(), getType(), isLocalToUnit(),
                         isDefinition(), getStaticDataMemberDeclaration(),
-                        getTemplateParams(), getAlignInBits(),
-                        getAnnotations());
+                        getTemplateParams(), getDWARFMemorySpace(),
+                        getAlignInBits(), getAnnotations());
   }
 
 public:
-  DEFINE_MDNODE_GET(
-      DIGlobalVariable,
-      (DIScope * Scope, StringRef Name, StringRef LinkageName, DIFile *File,
-       unsigned Line, DIType *Type, bool IsLocalToUnit, bool IsDefinition,
-       DIDerivedType *StaticDataMemberDeclaration, MDTuple *TemplateParams,
-       uint32_t AlignInBits, DINodeArray Annotations),
-      (Scope, Name, LinkageName, File, Line, Type, IsLocalToUnit, IsDefinition,
-       StaticDataMemberDeclaration, TemplateParams, AlignInBits, Annotations))
-  DEFINE_MDNODE_GET(
-      DIGlobalVariable,
-      (Metadata * Scope, MDString *Name, MDString *LinkageName, Metadata *File,
-       unsigned Line, Metadata *Type, bool IsLocalToUnit, bool IsDefinition,
-       Metadata *StaticDataMemberDeclaration, Metadata *TemplateParams,
-       uint32_t AlignInBits, Metadata *Annotations),
-      (Scope, Name, LinkageName, File, Line, Type, IsLocalToUnit, IsDefinition,
-       StaticDataMemberDeclaration, TemplateParams, AlignInBits, Annotations))
+  DEFINE_MDNODE_GET(DIGlobalVariable,
+                    (DIScope * Scope, StringRef Name, StringRef LinkageName,
+                     DIFile *File, unsigned Line, DIType *Type,
+                     bool IsLocalToUnit, bool IsDefinition,
+                     DIDerivedType *StaticDataMemberDeclaration,
+                     MDTuple *TemplateParams, dwarf::MemorySpace MS,
+                     uint32_t AlignInBits, DINodeArray Annotations),
+                    (Scope, Name, LinkageName, File, Line, Type, IsLocalToUnit,
+                     IsDefinition, StaticDataMemberDeclaration, TemplateParams,
+                     MS, AlignInBits, Annotations))
+  DEFINE_MDNODE_GET(DIGlobalVariable,
+                    (Metadata * Scope, MDString *Name, MDString *LinkageName,
+                     Metadata *File, unsigned Line, Metadata *Type,
+                     bool IsLocalToUnit, bool IsDefinition,
+                     Metadata *StaticDataMemberDeclaration,
+                     Metadata *TemplateParams, dwarf::MemorySpace MS,
+                     uint32_t AlignInBits, Metadata *Annotations),
+                    (Scope, Name, LinkageName, File, Line, Type, IsLocalToUnit,
+                     IsDefinition, StaticDataMemberDeclaration, TemplateParams,
+                     MS, AlignInBits, Annotations))
 
   TempDIGlobalVariable clone() const { return cloneImpl(); }
 
@@ -3249,9 +3619,9 @@ class DILocalVariable : public DIVariable {
   DIFlags Flags;
 
   DILocalVariable(LLVMContext &C, StorageType Storage, unsigned Line,
-                  unsigned Arg, DIFlags Flags, uint32_t AlignInBits,
-                  ArrayRef<Metadata *> Ops)
-      : DIVariable(C, DILocalVariableKind, Storage, Line, Ops, AlignInBits),
+                  unsigned Arg, DIFlags Flags, dwarf::MemorySpace MS,
+                  uint32_t AlignInBits, ArrayRef<Metadata *> Ops)
+      : DIVariable(C, DILocalVariableKind, Storage, Line, Ops, MS, AlignInBits),
         Arg(Arg), Flags(Flags) {
     assert(Arg < (1 << 16) && "DILocalVariable: Arg out of range");
   }
@@ -3260,38 +3630,41 @@ class DILocalVariable : public DIVariable {
   static DILocalVariable *getImpl(LLVMContext &Context, DIScope *Scope,
                                   StringRef Name, DIFile *File, unsigned Line,
                                   DIType *Type, unsigned Arg, DIFlags Flags,
-                                  uint32_t AlignInBits, DINodeArray Annotations,
-                                  StorageType Storage,
+                                  dwarf::MemorySpace MS, uint32_t AlignInBits,
+                                  DINodeArray Annotations, StorageType Storage,
                                   bool ShouldCreate = true) {
     return getImpl(Context, Scope, getCanonicalMDString(Context, Name), File,
-                   Line, Type, Arg, Flags, AlignInBits, Annotations.get(),
+                   Line, Type, Arg, Flags, MS, AlignInBits, Annotations.get(),
                    Storage, ShouldCreate);
   }
   static DILocalVariable *getImpl(LLVMContext &Context, Metadata *Scope,
                                   MDString *Name, Metadata *File, unsigned Line,
                                   Metadata *Type, unsigned Arg, DIFlags Flags,
-                                  uint32_t AlignInBits, Metadata *Annotations,
-                                  StorageType Storage,
+                                  dwarf::MemorySpace MS, uint32_t AlignInBits,
+                                  Metadata *Annotations, StorageType Storage,
                                   bool ShouldCreate = true);
 
   TempDILocalVariable cloneImpl() const {
     return getTemporary(getContext(), getScope(), getName(), getFile(),
                         getLine(), getType(), getArg(), getFlags(),
-                        getAlignInBits(), getAnnotations());
+                        getDWARFMemorySpace(), getAlignInBits(),
+                        getAnnotations());
   }
 
 public:
   DEFINE_MDNODE_GET(DILocalVariable,
                     (DILocalScope * Scope, StringRef Name, DIFile *File,
                      unsigned Line, DIType *Type, unsigned Arg, DIFlags Flags,
-                     uint32_t AlignInBits, DINodeArray Annotations),
-                    (Scope, Name, File, Line, Type, Arg, Flags, AlignInBits,
+                     dwarf::MemorySpace MS, uint32_t AlignInBits,
+                     DINodeArray Annotations),
+                    (Scope, Name, File, Line, Type, Arg, Flags, MS, AlignInBits,
                      Annotations))
   DEFINE_MDNODE_GET(DILocalVariable,
                     (Metadata * Scope, MDString *Name, Metadata *File,
                      unsigned Line, Metadata *Type, unsigned Arg, DIFlags Flags,
-                     uint32_t AlignInBits, Metadata *Annotations),
-                    (Scope, Name, File, Line, Type, Arg, Flags, AlignInBits,
+                     dwarf::MemorySpace MS, uint32_t AlignInBits,
+                     Metadata *Annotations),
+                    (Scope, Name, File, Line, Type, Arg, Flags, MS, AlignInBits,
                      Annotations))
 
   TempDILocalVariable clone() const { return cloneImpl(); }
@@ -3795,6 +4168,95 @@ public:
   void handleChangedOperand(void *Ref, Metadata *New);
 };
 
+/// Represents one lifetime segment of a DIObject.
+class DILifetime : public DINode {
+  friend class LLVMContextImpl;
+  friend class MDNode;
+
+  // FIXME: DILifetime must derive from DINode in order to be added to
+  // retainedNodes, but it has no meaningful "Tag".
+  DILifetime(LLVMContext &C, StorageType Storage, ArrayRef<Metadata *> Ops,
+             ArrayRef<Metadata *> Args)
+      : DINode(C, DILifetimeKind, Storage, 0, Ops, Args) {
+    assert(Storage != Uniqued);
+  }
+  ~DILifetime() = default;
+
+  static DILifetime *getImpl(LLVMContext &Context, Metadata *Obj, Metadata *Loc,
+                             ArrayRef<Metadata *> Args, StorageType Storage);
+
+  TempDILifetime cloneImpl() const {
+    SmallVector<Metadata *> ArgObjects(argObjectsBegin(), argObjectsEnd());
+    return getTemporary(getContext(), getRawObject(), getRawLocation(),
+                        ArgObjects);
+  }
+
+public:
+  static DILifetime *getDistinct(LLVMContext &Context, Metadata *Obj,
+                                 Metadata *Loc,
+                                 ArrayRef<Metadata *> Args = std::nullopt) {
+    return getImpl(Context, Obj, Loc, Args, Distinct);
+  }
+  static TempDILifetime getTemporary(LLVMContext &Context, Metadata *Obj,
+                                     Metadata *Loc,
+                                     ArrayRef<Metadata *> Args = std::nullopt) {
+    return TempDILifetime(getImpl(Context, Obj, Loc, Args, Temporary));
+  }
+
+  TempDILifetime clone() const { return cloneImpl(); }
+
+  Metadata *getRawObject() const { return getOperand(0); }
+  Metadata *getRawLocation() const { return getOperand(1); }
+  MDNode::op_iterator rawArgObjectsBegin() const { return op_begin() + 2; }
+  MDNode::op_iterator rawArgObjectsEnd() const { return op_end(); }
+  MDNode::op_range rawArgObjects() const {
+    return {rawArgObjectsBegin(), rawArgObjectsEnd()};
+  }
+
+  DIObject *getObject() const { return cast<DIObject>(getRawObject()); }
+  DIExpr *getLocation() const { return cast<DIExpr>(getRawLocation()); }
+  void setLocation(DIExpr *E) { setOperand(1, E); }
+  class ArgObjectIterator
+      : public llvm::iterator_facade_base<
+            ArgObjectIterator, std::random_access_iterator_tag, DIObject> {
+    friend DILifetime;
+    MDNode::op_iterator I;
+    explicit ArgObjectIterator(MDNode::op_iterator I) : I(I) {}
+
+  public:
+    ArgObjectIterator() = delete;
+    ArgObjectIterator(const ArgObjectIterator &) = default;
+    bool operator==(const ArgObjectIterator &R) const { return R.I == I; }
+    DIObject *operator*() const { return cast_or_null<DIObject>(*I); }
+    friend iterator_facade_base::difference_type
+    operator-(ArgObjectIterator LHS, ArgObjectIterator RHS) {
+      return LHS.I - RHS.I;
+    }
+    ArgObjectIterator &operator+=(iterator_facade_base::difference_type D) {
+      I += D;
+      return *this;
+    }
+    ArgObjectIterator &operator-=(iterator_facade_base::difference_type D) {
+      I -= D;
+      return *this;
+    }
+  };
+  using ArgObjectRange = iterator_range<ArgObjectIterator>;
+  ArgObjectIterator argObjectsBegin() const {
+    return ArgObjectIterator(rawArgObjectsBegin());
+  }
+  ArgObjectIterator argObjectsEnd() const {
+    return ArgObjectIterator(rawArgObjectsEnd());
+  }
+  ArgObjectRange argObjects() const {
+    return {argObjectsBegin(), argObjectsEnd()};
+  }
+
+  static bool classof(const Metadata *MD) {
+    return MD->getMetadataID() == DILifetimeKind;
+  }
+};
+
 /// Identifies a unique instance of a variable.
 ///
 /// Storage for identifying a potentially inlined instance of a variable,
@@ -3898,6 +4360,13 @@ struct DenseMapInfo<DebugVariableAggregate>
 
 #undef DEFINE_MDNODE_GET_UNPACK_IMPL
 #undef DEFINE_MDNODE_GET_UNPACK
+#undef DEFINE_MDNODE_GET_ONLY
+#undef DEFINE_MDNODE_GET_IF_EXISTS
+#undef DEFINE_MDNODE_GET_DISTINCT
+#undef DEFINE_MDNODE_GET_TEMPORARY
+#undef DEFINE_ALL_MDNODE_GET_METHODS
 #undef DEFINE_MDNODE_GET
+#undef DEFINE_ALWAYS_DISTINCT_MDNODE_GET_METHODS
+#undef DEFINE_ALWAYS_UNIQUED_MDNODE_GET_METHODS
 
 #endif // LLVM_IR_DEBUGINFOMETADATA_H

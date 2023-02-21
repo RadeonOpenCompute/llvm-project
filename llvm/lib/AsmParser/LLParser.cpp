@@ -899,6 +899,10 @@ bool LLParser::parseNamedMetadata() {
           Lex.getStrVal() == "DIExpression") {
         if (parseDIExpression(N, /*IsDistinct=*/false))
           return true;
+      } else if (Lex.getKind() == lltok::MetadataVar &&
+                 Lex.getStrVal() == "DIExpr") {
+        if (parseDIExpr(N, /*IsDistinct=*/false))
+          return true;
         // DIArgLists should only appear inline in a function, as they may
         // contain LocalAsMetadata arguments which require a function context.
       } else if (Lex.getKind() == lltok::MetadataVar &&
@@ -2891,6 +2895,16 @@ bool LLParser::parseType(Type *&Result, const Twine &Msg, bool AllowVoid) {
   }
 }
 
+/// parseFirstClassType - parse a first class type.
+bool LLParser::parseFirstClassType(Type *&Result) {
+  LocTy TyLoc;
+  if (parseType(Result, TyLoc))
+    return true;
+  if (!Result->isFirstClassType())
+    return error(TyLoc, "expected first class type");
+  return false;
+}
+
 /// parseParameterList
 ///    ::= '(' ')'
 ///    ::= '(' Arg (',' Arg)* ')'
@@ -4371,6 +4385,16 @@ struct DwarfCCField : public MDUnsignedField {
   DwarfCCField() : MDUnsignedField(0, dwarf::DW_CC_hi_user) {}
 };
 
+struct DwarfMSpaceField : public MDUnsignedField {
+  dwarf::MemorySpace val() const {
+    return static_cast<dwarf::MemorySpace>(Val);
+  }
+
+  DwarfMSpaceField()
+      : MDUnsignedField(dwarf::DW_MSPACE_LLVM_none,
+                        dwarf::DW_MSPACE_LLVM_hi_user) {}
+};
+
 struct EmissionKindField : public MDUnsignedField {
   EmissionKindField() : MDUnsignedField(0, DICompileUnit::LastEmissionKind) {}
 };
@@ -4576,6 +4600,26 @@ bool LLParser::parseMDField(LocTy Loc, StringRef Name, DwarfCCField &Result) {
                     Lex.getStrVal() + "'");
   assert(CC <= Result.Max && "Expected valid DWARF calling convention");
   Result.assign(CC);
+  Lex.Lex();
+  return false;
+}
+
+template <>
+bool LLParser::parseMDField(LocTy Loc, StringRef Name,
+                            DwarfMSpaceField &Result) {
+  if (Lex.getKind() == lltok::APSInt)
+    return parseMDField(Loc, Name, static_cast<MDUnsignedField &>(Result));
+
+  if (Lex.getKind() != lltok::DwarfMSpaceLLVM)
+    return tokError("expected DWARF memory space");
+
+  unsigned MS = dwarf::getMemorySpace(Lex.getStrVal());
+  if (!MS)
+    return tokError("invalid DWARF memory space" + Twine(" '") +
+                    Lex.getStrVal() + "'");
+  assert(MS <= dwarf::DW_MSPACE_LLVM_hi_user &&
+         "Expected valid DWARF memorySpace");
+  Result.assign(MS);
   Lex.Lex();
   return false;
 }
@@ -5101,7 +5145,7 @@ bool LLParser::parseDIStringType(MDNode *&Result, bool IsDistinct) {
 ///   ::= !DIDerivedType(tag: DW_TAG_pointer_type, name: "int", file: !0,
 ///                      line: 7, scope: !1, baseType: !2, size: 32,
 ///                      align: 32, offset: 0, flags: 0, extraData: !3,
-///                      dwarfAddressSpace: 3)
+///                      addressSpace: 3, memorySpace: DW_MSPACE_LLVM_none)
 bool LLParser::parseDIDerivedType(MDNode *&Result, bool IsDistinct) {
 #define VISIT_MD_FIELDS(OPTIONAL, REQUIRED)                                    \
   REQUIRED(tag, DwarfTagField, );                                              \
@@ -5115,20 +5159,22 @@ bool LLParser::parseDIDerivedType(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(offset, MDUnsignedField, (0, UINT64_MAX));                          \
   OPTIONAL(flags, DIFlagField, );                                              \
   OPTIONAL(extraData, MDField, );                                              \
-  OPTIONAL(dwarfAddressSpace, MDUnsignedField, (UINT32_MAX, UINT32_MAX));      \
+  OPTIONAL(addressSpace, MDUnsignedField, (UINT32_MAX, UINT32_MAX));           \
+  OPTIONAL(memorySpace, DwarfMSpaceField, );                                   \
   OPTIONAL(annotations, MDField, );
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 
   std::optional<unsigned> DWARFAddressSpace;
-  if (dwarfAddressSpace.Val != UINT32_MAX)
-    DWARFAddressSpace = dwarfAddressSpace.Val;
+  if (addressSpace.Val != UINT32_MAX) {
+    DWARFAddressSpace = addressSpace.Val;
+  }
 
   Result = GET_OR_DISTINCT(DIDerivedType,
                            (Context, tag.Val, name.Val, file.Val, line.Val,
                             scope.Val, baseType.Val, size.Val, align.Val,
-                            offset.Val, DWARFAddressSpace, flags.Val,
-                            extraData.Val, annotations.Val));
+                            offset.Val, DWARFAddressSpace, memorySpace.val(),
+                            flags.Val, extraData.Val, annotations.Val));
   return false;
 }
 
@@ -5509,17 +5555,17 @@ bool LLParser::parseDIGlobalVariable(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(isDefinition, MDBoolField, (true));                                 \
   OPTIONAL(templateParams, MDField, );                                         \
   OPTIONAL(declaration, MDField, );                                            \
+  OPTIONAL(memorySpace, DwarfMSpaceField, );                                   \
   OPTIONAL(align, MDUnsignedField, (0, UINT32_MAX));                           \
   OPTIONAL(annotations, MDField, );
   PARSE_MD_FIELDS();
 #undef VISIT_MD_FIELDS
 
-  Result =
-      GET_OR_DISTINCT(DIGlobalVariable,
-                      (Context, scope.Val, name.Val, linkageName.Val, file.Val,
-                       line.Val, type.Val, isLocal.Val, isDefinition.Val,
-                       declaration.Val, templateParams.Val, align.Val,
-                       annotations.Val));
+  Result = GET_OR_DISTINCT(
+      DIGlobalVariable,
+      (Context, scope.Val, name.Val, linkageName.Val, file.Val, line.Val,
+       type.Val, isLocal.Val, isDefinition.Val, declaration.Val,
+       templateParams.Val, memorySpace.val(), align.Val, annotations.Val));
   return false;
 }
 
@@ -5539,6 +5585,7 @@ bool LLParser::parseDILocalVariable(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(line, LineField, );                                                 \
   OPTIONAL(type, MDField, );                                                   \
   OPTIONAL(flags, DIFlagField, );                                              \
+  OPTIONAL(memorySpace, DwarfMSpaceField, );                                   \
   OPTIONAL(align, MDUnsignedField, (0, UINT32_MAX));                           \
   OPTIONAL(annotations, MDField, );
   PARSE_MD_FIELDS();
@@ -5546,8 +5593,8 @@ bool LLParser::parseDILocalVariable(MDNode *&Result, bool IsDistinct) {
 
   Result = GET_OR_DISTINCT(DILocalVariable,
                            (Context, scope.Val, name.Val, file.Val, line.Val,
-                            type.Val, arg.Val, flags.Val, align.Val,
-                            annotations.Val));
+                            type.Val, arg.Val, flags.Val, memorySpace.val(),
+                            align.Val, annotations.Val));
   return false;
 }
 
@@ -5641,6 +5688,137 @@ bool LLParser::parseDIArgList(Metadata *&MD, PerFunctionState *PFS) {
   return false;
 }
 
+bool LLParser::parseDIExpr(MDNode *&Result, bool IsDistinct) {
+  if (IsDistinct)
+    return Lex.Error("'distinct' not allowed for !DIExpr");
+
+  assert(Lex.getKind() == lltok::MetadataVar && "Expected metadata type name");
+  Lex.Lex();
+
+  if (parseToken(lltok::lparen, "expected '(' here"))
+    return true;
+
+  DIExprBuilder Builder(Context);
+  if (Lex.getKind() != lltok::rparen)
+    do {
+      if (Lex.getKind() != lltok::DIOp)
+        return tokError("expected DIOp");
+      std::string Name = Lex.getStrVal();
+      Lex.Lex();
+      if (parseToken(lltok::lparen, "expected '(' here"))
+        return true;
+      if (Name == DIOp::Referrer::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::Referrer>(Ty);
+      } else if (Name == DIOp::Arg::getAsmName()) {
+        uint32_t I;
+        Type *Ty = nullptr;
+        if (parseUInt32(I))
+          return true;
+        if (parseToken(lltok::comma, "expected ',' here"))
+          return true;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::Arg>(I, Ty);
+      } else if (Name == DIOp::TypeObject::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::TypeObject>(Ty);
+      } else if (Name == DIOp::Constant::getAsmName()) {
+        Type *Ty = nullptr;
+        Constant *C = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        LocTy ValLoc = Lex.getLoc();
+        if (parseConstantValue(Ty, C))
+          return true;
+        if (!isa<ConstantData>(C))
+          return error(ValLoc, "expected constant data");
+        Builder.append<DIOp::Constant>(cast<ConstantData>(C));
+      } else if (Name == DIOp::Convert::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::Convert>(Ty);
+      } else if (Name == DIOp::Reinterpret::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::Reinterpret>(Ty);
+      } else if (Name == DIOp::BitOffset::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::BitOffset>(Ty);
+      } else if (Name == DIOp::ByteOffset::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::ByteOffset>(Ty);
+      } else if (Name == DIOp::Composite::getAsmName()) {
+        uint32_t I;
+        Type *Ty = nullptr;
+        if (parseUInt32(I))
+          return true;
+        if (parseToken(lltok::comma, "expected ',' here"))
+          return true;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::Composite>(I, Ty);
+      } else if (Name == DIOp::Extend::getAsmName()) {
+        uint32_t I;
+        if (parseUInt32(I))
+          return true;
+        Builder.append<DIOp::Extend>(I);
+      } else if (Name == DIOp::AddrOf::getAsmName()) {
+        uint32_t I;
+        if (parseUInt32(I))
+          return true;
+        Builder.append<DIOp::AddrOf>(I);
+      } else if (Name == DIOp::Deref::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::Deref>(Ty);
+      } else if (Name == DIOp::PushLane::getAsmName()) {
+        Type *Ty = nullptr;
+        if (parseFirstClassType(Ty))
+          return true;
+        Builder.append<DIOp::PushLane>(Ty);
+      }
+#define HANDLE_OP0(NAME)                                                       \
+  else if (Name == DIOp::NAME::getAsmName()) {                                 \
+    Builder.append<DIOp::NAME>();                                              \
+  }
+#include "llvm/IR/DIExprOps.def"
+#undef HANDLE_OP0
+      else {
+        llvm_unreachable("unhandled DIOp");
+      }
+      if (parseToken(lltok::rparen, "expected ')' here"))
+        return true;
+    } while (EatIfPresent(lltok::comma));
+
+  if (parseToken(lltok::rparen, "expected ')' here"))
+    return true;
+
+  Result = Builder.intoExpr();
+  return false;
+}
+
+bool LLParser::parseDIFragment(MDNode *&Result, bool IsDistinct) {
+  if (!IsDistinct)
+    return Lex.Error("missing 'distinct', required for !DIFragment");
+#define VISIT_MD_FIELDS(OPTIONAL, REQUIRED)
+  PARSE_MD_FIELDS();
+#undef VISIT_MD_FIELDS
+  Result = DIFragment::getDistinct(Context);
+  return false;
+}
+
 /// parseDIGlobalVariableExpression:
 ///   ::= !DIGlobalVariableExpression(var: !0, expr: !1)
 bool LLParser::parseDIGlobalVariableExpression(MDNode *&Result,
@@ -5695,6 +5873,23 @@ bool LLParser::parseDIImportedEntity(MDNode *&Result, bool IsDistinct) {
   Result = GET_OR_DISTINCT(DIImportedEntity,
                            (Context, tag.Val, scope.Val, entity.Val, file.Val,
                             line.Val, name.Val, elements.Val));
+  return false;
+}
+
+/// parseDILifetime:
+///   ::= !DILifetime(object: !0, location: !1, argObjects: {...})
+bool LLParser::parseDILifetime(MDNode *&Result, bool IsDistinct) {
+  if (!IsDistinct)
+    return Lex.Error("missing 'distinct', required for !DILifetime");
+#define VISIT_MD_FIELDS(OPTIONAL, REQUIRED)                                    \
+  REQUIRED(object, MDField, );                                                 \
+  REQUIRED(location, MDField, );                                               \
+  OPTIONAL(argObjects, MDFieldList, );
+  PARSE_MD_FIELDS();
+#undef VISIT_MD_FIELDS
+
+  Result = DILifetime::getDistinct(Context, object.Val, location.Val,
+                                   argObjects.Val);
   return false;
 }
 

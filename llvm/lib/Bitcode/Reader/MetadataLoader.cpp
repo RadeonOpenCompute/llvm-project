@@ -401,6 +401,18 @@ static Error error(const Twine &Message) {
       Message, make_error_code(BitcodeError::CorruptedBitcode));
 }
 
+static Expected<dwarf::MemorySpace>
+getDWARFMemorySpaceAtPosition(ArrayRef<uint64_t> Records, size_t Position) {
+  if (Position >= Records.size())
+    return dwarf::DW_MSPACE_LLVM_none;
+
+  const uint64_t Record = Records[Position];
+  if (Record > dwarf::DW_MSPACE_LLVM_hi_user)
+    return error("MemorySpace value is too large");
+
+  return {static_cast<dwarf::MemorySpace>(Record)};
+}
+
 class MetadataLoader::MetadataLoaderImpl {
   BitcodeReaderMetadataList MetadataList;
   BitcodeReaderValueList &ValueList;
@@ -947,6 +959,9 @@ MetadataLoader::MetadataLoaderImpl::lazyLoadModuleMetadataBlock() {
       case bitc::METADATA_IMPORTED_ENTITY:
       case bitc::METADATA_GLOBAL_VAR_EXPR:
       case bitc::METADATA_GENERIC_SUBRANGE:
+      case bitc::METADATA_EXPR:
+      case bitc::METADATA_FRAGMENT:
+      case bitc::METADATA_LIFETIME:
         // We don't expect to see any of these, if we see one, give up on
         // lazy-loading and fallback.
         MDStringRef.clear();
@@ -1556,7 +1571,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     break;
   }
   case bitc::METADATA_DERIVED_TYPE: {
-    if (Record.size() < 12 || Record.size() > 14)
+    if (Record.size() < 12 || Record.size() > 15)
       return error("Invalid record");
 
     // DWARF address space is encoded as N->getDWARFAddressSpace() + 1. 0 means
@@ -1569,6 +1584,10 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     if (Record.size() > 13 && Record[13])
       Annotations = getMDOrNull(Record[13]);
 
+    auto MSpace = getDWARFMemorySpaceAtPosition(Record, 14);
+    if (!MSpace)
+      return MSpace.takeError();
+
     IsDistinct = Record[0];
     DINode::DIFlags Flags = static_cast<DINode::DIFlags>(Record[10]);
     MetadataList.assignValue(
@@ -1577,7 +1596,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
                          getMDOrNull(Record[3]), Record[4],
                          getDITypeRefOrNull(Record[5]),
                          getDITypeRefOrNull(Record[6]), Record[7], Record[8],
-                         Record[9], DWARFAddressSpace, Flags,
+                         Record[9], DWARFAddressSpace, *MSpace, Flags,
                          getDITypeRefOrNull(Record[11]), Annotations)),
         NextMetadataNo);
     NextMetadataNo++;
@@ -2002,7 +2021,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     break;
   }
   case bitc::METADATA_GLOBAL_VAR: {
-    if (Record.size() < 11 || Record.size() > 13)
+    if (Record.size() < 11 || Record.size() > 14)
       return error("Invalid record");
 
     IsDistinct = Record[0] & 1;
@@ -2010,9 +2029,16 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
 
     if (Version == 2) {
       Metadata *Annotations = nullptr;
-      if (Record.size() > 12)
-        Annotations = getMDOrNull(Record[12]);
+      auto Align = Record[11];
 
+      bool HasAnnotations = Record.size() > 12;
+      if (HasAnnotations) {
+        Annotations = getMDOrNull(Record[12]);
+      }
+
+      auto MSpace = getDWARFMemorySpaceAtPosition(Record, 13);
+      if (!MSpace)
+        return MSpace.takeError();
       MetadataList.assignValue(
           GET_OR_DISTINCT(DIGlobalVariable,
                           (Context, getMDOrNull(Record[1]),
@@ -2020,7 +2046,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
                            getMDOrNull(Record[4]), Record[5],
                            getDITypeRefOrNull(Record[6]), Record[7], Record[8],
                            getMDOrNull(Record[9]), getMDOrNull(Record[10]),
-                           Record[11], Annotations)),
+                           *MSpace, Align, Annotations)),
           NextMetadataNo);
 
       NextMetadataNo++;
@@ -2028,12 +2054,13 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
       // No upgrade necessary. A null field will be introduced to indicate
       // that no parameter information is available.
       MetadataList.assignValue(
-          GET_OR_DISTINCT(
-              DIGlobalVariable,
-              (Context, getMDOrNull(Record[1]), getMDString(Record[2]),
-               getMDString(Record[3]), getMDOrNull(Record[4]), Record[5],
-               getDITypeRefOrNull(Record[6]), Record[7], Record[8],
-               getMDOrNull(Record[10]), nullptr, Record[11], nullptr)),
+          GET_OR_DISTINCT(DIGlobalVariable,
+                          (Context, getMDOrNull(Record[1]),
+                           getMDString(Record[2]), getMDString(Record[3]),
+                           getMDOrNull(Record[4]), Record[5],
+                           getDITypeRefOrNull(Record[6]), Record[7], Record[8],
+                           getMDOrNull(Record[10]), nullptr,
+                           dwarf::DW_MSPACE_LLVM_none, Record[11], nullptr)),
           NextMetadataNo);
 
       NextMetadataNo++;
@@ -2066,7 +2093,8 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
           (Context, getMDOrNull(Record[1]), getMDString(Record[2]),
            getMDString(Record[3]), getMDOrNull(Record[4]), Record[5],
            getDITypeRefOrNull(Record[6]), Record[7], Record[8],
-           getMDOrNull(Record[10]), nullptr, AlignInBits, nullptr));
+           getMDOrNull(Record[10]), nullptr, dwarf::DW_MSPACE_LLVM_none,
+           AlignInBits, nullptr));
 
       DIGlobalVariableExpression *DGVE = nullptr;
       if (Attach || Expr)
@@ -2097,7 +2125,7 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
   }
   case bitc::METADATA_LOCAL_VAR: {
     // 10th field is for the obseleted 'inlinedAt:' field.
-    if (Record.size() < 8 || Record.size() > 10)
+    if (Record.size() < 8 || Record.size() > 11)
       return error("Invalid record");
 
     IsDistinct = Record[0] & 1;
@@ -2117,13 +2145,17 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
         Annotations = getMDOrNull(Record[9]);
     }
 
+    auto MSpace = getDWARFMemorySpaceAtPosition(Record, 10);
+    if (!MSpace)
+      return MSpace.takeError();
+
     MetadataList.assignValue(
-        GET_OR_DISTINCT(DILocalVariable,
-                        (Context, getMDOrNull(Record[1 + HasTag]),
-                         getMDString(Record[2 + HasTag]),
-                         getMDOrNull(Record[3 + HasTag]), Record[4 + HasTag],
-                         getDITypeRefOrNull(Record[5 + HasTag]),
-                         Record[6 + HasTag], Flags, AlignInBits, Annotations)),
+        GET_OR_DISTINCT(
+            DILocalVariable,
+            (Context, getMDOrNull(Record[1 + HasTag]),
+             getMDString(Record[2 + HasTag]), getMDOrNull(Record[3 + HasTag]),
+             Record[4 + HasTag], getDITypeRefOrNull(Record[5 + HasTag]),
+             Record[6 + HasTag], Flags, *MSpace, AlignInBits, Annotations)),
         NextMetadataNo);
     NextMetadataNo++;
     break;
@@ -2134,9 +2166,10 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
 
     IsDistinct = Record[0] & 1;
     MetadataList.assignValue(
-        GET_OR_DISTINCT(DILabel, (Context, getMDOrNull(Record[1]),
-                                  getMDString(Record[2]),
-                                  getMDOrNull(Record[3]), Record[4])),
+        GET_OR_DISTINCT(DILabel,
+                        (Context, getMDOrNull(Record[1]),
+                         getMDString(Record[2]),
+                         getMDOrNull(Record[3]), Record[4])),
         NextMetadataNo);
     NextMetadataNo++;
     break;
@@ -2153,8 +2186,162 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     if (Error Err = upgradeDIExpression(Version, Elts, Buffer))
       return Err;
 
-    MetadataList.assignValue(GET_OR_DISTINCT(DIExpression, (Context, Elts)),
-                             NextMetadataNo);
+    MetadataList.assignValue(DIExpression::get(Context, Elts), NextMetadataNo);
+    NextMetadataNo++;
+    break;
+  }
+  case bitc::METADATA_EXPR: {
+    if (Record.size() < 1)
+      return error("Invalid record");
+
+    uint64_t Version = Record[0];
+    if (Version != 0)
+      return error("Invalid record: unknown DIExpr version " + Twine(Version));
+
+    DIExprBuilder Builder(Context);
+
+    for (auto Elems = ArrayRef<uint64_t>(Record).slice(1); Elems.size() > 0;) {
+      auto DIOpID = Elems[0];
+      Elems = Elems.slice(1);
+      switch (DIOpID) {
+#define HANDLE_OP0(NAME)                                                       \
+  case DIOp::NAME::getBitcodeID():                                             \
+    Builder.append<DIOp::NAME>();                                              \
+    break;
+#include "llvm/IR/DIExprOps.def"
+      case DIOp::Referrer::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::Referrer>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::Arg::getBitcodeID(): {
+        if (Elems.size() < 2)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::Arg>(Elems[1], Ty);
+        Elems = Elems.slice(2);
+        break;
+      }
+      case DIOp::TypeObject::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::TypeObject>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::Constant::getBitcodeID(): {
+        if (Elems.size() < 2)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Value *V = ValueList[Elems[1]];
+        if (!V || !isa<ConstantData>(V))
+          return error("Invalid record");
+        if (Ty != V->getType())
+          report_fatal_error("Invalid record");
+        Builder.append<DIOp::Constant>(cast<ConstantData>(V));
+        Elems = Elems.slice(2);
+        break;
+      }
+      case DIOp::Convert::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::Convert>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::Reinterpret::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::Reinterpret>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::BitOffset::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::BitOffset>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::ByteOffset::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::ByteOffset>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::Composite::getBitcodeID(): {
+        if (Elems.size() < 2)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::Composite>(Elems[1], Ty);
+        Elems = Elems.slice(2);
+        break;
+      }
+      case DIOp::Extend::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Builder.append<DIOp::Extend>(Elems[0]);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::AddrOf::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Builder.append<DIOp::AddrOf>(Elems[0]);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::Deref::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::Deref>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      case DIOp::PushLane::getBitcodeID(): {
+        if (Elems.size() < 1)
+          return error("Invalid record");
+        Type *Ty = Callbacks.GetTypeByID(Elems[0]);
+        if (!Ty || !Ty->isFirstClassType())
+          return error("Invalid record");
+        Builder.append<DIOp::PushLane>(Ty);
+        Elems = Elems.slice(1);
+        break;
+      }
+      }
+    }
+
+    MetadataList.assignValue(Builder.intoExpr(), NextMetadataNo);
     NextMetadataNo++;
     break;
   }
@@ -2239,6 +2426,15 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
         return Err;
     break;
   }
+  case bitc::METADATA_FRAGMENT: {
+    if (Record.size() != 0)
+      return error("Invalid record");
+    IsDistinct = true;
+    MetadataList.assignValue(DIFragment::getDistinct(Context),
+                             NextMetadataNo);
+    NextMetadataNo++;
+    break;
+  }
   case bitc::METADATA_KIND: {
     // Support older bitcode files that had METADATA_KIND records in a
     // block with METADATA_BLOCK_ID.
@@ -2260,6 +2456,19 @@ Error MetadataLoader::MetadataLoaderImpl::parseOneMetadata(
     }
 
     MetadataList.assignValue(DIArgList::get(Context, Elts), NextMetadataNo);
+    NextMetadataNo++;
+    break;
+  }
+  case bitc::METADATA_LIFETIME: {
+    if (Record.size() < 2)
+      return error("Invalid record");
+    Metadata *Obj = getMD(Record[0]);
+    Metadata *Loc = getMD(Record[1]);
+    SmallVector<Metadata *> Args;
+    for (auto ArgID : ArrayRef<uint64_t>(Record).slice(2))
+      Args.push_back(getMD(ArgID));
+    MetadataList.assignValue(DILifetime::getDistinct(Context, Obj, Loc, Args),
+                             NextMetadataNo);
     NextMetadataNo++;
     break;
   }

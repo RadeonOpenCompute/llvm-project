@@ -48,6 +48,8 @@ namespace llvm {
     Function *ValueFn;       ///< llvm.dbg.value
     Function *LabelFn;       ///< llvm.dbg.label
     Function *AssignFn;      ///< llvm.dbg.assign
+    Function *DefFn;         ///< llvm.dbg.def
+    Function *KillFn;        ///< llvm.dbg.kill
 
     SmallVector<TrackingMDNodeRef, 4> AllEnumTypes;
     /// Track the RetainTypes, since they can be updated later on.
@@ -109,6 +111,15 @@ namespace llvm {
     Instruction *
     insertDbgValueIntrinsic(llvm::Value *Val, DILocalVariable *VarInfo,
                             DIExpression *Expr, const DILocation *DL,
+                            BasicBlock *InsertBB, Instruction *InsertBefore);
+
+    /// Internal helper for insertDef.
+    Instruction *insertDef(DILifetime *Lifetime, llvm::Value *Referrer,
+                           const DILocation *DL, BasicBlock *InsertBB,
+                           Instruction *InsertBefore);
+
+    /// Internal helper for insertKill.
+    Instruction *insertKill(DILifetime *Lifetime, const DILocation *DL,
                             BasicBlock *InsertBB, Instruction *InsertBefore);
 
   public:
@@ -254,13 +265,14 @@ namespace llvm {
     /// \param SizeInBits        Size.
     /// \param AlignInBits       Alignment. (optional)
     /// \param DWARFAddressSpace DWARF address space. (optional)
+    /// \param DWARFMemorySpace  DWARF memory space. (optional)
     /// \param Name              Pointer type name. (optional)
     /// \param Annotations       Member annotations.
-    DIDerivedType *
-    createPointerType(DIType *PointeeTy, uint64_t SizeInBits,
-                      uint32_t AlignInBits = 0,
-                      std::optional<unsigned> DWARFAddressSpace = std::nullopt,
-                      StringRef Name = "", DINodeArray Annotations = nullptr);
+    DIDerivedType *createPointerType(
+        DIType *PointeeTy, uint64_t SizeInBits, uint32_t AlignInBits = 0,
+        std::optional<unsigned> DWARFAddressSpace = std::nullopt,
+        dwarf::MemorySpace DWARFMemorySpace = dwarf::DW_MSPACE_LLVM_none,
+        StringRef Name = "", DINodeArray Annotations = nullptr);
 
     /// Create debugging information entry for a pointer to member.
     /// \param PointeeTy Type pointed to by this pointer.
@@ -277,7 +289,8 @@ namespace llvm {
     DIDerivedType *createReferenceType(
         unsigned Tag, DIType *RTy, uint64_t SizeInBits = 0,
         uint32_t AlignInBits = 0,
-        std::optional<unsigned> DWARFAddressSpace = std::nullopt);
+        std::optional<unsigned> DWARFAddressSpace = std::nullopt,
+        dwarf::MemorySpace MS = dwarf::DW_MSPACE_LLVM_none);
 
     /// Create debugging information entry for a typedef.
     /// \param Ty          Original type.
@@ -667,6 +680,31 @@ namespace llvm {
                                DIGenericSubrange::BoundType UpperBound,
                                DIGenericSubrange::BoundType Stride);
 
+    /// Create fragment, which represents the identity of a location
+    /// description that can be used as the piece of another location
+    /// description.
+    DIFragment *createFragment();
+
+    /// Create a new descriptor for the specified variable.
+    /// \param Context       Variable scope.
+    /// \param Name          Name of the variable.
+    /// \param LinkageName   Mangled  name of the variable.
+    /// \param File          File where this variable is defined.
+    /// \param LineNo        Line number.
+    /// \param Ty            Variable Type.
+    /// \param IsLocalToUnit Boolean flag indicate whether this variable is
+    ///                      externally visible or not.
+    /// \param Decl          Reference to the corresponding declaration.
+    /// \param MS            DWARF memory space.
+    /// \param AlignInBits   Variable alignment(or 0 if no alignment attr was
+    ///                      specified)
+    DIGlobalVariable *createGlobalVariable(
+        DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
+        unsigned LineNo, DIType *Ty, bool IsLocalToUnit, bool isDefined = true,
+        MDNode *Decl = nullptr, MDTuple *TemplateParams = nullptr,
+        dwarf::MemorySpace MS = dwarf::DW_MSPACE_LLVM_none,
+        uint32_t AlignInBits = 0, DINodeArray Annotations = nullptr);
+
     /// Create a new descriptor for the specified variable.
     /// \param Context     Variable scope.
     /// \param Name        Name of the variable.
@@ -679,21 +717,25 @@ namespace llvm {
     /// \param Expr        The location of the global relative to the attached
     ///                    GlobalVariable.
     /// \param Decl        Reference to the corresponding declaration.
+    /// \param MS          DWARF memory space.
     /// \param AlignInBits Variable alignment(or 0 if no alignment attr was
     ///                    specified)
     DIGlobalVariableExpression *createGlobalVariableExpression(
         DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
         unsigned LineNo, DIType *Ty, bool IsLocalToUnit, bool isDefined = true,
         DIExpression *Expr = nullptr, MDNode *Decl = nullptr,
-        MDTuple *TemplateParams = nullptr, uint32_t AlignInBits = 0,
-        DINodeArray Annotations = nullptr);
+        MDTuple *TemplateParams = nullptr,
+        dwarf::MemorySpace MS = dwarf::DW_MSPACE_LLVM_none,
+        uint32_t AlignInBits = 0, DINodeArray Annotations = nullptr);
 
     /// Identical to createGlobalVariable
     /// except that the resulting DbgNode is temporary and meant to be RAUWed.
     DIGlobalVariable *createTempGlobalVariableFwdDecl(
         DIScope *Context, StringRef Name, StringRef LinkageName, DIFile *File,
         unsigned LineNo, DIType *Ty, bool IsLocalToUnit, MDNode *Decl = nullptr,
-        MDTuple *TemplateParams = nullptr, uint32_t AlignInBits = 0);
+        MDTuple *TemplateParams = nullptr,
+        dwarf::MemorySpace MS = dwarf::DW_MSPACE_LLVM_none,
+        uint32_t AlignInBits = 0);
 
     /// Create a new descriptor for an auto variable.  This is a local variable
     /// that is not a subprogram parameter.
@@ -707,6 +749,7 @@ namespace llvm {
     createAutoVariable(DIScope *Scope, StringRef Name, DIFile *File,
                        unsigned LineNo, DIType *Ty, bool AlwaysPreserve = false,
                        DINode::DIFlags Flags = DINode::FlagZero,
+                       dwarf::MemorySpace MS = dwarf::DW_MSPACE_LLVM_none,
                        uint32_t AlignInBits = 0);
 
     /// Create a new descriptor for an label.
@@ -733,6 +776,7 @@ namespace llvm {
                             DIFile *File, unsigned LineNo, DIType *Ty,
                             bool AlwaysPreserve = false,
                             DINode::DIFlags Flags = DINode::FlagZero,
+                            dwarf::MemorySpace MS = dwarf::DW_MSPACE_LLVM_none,
                             DINodeArray Annotations = nullptr);
 
     /// Create a new descriptor for the specified
@@ -1024,6 +1068,69 @@ namespace llvm {
       N->replaceAllUsesWith(Replacement);
       return Replacement;
     }
+
+    /// Create a bounded lifetime segment of a data object.
+    ///
+    /// \see docs/AMDGPULLVMExtensionsForHeterogeneousDebugging.rst
+    ///
+    /// \param Obj  The data object of the lifetime segment.
+    /// \param Loc  The location description of the lifetime segment.
+    /// \param Args The optional argument specifies a tuple of zero or more
+    ///             input DIObjects or DICodes to the expression specified by
+    ///             the location field. Omitting the argObjects field is
+    ///             equivalent to specifying it to be the empty tuple.
+    DILifetime *createBoundedLifetime(DIObject *Obj, DIExpr *Loc,
+                                      ArrayRef<Metadata *> Args = std::nullopt);
+
+    /// Create a computed lifetime segment of a data object and add it to the
+    /// llvm.dbg.retainedNodes named metadata node.
+    ///
+    /// \see docs/AMDGPULLVMExtensionsForHeterogeneousDebugging.rst
+    ///
+    /// \param Obj  The data object of the lifetime segment.
+    /// \param Loc  The location description of the lifetime segment.
+    /// \param Args The optional argument specifies a tuple of zero or more
+    ///             input DIObjects or DICodes to the expression specified by
+    ///             the location field. Omitting the argObjects field is
+    ///             equivalent to specifying it to be the empty tuple.
+    void createComputedLifetime(DIObject *Obj, DIExpr *Loc,
+                                ArrayRef<Metadata *> Args = std::nullopt);
+
+    /// Insert a new llvm.dbg.def intrinsic call.
+    /// \param Lifetime    The beginning of the bounded lifetime being defined.
+    /// \param Referrer    LLVM entity acting as the referrer of the bounded
+    ///                    lifetime segment specified by the first argument. A
+    ///                    value of undef is allowed and specifies the
+    ///                    undefined location description.
+    /// \param DL          Debug info location.
+    /// \param InsertAtEnd Location for the new intrinsic.
+    Instruction *insertDef(DILifetime *Lifetime, llvm::Value *Referrer,
+                           const DILocation *DL, BasicBlock *InsertAtEnd);
+
+    /// Insert a new llvm.dbg.def intrinsic call.
+    /// \param Lifetime     The beginning of the bounded lifetime being defined.
+    /// \param Referrer     LLVM entity acting as the referrer of the bounded
+    ///                     lifetime segment specified by the first argument. A
+    ///                     value of undef is allowed and specifies the
+    ///                     undefined location description.
+    /// \param DL           Debug info location.
+    /// \param InsertBefore Location for the new intrinsic.
+    Instruction *insertDef(DILifetime *Lifetime, llvm::Value *Referrer,
+                           const DILocation *DL, Instruction *InsertBefore);
+
+    /// Insert a new llvm.dbg.kill intrinsic call.
+    /// \param Lifetime    The end of the lifetime being killed.
+    /// \param DL          Debug info location.
+    /// \param InsertAtEnd Location for the new intrinsic.
+    Instruction *insertKill(DILifetime *Lifetime, const DILocation *DL,
+                            BasicBlock *InsertAtEnd);
+
+    /// Insert a new llvm.dbg.kill intrinsic call.
+    /// \param Lifetime     The end of the lifetime being killed.
+    /// \param DL           Debug info location.
+    /// \param InsertBefore Location for the new intrinsic.
+    Instruction *insertKill(DILifetime *Lifetime, const DILocation *DL,
+                            Instruction *InsertBefore);
   };
 
   // Create wrappers for C Binding types (see CBindingWrapping.h).

@@ -1843,3 +1843,28 @@ void GlobalVariable::getDebugInfo(
   for (MDNode *MD : MDs)
     GVs.push_back(cast<DIGlobalVariableExpression>(MD));
 }
+
+void GlobalVariable::addDebugInfo(DIGlobalVariable *GV) {
+  addMetadata(LLVMContext::MD_dbg, *GV);
+}
+
+void GlobalVariable::getDebugInfo(
+    SmallVectorImpl<DIGlobalVariable *> &GVs) const {
+  SmallVector<MDNode *, 1> MDs;
+  getMetadata(LLVMContext::MD_dbg, MDs);
+  for (MDNode *MD : MDs)
+    GVs.push_back(cast<DIGlobalVariable>(MD));
+}
+
+void GlobalVariable::setDbgDef(DIFragment *F) {
+  addMetadata("dbg.def", *F);
+}
+
+DIFragment *GlobalVariable::getDbgDef() const {
+  SmallVector<MDNode *, 1> MDs;
+  getMetadata("dbg.def", MDs);
+  assert(MDs.size() <= 1);
+  if (MDs.size())
+    return cast<DIFragment>(MDs[0]);
+  return nullptr;
+}

@@ -15,6 +15,12 @@ body: |
     ; CHECK-LABEL: name: same_slot_agpr_sgpr
     ; CHECK: liveins: $agpr0, $agpr1
     ; CHECK-NEXT: {{  $}}
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION llvm_def_aspace_cfa $sgpr32_lo16, 0, 6
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION escape 0x10, 0x10, 0x08, 0x90, 0x3e, 0x93, 0x04, 0x90, 0x3f, 0x93, 0x04
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $vgpr0_lo16
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $agpr1_lo16
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $sgpr4_lo16
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $sgpr5_lo16
     ; CHECK-NEXT: $vgpr0 = IMPLICIT_DEF
     ; CHECK-NEXT: $agpr1 = V_ACCVGPR_WRITE_B32_e64 killed $vgpr0, implicit $exec
     ; CHECK-NEXT: $sgpr4_sgpr5 = IMPLICIT_DEF
@@ -48,6 +54,12 @@ body: |
     ; CHECK-LABEL: name: diff_slot_agpr_sgpr
     ; CHECK: liveins: $agpr0
     ; CHECK-NEXT: {{  $}}
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION llvm_def_aspace_cfa $sgpr32_lo16, 0, 6
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION escape 0x10, 0x10, 0x08, 0x90, 0x3e, 0x93, 0x04, 0x90, 0x3f, 0x93, 0x04
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $vgpr0_lo16
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $agpr0_lo16
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $sgpr4_lo16
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $sgpr5_lo16
     ; CHECK-NEXT: $vgpr0 = IMPLICIT_DEF
     ; CHECK-NEXT: $agpr0 = V_ACCVGPR_WRITE_B32_e64 killed $vgpr0, implicit $exec
     ; CHECK-NEXT: $sgpr4_sgpr5 = IMPLICIT_DEF
@@ -79,6 +91,10 @@ body: |
     ; CHECK-LABEL: name: dead_vgpr_slot
     ; CHECK: liveins: $agpr0
     ; CHECK-NEXT: {{  $}}
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION llvm_def_aspace_cfa $sgpr32_lo16, 0, 6
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION escape 0x10, 0x10, 0x08, 0x90, 0x3e, 0x93, 0x04, 0x90, 0x3f, 0x93, 0x04
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $vgpr0_lo16
+    ; CHECK-NEXT: frame-setup CFI_INSTRUCTION undefined $agpr0_lo16
     ; CHECK-NEXT: $vgpr0 = IMPLICIT_DEF
     ; CHECK-NEXT: $agpr0 = V_ACCVGPR_WRITE_B32_e64 killed $vgpr0, implicit $exec
     ; CHECK-NEXT: S_ENDPGM 0

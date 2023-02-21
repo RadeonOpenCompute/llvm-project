@@ -548,8 +548,7 @@ private:
   bool allocateVirtualVGPRForSGPRSpills(MachineFunction &MF, int FI,
                                         unsigned LaneIndex);
   bool allocatePhysicalVGPRForSGPRSpills(MachineFunction &MF, int FI,
-                                         unsigned LaneIndex,
-                                         bool IsPrologEpilog);
+                                         unsigned LaneIndex);
 
 public:
   Register getVGPRForAGPRCopy() const {
@@ -589,7 +588,6 @@ public:
   }
 
   ArrayRef<Register> getSGPRSpillVGPRs() const { return SpillVGPRs; }
-
   const WWMSpillsMap &getWWMSpills() const { return WWMSpills; }
   const ReservedRegSet &getWWMReservedRegs() const { return WWMReservedRegs; }
 
@@ -639,6 +637,15 @@ public:
                                 SGPRSaveKind::SPILL_TO_VGPR_LANE &&
                             SI.second.getIndex() == FI;
                    }) != PrologEpilogSGPRSpills.end();
+  }
+
+  // Remove if an entry created for \p Reg.
+  void removePrologEpilogSGPRSpillEntry(Register Reg) {
+    auto I = PrologEpilogSGPRSpills.find(Reg);
+    if (I == PrologEpilogSGPRSpills.end())
+      return;
+
+    PrologEpilogSGPRSpills.erase(I);
   }
 
   const PrologEpilogSGPRSaveRestoreInfo &
@@ -704,18 +711,13 @@ public:
       I->second.IsDead = true;
   }
 
-  // To bring the Physical VGPRs in the highest range allocated for CSR SGPR
-  // spilling into the lowest available range.
-  void shiftSpillPhysVGPRsToLowestRange(MachineFunction &MF);
-
   bool allocateSGPRSpillToVGPRLane(MachineFunction &MF, int FI,
-                                   bool SpillToPhysVGPRLane = false,
                                    bool IsPrologEpilog = false);
   bool allocateVGPRSpillToAGPR(MachineFunction &MF, int FI, bool isAGPRtoVGPR);
 
   /// If \p ResetSGPRSpillStackIDs is true, reset the stack ID from sgpr-spill
   /// to the default stack.
-  bool removeDeadFrameIndices(MachineFrameInfo &MFI,
+  bool removeDeadFrameIndices(MachineFunction &MF,
                               bool ResetSGPRSpillStackIDs);
 
   int getScavengeFI(MachineFrameInfo &MFI, const SIRegisterInfo &TRI);
