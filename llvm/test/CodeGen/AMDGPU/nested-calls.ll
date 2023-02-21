@@ -22,8 +22,8 @@ declare void @external_void_func_i32(i32) #0
 
 ; GCN: s_swappc_b64
 
-; GCN: v_readlane_b32 s31, v40, 1
 ; GCN: v_readlane_b32 s30, v40, 0
+; GCN: v_readlane_b32 s31, v40, 1
 
 ; GCN-NEXT: v_readlane_b32 [[FP_SCRATCH_COPY:s[0-9]+]], v40, 2
 ; GCN: s_or_saveexec_b64 [[COPY_EXEC1:s\[[0-9]+:[0-9]+\]]], -1{{$}}

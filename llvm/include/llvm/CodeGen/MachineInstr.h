@@ -505,6 +505,16 @@ public:
   /// this DBG_LABEL instruction.
   const DILabel *getDebugLabel() const;
 
+  /// Return the lifetime referenced by this DBG_DEF or DBG_KILL instruction.
+  const DILifetime *getDebugLifetime() const;
+  /// Return the lifetime referenced by this DBG_DEF or DBG_KILL instruction.
+  DILifetime *getDebugLifetime();
+
+  /// Return the referrer for this DBG_DEF instruction.
+  const MachineOperand &getDebugReferrer() const;
+  /// Return the referrer for this DBG_DEF instruction.
+  MachineOperand &getDebugReferrer();
+
   /// Fetch the instruction number of this MachineInstr. If it does not have
   /// one already, a new and unique number will be assigned.
   unsigned getDebugInstrNum();
@@ -679,6 +689,8 @@ public:
   /// Returns a range over all operands that are used to determine the variable
   /// location for this DBG_VALUE instruction.
   iterator_range<mop_iterator> debug_operands() {
+    if (isDebugDef())
+      return make_range(operands_begin() + 1, operands_end());
     assert((isDebugValueLike()) && "Must be a debug value instruction.");
     return isNonListDebugValue()
                ? make_range(operands_begin(), operands_begin() + 1)
@@ -686,6 +698,8 @@ public:
   }
   /// \copydoc debug_operands()
   iterator_range<const_mop_iterator> debug_operands() const {
+    if (isDebugDef())
+      return make_range(operands_begin() + 1, operands_end());
     assert((isDebugValueLike()) && "Must be a debug value instruction.");
     return isNonListDebugValue()
                ? make_range(operands_begin(), operands_begin() + 1)
@@ -1317,8 +1331,12 @@ public:
   bool isDebugRef() const { return getOpcode() == TargetOpcode::DBG_INSTR_REF; }
   bool isDebugValueLike() const { return isDebugValue() || isDebugRef(); }
   bool isDebugPHI() const { return getOpcode() == TargetOpcode::DBG_PHI; }
+  bool isDebugDef() const { return getOpcode() == TargetOpcode::DBG_DEF; }
+  bool isDebugKill() const { return getOpcode() == TargetOpcode::DBG_KILL; }
+  bool isDebugDefKill() const { return isDebugDef() || isDebugKill(); }
   bool isDebugInstr() const {
-    return isDebugValue() || isDebugLabel() || isDebugRef() || isDebugPHI();
+    return isDebugValue() || isDebugLabel() || isDebugRef() || isDebugPHI() ||
+           isDebugDefKill();
   }
   bool isDebugOrPseudoInstr() const {
     return isDebugInstr() || isPseudoProbe();

@@ -15,29 +15,482 @@ define weak_odr void @test(i32 %0) !dbg !34 {
 ; CHECK-NEXT:    .cfi_sections .debug_frame
 ; CHECK-NEXT:    .cfi_startproc
 ; CHECK-NEXT:  ; %bb.0:
+; CHECK-NEXT:    .cfi_llvm_def_aspace_cfa 64, 0, 6
+; CHECK-NEXT:    .cfi_escape 0x10, 0x10, 0x08, 0x90, 0x3e, 0x93, 0x04, 0x90, 0x3f, 0x93, 0x04 ;
+; CHECK-NEXT:    .cfi_undefined 2560
+; CHECK-NEXT:    .cfi_undefined 2561
+; CHECK-NEXT:    .cfi_undefined 2562
+; CHECK-NEXT:    .cfi_undefined 2563
+; CHECK-NEXT:    .cfi_undefined 2564
+; CHECK-NEXT:    .cfi_undefined 2565
+; CHECK-NEXT:    .cfi_undefined 2566
+; CHECK-NEXT:    .cfi_undefined 2567
+; CHECK-NEXT:    .cfi_undefined 2568
+; CHECK-NEXT:    .cfi_undefined 2569
+; CHECK-NEXT:    .cfi_undefined 2570
+; CHECK-NEXT:    .cfi_undefined 2571
+; CHECK-NEXT:    .cfi_undefined 2572
+; CHECK-NEXT:    .cfi_undefined 2573
+; CHECK-NEXT:    .cfi_undefined 2574
+; CHECK-NEXT:    .cfi_undefined 2575
+; CHECK-NEXT:    .cfi_undefined 2576
+; CHECK-NEXT:    .cfi_undefined 2577
+; CHECK-NEXT:    .cfi_undefined 2578
+; CHECK-NEXT:    .cfi_undefined 2579
+; CHECK-NEXT:    .cfi_undefined 2580
+; CHECK-NEXT:    .cfi_undefined 2581
+; CHECK-NEXT:    .cfi_undefined 2582
+; CHECK-NEXT:    .cfi_undefined 2583
+; CHECK-NEXT:    .cfi_undefined 2584
+; CHECK-NEXT:    .cfi_undefined 2585
+; CHECK-NEXT:    .cfi_undefined 2586
+; CHECK-NEXT:    .cfi_undefined 2587
+; CHECK-NEXT:    .cfi_undefined 2588
+; CHECK-NEXT:    .cfi_undefined 2589
+; CHECK-NEXT:    .cfi_undefined 2590
+; CHECK-NEXT:    .cfi_undefined 2591
+; CHECK-NEXT:    .cfi_undefined 2592
+; CHECK-NEXT:    .cfi_undefined 2593
+; CHECK-NEXT:    .cfi_undefined 2594
+; CHECK-NEXT:    .cfi_undefined 2595
+; CHECK-NEXT:    .cfi_undefined 2596
+; CHECK-NEXT:    .cfi_undefined 2597
+; CHECK-NEXT:    .cfi_undefined 2598
+; CHECK-NEXT:    .cfi_undefined 2599
+; CHECK-NEXT:    .cfi_undefined 2608
+; CHECK-NEXT:    .cfi_undefined 2609
+; CHECK-NEXT:    .cfi_undefined 2610
+; CHECK-NEXT:    .cfi_undefined 2611
+; CHECK-NEXT:    .cfi_undefined 2612
+; CHECK-NEXT:    .cfi_undefined 2613
+; CHECK-NEXT:    .cfi_undefined 2614
+; CHECK-NEXT:    .cfi_undefined 2615
+; CHECK-NEXT:    .cfi_undefined 2624
+; CHECK-NEXT:    .cfi_undefined 2625
+; CHECK-NEXT:    .cfi_undefined 2626
+; CHECK-NEXT:    .cfi_undefined 2627
+; CHECK-NEXT:    .cfi_undefined 2628
+; CHECK-NEXT:    .cfi_undefined 2629
+; CHECK-NEXT:    .cfi_undefined 2630
+; CHECK-NEXT:    .cfi_undefined 2631
+; CHECK-NEXT:    .cfi_undefined 2640
+; CHECK-NEXT:    .cfi_undefined 2641
+; CHECK-NEXT:    .cfi_undefined 2642
+; CHECK-NEXT:    .cfi_undefined 2643
+; CHECK-NEXT:    .cfi_undefined 2644
+; CHECK-NEXT:    .cfi_undefined 2645
+; CHECK-NEXT:    .cfi_undefined 2646
+; CHECK-NEXT:    .cfi_undefined 2647
+; CHECK-NEXT:    .cfi_undefined 2656
+; CHECK-NEXT:    .cfi_undefined 2657
+; CHECK-NEXT:    .cfi_undefined 2658
+; CHECK-NEXT:    .cfi_undefined 2659
+; CHECK-NEXT:    .cfi_undefined 2660
+; CHECK-NEXT:    .cfi_undefined 2661
+; CHECK-NEXT:    .cfi_undefined 2662
+; CHECK-NEXT:    .cfi_undefined 2663
+; CHECK-NEXT:    .cfi_undefined 2672
+; CHECK-NEXT:    .cfi_undefined 2673
+; CHECK-NEXT:    .cfi_undefined 2674
+; CHECK-NEXT:    .cfi_undefined 2675
+; CHECK-NEXT:    .cfi_undefined 2676
+; CHECK-NEXT:    .cfi_undefined 2677
+; CHECK-NEXT:    .cfi_undefined 2678
+; CHECK-NEXT:    .cfi_undefined 2679
+; CHECK-NEXT:    .cfi_undefined 2688
+; CHECK-NEXT:    .cfi_undefined 2689
+; CHECK-NEXT:    .cfi_undefined 2690
+; CHECK-NEXT:    .cfi_undefined 2691
+; CHECK-NEXT:    .cfi_undefined 2692
+; CHECK-NEXT:    .cfi_undefined 2693
+; CHECK-NEXT:    .cfi_undefined 2694
+; CHECK-NEXT:    .cfi_undefined 2695
+; CHECK-NEXT:    .cfi_undefined 2704
+; CHECK-NEXT:    .cfi_undefined 2705
+; CHECK-NEXT:    .cfi_undefined 2706
+; CHECK-NEXT:    .cfi_undefined 2707
+; CHECK-NEXT:    .cfi_undefined 2708
+; CHECK-NEXT:    .cfi_undefined 2709
+; CHECK-NEXT:    .cfi_undefined 2710
+; CHECK-NEXT:    .cfi_undefined 2711
+; CHECK-NEXT:    .cfi_undefined 2720
+; CHECK-NEXT:    .cfi_undefined 2721
+; CHECK-NEXT:    .cfi_undefined 2722
+; CHECK-NEXT:    .cfi_undefined 2723
+; CHECK-NEXT:    .cfi_undefined 2724
+; CHECK-NEXT:    .cfi_undefined 2725
+; CHECK-NEXT:    .cfi_undefined 2726
+; CHECK-NEXT:    .cfi_undefined 2727
+; CHECK-NEXT:    .cfi_undefined 2736
+; CHECK-NEXT:    .cfi_undefined 2737
+; CHECK-NEXT:    .cfi_undefined 2738
+; CHECK-NEXT:    .cfi_undefined 2739
+; CHECK-NEXT:    .cfi_undefined 2740
+; CHECK-NEXT:    .cfi_undefined 2741
+; CHECK-NEXT:    .cfi_undefined 2742
+; CHECK-NEXT:    .cfi_undefined 2743
+; CHECK-NEXT:    .cfi_undefined 2752
+; CHECK-NEXT:    .cfi_undefined 2753
+; CHECK-NEXT:    .cfi_undefined 2754
+; CHECK-NEXT:    .cfi_undefined 2755
+; CHECK-NEXT:    .cfi_undefined 2756
+; CHECK-NEXT:    .cfi_undefined 2757
+; CHECK-NEXT:    .cfi_undefined 2758
+; CHECK-NEXT:    .cfi_undefined 2759
+; CHECK-NEXT:    .cfi_undefined 2768
+; CHECK-NEXT:    .cfi_undefined 2769
+; CHECK-NEXT:    .cfi_undefined 2770
+; CHECK-NEXT:    .cfi_undefined 2771
+; CHECK-NEXT:    .cfi_undefined 2772
+; CHECK-NEXT:    .cfi_undefined 2773
+; CHECK-NEXT:    .cfi_undefined 2774
+; CHECK-NEXT:    .cfi_undefined 2775
+; CHECK-NEXT:    .cfi_undefined 2784
+; CHECK-NEXT:    .cfi_undefined 2785
+; CHECK-NEXT:    .cfi_undefined 2786
+; CHECK-NEXT:    .cfi_undefined 2787
+; CHECK-NEXT:    .cfi_undefined 2788
+; CHECK-NEXT:    .cfi_undefined 2789
+; CHECK-NEXT:    .cfi_undefined 2790
+; CHECK-NEXT:    .cfi_undefined 2791
+; CHECK-NEXT:    .cfi_undefined 2800
+; CHECK-NEXT:    .cfi_undefined 2801
+; CHECK-NEXT:    .cfi_undefined 2802
+; CHECK-NEXT:    .cfi_undefined 2803
+; CHECK-NEXT:    .cfi_undefined 2804
+; CHECK-NEXT:    .cfi_undefined 2805
+; CHECK-NEXT:    .cfi_undefined 2806
+; CHECK-NEXT:    .cfi_undefined 2807
+; CHECK-NEXT:    .cfi_undefined 3072
+; CHECK-NEXT:    .cfi_undefined 3073
+; CHECK-NEXT:    .cfi_undefined 3074
+; CHECK-NEXT:    .cfi_undefined 3075
+; CHECK-NEXT:    .cfi_undefined 3076
+; CHECK-NEXT:    .cfi_undefined 3077
+; CHECK-NEXT:    .cfi_undefined 3078
+; CHECK-NEXT:    .cfi_undefined 3079
+; CHECK-NEXT:    .cfi_undefined 3080
+; CHECK-NEXT:    .cfi_undefined 3081
+; CHECK-NEXT:    .cfi_undefined 3082
+; CHECK-NEXT:    .cfi_undefined 3083
+; CHECK-NEXT:    .cfi_undefined 3084
+; CHECK-NEXT:    .cfi_undefined 3085
+; CHECK-NEXT:    .cfi_undefined 3086
+; CHECK-NEXT:    .cfi_undefined 3087
+; CHECK-NEXT:    .cfi_undefined 3088
+; CHECK-NEXT:    .cfi_undefined 3089
+; CHECK-NEXT:    .cfi_undefined 3090
+; CHECK-NEXT:    .cfi_undefined 3091
+; CHECK-NEXT:    .cfi_undefined 3092
+; CHECK-NEXT:    .cfi_undefined 3093
+; CHECK-NEXT:    .cfi_undefined 3094
+; CHECK-NEXT:    .cfi_undefined 3095
+; CHECK-NEXT:    .cfi_undefined 3096
+; CHECK-NEXT:    .cfi_undefined 3097
+; CHECK-NEXT:    .cfi_undefined 3098
+; CHECK-NEXT:    .cfi_undefined 3099
+; CHECK-NEXT:    .cfi_undefined 3100
+; CHECK-NEXT:    .cfi_undefined 3101
+; CHECK-NEXT:    .cfi_undefined 3102
+; CHECK-NEXT:    .cfi_undefined 3103
+; CHECK-NEXT:    .cfi_undefined 3104
+; CHECK-NEXT:    .cfi_undefined 3105
+; CHECK-NEXT:    .cfi_undefined 3106
+; CHECK-NEXT:    .cfi_undefined 3107
+; CHECK-NEXT:    .cfi_undefined 3108
+; CHECK-NEXT:    .cfi_undefined 3109
+; CHECK-NEXT:    .cfi_undefined 3110
+; CHECK-NEXT:    .cfi_undefined 3111
+; CHECK-NEXT:    .cfi_undefined 3112
+; CHECK-NEXT:    .cfi_undefined 3113
+; CHECK-NEXT:    .cfi_undefined 3114
+; CHECK-NEXT:    .cfi_undefined 3115
+; CHECK-NEXT:    .cfi_undefined 3116
+; CHECK-NEXT:    .cfi_undefined 3117
+; CHECK-NEXT:    .cfi_undefined 3118
+; CHECK-NEXT:    .cfi_undefined 3119
+; CHECK-NEXT:    .cfi_undefined 3120
+; CHECK-NEXT:    .cfi_undefined 3121
+; CHECK-NEXT:    .cfi_undefined 3122
+; CHECK-NEXT:    .cfi_undefined 3123
+; CHECK-NEXT:    .cfi_undefined 3124
+; CHECK-NEXT:    .cfi_undefined 3125
+; CHECK-NEXT:    .cfi_undefined 3126
+; CHECK-NEXT:    .cfi_undefined 3127
+; CHECK-NEXT:    .cfi_undefined 3128
+; CHECK-NEXT:    .cfi_undefined 3129
+; CHECK-NEXT:    .cfi_undefined 3130
+; CHECK-NEXT:    .cfi_undefined 3131
+; CHECK-NEXT:    .cfi_undefined 3132
+; CHECK-NEXT:    .cfi_undefined 3133
+; CHECK-NEXT:    .cfi_undefined 3134
+; CHECK-NEXT:    .cfi_undefined 3135
+; CHECK-NEXT:    .cfi_undefined 3136
+; CHECK-NEXT:    .cfi_undefined 3137
+; CHECK-NEXT:    .cfi_undefined 3138
+; CHECK-NEXT:    .cfi_undefined 3139
+; CHECK-NEXT:    .cfi_undefined 3140
+; CHECK-NEXT:    .cfi_undefined 3141
+; CHECK-NEXT:    .cfi_undefined 3142
+; CHECK-NEXT:    .cfi_undefined 3143
+; CHECK-NEXT:    .cfi_undefined 3144
+; CHECK-NEXT:    .cfi_undefined 3145
+; CHECK-NEXT:    .cfi_undefined 3146
+; CHECK-NEXT:    .cfi_undefined 3147
+; CHECK-NEXT:    .cfi_undefined 3148
+; CHECK-NEXT:    .cfi_undefined 3149
+; CHECK-NEXT:    .cfi_undefined 3150
+; CHECK-NEXT:    .cfi_undefined 3151
+; CHECK-NEXT:    .cfi_undefined 3152
+; CHECK-NEXT:    .cfi_undefined 3153
+; CHECK-NEXT:    .cfi_undefined 3154
+; CHECK-NEXT:    .cfi_undefined 3155
+; CHECK-NEXT:    .cfi_undefined 3156
+; CHECK-NEXT:    .cfi_undefined 3157
+; CHECK-NEXT:    .cfi_undefined 3158
+; CHECK-NEXT:    .cfi_undefined 3159
+; CHECK-NEXT:    .cfi_undefined 3160
+; CHECK-NEXT:    .cfi_undefined 3161
+; CHECK-NEXT:    .cfi_undefined 3162
+; CHECK-NEXT:    .cfi_undefined 3163
+; CHECK-NEXT:    .cfi_undefined 3164
+; CHECK-NEXT:    .cfi_undefined 3165
+; CHECK-NEXT:    .cfi_undefined 3166
+; CHECK-NEXT:    .cfi_undefined 3167
+; CHECK-NEXT:    .cfi_undefined 3168
+; CHECK-NEXT:    .cfi_undefined 3169
+; CHECK-NEXT:    .cfi_undefined 3170
+; CHECK-NEXT:    .cfi_undefined 3171
+; CHECK-NEXT:    .cfi_undefined 3172
+; CHECK-NEXT:    .cfi_undefined 3173
+; CHECK-NEXT:    .cfi_undefined 3174
+; CHECK-NEXT:    .cfi_undefined 3175
+; CHECK-NEXT:    .cfi_undefined 3176
+; CHECK-NEXT:    .cfi_undefined 3177
+; CHECK-NEXT:    .cfi_undefined 3178
+; CHECK-NEXT:    .cfi_undefined 3179
+; CHECK-NEXT:    .cfi_undefined 3180
+; CHECK-NEXT:    .cfi_undefined 3181
+; CHECK-NEXT:    .cfi_undefined 3182
+; CHECK-NEXT:    .cfi_undefined 3183
+; CHECK-NEXT:    .cfi_undefined 3184
+; CHECK-NEXT:    .cfi_undefined 3185
+; CHECK-NEXT:    .cfi_undefined 3186
+; CHECK-NEXT:    .cfi_undefined 3187
+; CHECK-NEXT:    .cfi_undefined 3188
+; CHECK-NEXT:    .cfi_undefined 3189
+; CHECK-NEXT:    .cfi_undefined 3190
+; CHECK-NEXT:    .cfi_undefined 3191
+; CHECK-NEXT:    .cfi_undefined 3192
+; CHECK-NEXT:    .cfi_undefined 3193
+; CHECK-NEXT:    .cfi_undefined 3194
+; CHECK-NEXT:    .cfi_undefined 3195
+; CHECK-NEXT:    .cfi_undefined 3196
+; CHECK-NEXT:    .cfi_undefined 3197
+; CHECK-NEXT:    .cfi_undefined 3198
+; CHECK-NEXT:    .cfi_undefined 3199
+; CHECK-NEXT:    .cfi_undefined 3200
+; CHECK-NEXT:    .cfi_undefined 3201
+; CHECK-NEXT:    .cfi_undefined 3202
+; CHECK-NEXT:    .cfi_undefined 3203
+; CHECK-NEXT:    .cfi_undefined 3204
+; CHECK-NEXT:    .cfi_undefined 3205
+; CHECK-NEXT:    .cfi_undefined 3206
+; CHECK-NEXT:    .cfi_undefined 3207
+; CHECK-NEXT:    .cfi_undefined 3208
+; CHECK-NEXT:    .cfi_undefined 3209
+; CHECK-NEXT:    .cfi_undefined 3210
+; CHECK-NEXT:    .cfi_undefined 3211
+; CHECK-NEXT:    .cfi_undefined 3212
+; CHECK-NEXT:    .cfi_undefined 3213
+; CHECK-NEXT:    .cfi_undefined 3214
+; CHECK-NEXT:    .cfi_undefined 3215
+; CHECK-NEXT:    .cfi_undefined 3216
+; CHECK-NEXT:    .cfi_undefined 3217
+; CHECK-NEXT:    .cfi_undefined 3218
+; CHECK-NEXT:    .cfi_undefined 3219
+; CHECK-NEXT:    .cfi_undefined 3220
+; CHECK-NEXT:    .cfi_undefined 3221
+; CHECK-NEXT:    .cfi_undefined 3222
+; CHECK-NEXT:    .cfi_undefined 3223
+; CHECK-NEXT:    .cfi_undefined 3224
+; CHECK-NEXT:    .cfi_undefined 3225
+; CHECK-NEXT:    .cfi_undefined 3226
+; CHECK-NEXT:    .cfi_undefined 3227
+; CHECK-NEXT:    .cfi_undefined 3228
+; CHECK-NEXT:    .cfi_undefined 3229
+; CHECK-NEXT:    .cfi_undefined 3230
+; CHECK-NEXT:    .cfi_undefined 3231
+; CHECK-NEXT:    .cfi_undefined 3232
+; CHECK-NEXT:    .cfi_undefined 3233
+; CHECK-NEXT:    .cfi_undefined 3234
+; CHECK-NEXT:    .cfi_undefined 3235
+; CHECK-NEXT:    .cfi_undefined 3236
+; CHECK-NEXT:    .cfi_undefined 3237
+; CHECK-NEXT:    .cfi_undefined 3238
+; CHECK-NEXT:    .cfi_undefined 3239
+; CHECK-NEXT:    .cfi_undefined 3240
+; CHECK-NEXT:    .cfi_undefined 3241
+; CHECK-NEXT:    .cfi_undefined 3242
+; CHECK-NEXT:    .cfi_undefined 3243
+; CHECK-NEXT:    .cfi_undefined 3244
+; CHECK-NEXT:    .cfi_undefined 3245
+; CHECK-NEXT:    .cfi_undefined 3246
+; CHECK-NEXT:    .cfi_undefined 3247
+; CHECK-NEXT:    .cfi_undefined 3248
+; CHECK-NEXT:    .cfi_undefined 3249
+; CHECK-NEXT:    .cfi_undefined 3250
+; CHECK-NEXT:    .cfi_undefined 3251
+; CHECK-NEXT:    .cfi_undefined 3252
+; CHECK-NEXT:    .cfi_undefined 3253
+; CHECK-NEXT:    .cfi_undefined 3254
+; CHECK-NEXT:    .cfi_undefined 3255
+; CHECK-NEXT:    .cfi_undefined 3256
+; CHECK-NEXT:    .cfi_undefined 3257
+; CHECK-NEXT:    .cfi_undefined 3258
+; CHECK-NEXT:    .cfi_undefined 3259
+; CHECK-NEXT:    .cfi_undefined 3260
+; CHECK-NEXT:    .cfi_undefined 3261
+; CHECK-NEXT:    .cfi_undefined 3262
+; CHECK-NEXT:    .cfi_undefined 3263
+; CHECK-NEXT:    .cfi_undefined 3264
+; CHECK-NEXT:    .cfi_undefined 3265
+; CHECK-NEXT:    .cfi_undefined 3266
+; CHECK-NEXT:    .cfi_undefined 3267
+; CHECK-NEXT:    .cfi_undefined 3268
+; CHECK-NEXT:    .cfi_undefined 3269
+; CHECK-NEXT:    .cfi_undefined 3270
+; CHECK-NEXT:    .cfi_undefined 3271
+; CHECK-NEXT:    .cfi_undefined 3272
+; CHECK-NEXT:    .cfi_undefined 3273
+; CHECK-NEXT:    .cfi_undefined 3274
+; CHECK-NEXT:    .cfi_undefined 3275
+; CHECK-NEXT:    .cfi_undefined 3276
+; CHECK-NEXT:    .cfi_undefined 3277
+; CHECK-NEXT:    .cfi_undefined 3278
+; CHECK-NEXT:    .cfi_undefined 3279
+; CHECK-NEXT:    .cfi_undefined 3280
+; CHECK-NEXT:    .cfi_undefined 3281
+; CHECK-NEXT:    .cfi_undefined 3282
+; CHECK-NEXT:    .cfi_undefined 3283
+; CHECK-NEXT:    .cfi_undefined 3284
+; CHECK-NEXT:    .cfi_undefined 3285
+; CHECK-NEXT:    .cfi_undefined 3286
+; CHECK-NEXT:    .cfi_undefined 3287
+; CHECK-NEXT:    .cfi_undefined 3288
+; CHECK-NEXT:    .cfi_undefined 3289
+; CHECK-NEXT:    .cfi_undefined 3290
+; CHECK-NEXT:    .cfi_undefined 3291
+; CHECK-NEXT:    .cfi_undefined 3292
+; CHECK-NEXT:    .cfi_undefined 3293
+; CHECK-NEXT:    .cfi_undefined 3294
+; CHECK-NEXT:    .cfi_undefined 3295
+; CHECK-NEXT:    .cfi_undefined 3296
+; CHECK-NEXT:    .cfi_undefined 3297
+; CHECK-NEXT:    .cfi_undefined 3298
+; CHECK-NEXT:    .cfi_undefined 3299
+; CHECK-NEXT:    .cfi_undefined 3300
+; CHECK-NEXT:    .cfi_undefined 3301
+; CHECK-NEXT:    .cfi_undefined 3302
+; CHECK-NEXT:    .cfi_undefined 3303
+; CHECK-NEXT:    .cfi_undefined 3304
+; CHECK-NEXT:    .cfi_undefined 3305
+; CHECK-NEXT:    .cfi_undefined 3306
+; CHECK-NEXT:    .cfi_undefined 3307
+; CHECK-NEXT:    .cfi_undefined 3308
+; CHECK-NEXT:    .cfi_undefined 3309
+; CHECK-NEXT:    .cfi_undefined 3310
+; CHECK-NEXT:    .cfi_undefined 3311
+; CHECK-NEXT:    .cfi_undefined 3312
+; CHECK-NEXT:    .cfi_undefined 3313
+; CHECK-NEXT:    .cfi_undefined 3314
+; CHECK-NEXT:    .cfi_undefined 3315
+; CHECK-NEXT:    .cfi_undefined 3316
+; CHECK-NEXT:    .cfi_undefined 3317
+; CHECK-NEXT:    .cfi_undefined 3318
+; CHECK-NEXT:    .cfi_undefined 3319
+; CHECK-NEXT:    .cfi_undefined 3320
+; CHECK-NEXT:    .cfi_undefined 3321
+; CHECK-NEXT:    .cfi_undefined 3322
+; CHECK-NEXT:    .cfi_undefined 3323
+; CHECK-NEXT:    .cfi_undefined 3324
+; CHECK-NEXT:    .cfi_undefined 3325
+; CHECK-NEXT:    .cfi_undefined 3326
+; CHECK-NEXT:    .cfi_undefined 3327
+; CHECK-NEXT:    .cfi_undefined 32
+; CHECK-NEXT:    .cfi_undefined 33
+; CHECK-NEXT:    .cfi_undefined 34
+; CHECK-NEXT:    .cfi_undefined 35
+; CHECK-NEXT:    .cfi_undefined 36
+; CHECK-NEXT:    .cfi_undefined 37
+; CHECK-NEXT:    .cfi_undefined 38
+; CHECK-NEXT:    .cfi_undefined 39
+; CHECK-NEXT:    .cfi_undefined 40
+; CHECK-NEXT:    .cfi_undefined 41
+; CHECK-NEXT:    .cfi_undefined 42
+; CHECK-NEXT:    .cfi_undefined 43
+; CHECK-NEXT:    .cfi_undefined 44
+; CHECK-NEXT:    .cfi_undefined 45
+; CHECK-NEXT:    .cfi_undefined 46
+; CHECK-NEXT:    .cfi_undefined 47
+; CHECK-NEXT:    .cfi_undefined 48
+; CHECK-NEXT:    .cfi_undefined 49
+; CHECK-NEXT:    .cfi_undefined 50
+; CHECK-NEXT:    .cfi_undefined 51
+; CHECK-NEXT:    .cfi_undefined 52
+; CHECK-NEXT:    .cfi_undefined 53
+; CHECK-NEXT:    .cfi_undefined 54
+; CHECK-NEXT:    .cfi_undefined 55
+; CHECK-NEXT:    .cfi_undefined 56
+; CHECK-NEXT:    .cfi_undefined 57
+; CHECK-NEXT:    .cfi_undefined 58
+; CHECK-NEXT:    .cfi_undefined 59
+; CHECK-NEXT:    .cfi_undefined 60
+; CHECK-NEXT:    .cfi_undefined 61
 ; CHECK-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
 ; CHECK-NEXT:    s_mov_b32 s16, s33
 ; CHECK-NEXT:    s_mov_b32 s33, s32
 ; CHECK-NEXT:    s_or_saveexec_b64 s[18:19], -1
 ; CHECK-NEXT:    buffer_store_dword v41, off, s[0:3], s33 offset:4 ; 4-byte Folded Spill
+; CHECK-NEXT:    .cfi_offset 2601, 256
 ; CHECK-NEXT:    s_mov_b64 exec, s[18:19]
 ; CHECK-NEXT:    v_writelane_b32 v41, s16, 16
-; CHECK-NEXT:    v_writelane_b32 v41, s30, 0
-; CHECK-NEXT:    v_writelane_b32 v41, s31, 1
-; CHECK-NEXT:    v_writelane_b32 v41, s34, 2
-; CHECK-NEXT:    v_writelane_b32 v41, s35, 3
-; CHECK-NEXT:    v_writelane_b32 v41, s36, 4
-; CHECK-NEXT:    v_writelane_b32 v41, s37, 5
-; CHECK-NEXT:    v_writelane_b32 v41, s38, 6
-; CHECK-NEXT:    v_writelane_b32 v41, s39, 7
-; CHECK-NEXT:    v_writelane_b32 v41, s40, 8
-; CHECK-NEXT:    v_writelane_b32 v41, s41, 9
-; CHECK-NEXT:    v_writelane_b32 v41, s42, 10
-; CHECK-NEXT:    v_writelane_b32 v41, s43, 11
-; CHECK-NEXT:    v_writelane_b32 v41, s44, 12
+; CHECK-NEXT:    .cfi_escape 0x10, 0x41, 0x06, 0x90, 0xa9, 0x14, 0xe9, 0x05, 0x40 ;
+; CHECK-NEXT:    .cfi_def_cfa_register 65
 ; CHECK-NEXT:    s_addk_i32 s32, 0x400
-; CHECK-NEXT:    v_writelane_b32 v41, s45, 13
-; CHECK-NEXT:    v_writelane_b32 v41, s46, 14
+; CHECK-NEXT:    buffer_store_dword v40, off, s[0:3], s33 ; 4-byte Folded Spill
+; CHECK-NEXT:    .cfi_escape 0x10, 0xa8, 0x14, 0x10, 0x90, 0xa8, 0x14, 0x16, 0xe9, 0x05, 0x00, 0xe9, 0x07, 0x11, 0x94, 0x08, 0xe9, 0x0c, 0x20, 0x40 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s34, 0
+; CHECK-NEXT:    .cfi_escape 0x10, 0x42, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x00 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s35, 1
+; CHECK-NEXT:    .cfi_escape 0x10, 0x43, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x04 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s36, 2
+; CHECK-NEXT:    .cfi_escape 0x10, 0x44, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x08 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s37, 3
+; CHECK-NEXT:    .cfi_escape 0x10, 0x45, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x0c ;
+; CHECK-NEXT:    v_writelane_b32 v41, s38, 4
+; CHECK-NEXT:    .cfi_escape 0x10, 0x46, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x10 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s39, 5
+; CHECK-NEXT:    .cfi_escape 0x10, 0x47, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x14 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s40, 6
+; CHECK-NEXT:    .cfi_escape 0x10, 0x48, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x18 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s41, 7
+; CHECK-NEXT:    .cfi_escape 0x10, 0x49, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x1c ;
+; CHECK-NEXT:    v_writelane_b32 v41, s42, 8
+; CHECK-NEXT:    .cfi_escape 0x10, 0x4a, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x20 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s43, 9
+; CHECK-NEXT:    .cfi_escape 0x10, 0x4b, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x24 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s44, 10
+; CHECK-NEXT:    .cfi_escape 0x10, 0x4c, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x28 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s45, 11
+; CHECK-NEXT:    .cfi_escape 0x10, 0x4d, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x2c ;
+; CHECK-NEXT:    v_writelane_b32 v41, s46, 12
+; CHECK-NEXT:    .cfi_escape 0x10, 0x4e, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x30 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s47, 13
+; CHECK-NEXT:    .cfi_escape 0x10, 0x4f, 0x06, 0x90, 0xbe, 0x14, 0xe9, 0x05, 0x34 ;
+; CHECK-NEXT:    v_writelane_b32 v41, s30, 14
+; CHECK-NEXT:    v_writelane_b32 v41, s31, 15
+; CHECK-NEXT:    .cfi_escape 0x10, 0x10, 0x0e, 0x90, 0xbe, 0x14, 0x9d, 0x20, 0xc0, 0x03, 0x90, 0xbe, 0x14, 0x9d, 0x20, 0xe0, 0x03 ;
 ; CHECK-NEXT:    s_mov_b64 s[40:41], s[4:5]
 ; CHECK-NEXT:    ;DEBUG_VALUE: dummy:dummy <- undef
 ; CHECK-NEXT:  .Ltmp0:
@@ -45,10 +498,8 @@ define weak_odr void @test(i32 %0) !dbg !34 {
 ; CHECK-NEXT:    s_getpc_b64 s[4:5]
 ; CHECK-NEXT:    s_add_u32 s4, s4, __kmpc_alloc_shared@gotpcrel32@lo+4
 ; CHECK-NEXT:    s_addc_u32 s5, s5, __kmpc_alloc_shared@gotpcrel32@hi+12
-; CHECK-NEXT:    v_writelane_b32 v41, s47, 15
 ; CHECK-NEXT:    s_load_dwordx2 s[46:47], s[4:5], 0x0
 ; CHECK-NEXT:    s_mov_b64 s[4:5], s[40:41]
-; CHECK-NEXT:    buffer_store_dword v40, off, s[0:3], s33 ; 4-byte Folded Spill
 ; CHECK-NEXT:    v_mov_b32_e32 v40, v31
 ; CHECK-NEXT:    s_mov_b64 s[34:35], s[6:7]
 ; CHECK-NEXT:    s_mov_b32 s42, s15
@@ -74,28 +525,29 @@ define weak_odr void @test(i32 %0) !dbg !34 {
 ; CHECK-NEXT:    .loc 1 0 9 is_stmt 0 ; dummy:0:9
 ; CHECK-NEXT:    buffer_load_dword v40, off, s[0:3], s33 ; 4-byte Folded Reload
 ; CHECK-NEXT:    v_mov_b32_e32 v2, 0
+; CHECK-NEXT:    v_readlane_b32 s30, v41, 14
 ; CHECK-NEXT:    flat_store_dword v[0:1], v2
-; CHECK-NEXT:    v_readlane_b32 s47, v41, 15
-; CHECK-NEXT:    v_readlane_b32 s46, v41, 14
-; CHECK-NEXT:    v_readlane_b32 s45, v41, 13
-; CHECK-NEXT:    v_readlane_b32 s44, v41, 12
-; CHECK-NEXT:    v_readlane_b32 s43, v41, 11
-; CHECK-NEXT:    v_readlane_b32 s42, v41, 10
-; CHECK-NEXT:    v_readlane_b32 s41, v41, 9
-; CHECK-NEXT:    v_readlane_b32 s40, v41, 8
-; CHECK-NEXT:    v_readlane_b32 s39, v41, 7
-; CHECK-NEXT:    v_readlane_b32 s38, v41, 6
-; CHECK-NEXT:    v_readlane_b32 s37, v41, 5
-; CHECK-NEXT:    v_readlane_b32 s36, v41, 4
-; CHECK-NEXT:    v_readlane_b32 s35, v41, 3
-; CHECK-NEXT:    v_readlane_b32 s34, v41, 2
-; CHECK-NEXT:    v_readlane_b32 s31, v41, 1
-; CHECK-NEXT:    v_readlane_b32 s30, v41, 0
+; CHECK-NEXT:    v_readlane_b32 s31, v41, 15
+; CHECK-NEXT:    v_readlane_b32 s47, v41, 13
+; CHECK-NEXT:    v_readlane_b32 s46, v41, 12
+; CHECK-NEXT:    v_readlane_b32 s45, v41, 11
+; CHECK-NEXT:    v_readlane_b32 s44, v41, 10
+; CHECK-NEXT:    v_readlane_b32 s43, v41, 9
+; CHECK-NEXT:    v_readlane_b32 s42, v41, 8
+; CHECK-NEXT:    v_readlane_b32 s41, v41, 7
+; CHECK-NEXT:    v_readlane_b32 s40, v41, 6
+; CHECK-NEXT:    v_readlane_b32 s39, v41, 5
+; CHECK-NEXT:    v_readlane_b32 s38, v41, 4
+; CHECK-NEXT:    v_readlane_b32 s37, v41, 3
+; CHECK-NEXT:    v_readlane_b32 s36, v41, 2
+; CHECK-NEXT:    v_readlane_b32 s35, v41, 1
+; CHECK-NEXT:    v_readlane_b32 s34, v41, 0
 ; CHECK-NEXT:    v_readlane_b32 s4, v41, 16
 ; CHECK-NEXT:    s_or_saveexec_b64 s[6:7], -1
 ; CHECK-NEXT:    buffer_load_dword v41, off, s[0:3], s33 offset:4 ; 4-byte Folded Reload
 ; CHECK-NEXT:    s_mov_b64 exec, s[6:7]
 ; CHECK-NEXT:    s_addk_i32 s32, 0xfc00
+; CHECK-NEXT:    .cfi_def_cfa_register 64
 ; CHECK-NEXT:    s_mov_b32 s33, s4
 ; CHECK-NEXT:    s_waitcnt vmcnt(0) lgkmcnt(0)
 ; CHECK-NEXT:    s_setpc_b64 s[30:31]

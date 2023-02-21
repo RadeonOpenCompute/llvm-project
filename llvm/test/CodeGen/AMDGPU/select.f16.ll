@@ -1992,9 +1992,9 @@ define <16 x half> @v_vselect_v16f16(<16 x half> %a, <16 x half> %b, <16 x i32> 
 ; VI-NEXT:    v_cndmask_b32_e64 v7, v15, v7, s[16:17]
 ; VI-NEXT:    v_or_b32_sdwa v5, v5, v9 dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:WORD_0 src1_sel:DWORD
 ; VI-NEXT:    v_lshlrev_b32_e32 v9, 16, v16
+; VI-NEXT:    v_readlane_b32 s30, v31, 0
 ; VI-NEXT:    v_or_b32_sdwa v6, v6, v9 dst_sel:DWORD dst_unused:UNUSED_PAD src0_sel:WORD_0 src1_sel:DWORD
 ; VI-NEXT:    v_readlane_b32 s31, v31, 1
-; VI-NEXT:    v_readlane_b32 s30, v31, 0
 ; VI-NEXT:    s_waitcnt vmcnt(0)
 ; VI-NEXT:    v_cmp_eq_u32_e32 vcc, 0, v12
 ; VI-NEXT:    v_cndmask_b32_e32 v8, v13, v11, vcc

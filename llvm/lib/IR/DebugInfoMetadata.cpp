@@ -731,23 +731,22 @@ Constant *DIDerivedType::getDiscriminantValue() const {
   return nullptr;
 }
 
-DIDerivedType *
-DIDerivedType::getImpl(LLVMContext &Context, unsigned Tag, MDString *Name,
-                       Metadata *File, unsigned Line, Metadata *Scope,
-                       Metadata *BaseType, uint64_t SizeInBits,
-                       uint32_t AlignInBits, uint64_t OffsetInBits,
-                       std::optional<unsigned> DWARFAddressSpace, DIFlags Flags,
-                       Metadata *ExtraData, Metadata *Annotations,
-                       StorageType Storage, bool ShouldCreate) {
+DIDerivedType *DIDerivedType::getImpl(
+    LLVMContext &Context, unsigned Tag, MDString *Name, Metadata *File,
+    unsigned Line, Metadata *Scope, Metadata *BaseType, uint64_t SizeInBits,
+    uint32_t AlignInBits, uint64_t OffsetInBits,
+    std::optional<unsigned> DWARFAddressSpace, dwarf::MemorySpace MS,
+    DIFlags Flags, Metadata *ExtraData, Metadata *Annotations,
+    StorageType Storage, bool ShouldCreate) {
   assert(isCanonical(Name) && "Expected canonical MDString");
   DEFINE_GETIMPL_LOOKUP(DIDerivedType,
                         (Tag, Name, File, Line, Scope, BaseType, SizeInBits,
-                         AlignInBits, OffsetInBits, DWARFAddressSpace, Flags,
-                         ExtraData, Annotations));
+                         AlignInBits, OffsetInBits, DWARFAddressSpace, MS,
+                         Flags, ExtraData, Annotations));
   Metadata *Ops[] = {File, Scope, Name, BaseType, ExtraData, Annotations};
   DEFINE_GETIMPL_STORE(DIDerivedType,
                        (Tag, Line, SizeInBits, AlignInBits, OffsetInBits,
-                        DWARFAddressSpace, Flags),
+                        DWARFAddressSpace, MS, Flags),
                        Ops);
 }
 
@@ -1269,15 +1268,16 @@ DIGlobalVariable::getImpl(LLVMContext &Context, Metadata *Scope, MDString *Name,
                           MDString *LinkageName, Metadata *File, unsigned Line,
                           Metadata *Type, bool IsLocalToUnit, bool IsDefinition,
                           Metadata *StaticDataMemberDeclaration,
-                          Metadata *TemplateParams, uint32_t AlignInBits,
-                          Metadata *Annotations, StorageType Storage,
-                          bool ShouldCreate) {
+                          Metadata *TemplateParams, dwarf::MemorySpace MS,
+                          uint32_t AlignInBits, Metadata *Annotations,
+                          StorageType Storage, bool ShouldCreate) {
   assert(isCanonical(Name) && "Expected canonical MDString");
   assert(isCanonical(LinkageName) && "Expected canonical MDString");
-  DEFINE_GETIMPL_LOOKUP(
-      DIGlobalVariable,
-      (Scope, Name, LinkageName, File, Line, Type, IsLocalToUnit, IsDefinition,
-       StaticDataMemberDeclaration, TemplateParams, AlignInBits, Annotations));
+  DEFINE_GETIMPL_LOOKUP(DIGlobalVariable,
+                        (Scope, Name, LinkageName, File, Line, Type,
+                         IsLocalToUnit, IsDefinition,
+                         StaticDataMemberDeclaration, TemplateParams, MS,
+                         AlignInBits, Annotations));
   Metadata *Ops[] = {Scope,
                      Name,
                      File,
@@ -1288,32 +1288,46 @@ DIGlobalVariable::getImpl(LLVMContext &Context, Metadata *Scope, MDString *Name,
                      TemplateParams,
                      Annotations};
   DEFINE_GETIMPL_STORE(DIGlobalVariable,
-                       (Line, IsLocalToUnit, IsDefinition, AlignInBits), Ops);
+                       (Line, IsLocalToUnit, IsDefinition, MS, AlignInBits),
+                       Ops);
 }
 
 DILocalVariable *
 DILocalVariable::getImpl(LLVMContext &Context, Metadata *Scope, MDString *Name,
                          Metadata *File, unsigned Line, Metadata *Type,
-                         unsigned Arg, DIFlags Flags, uint32_t AlignInBits,
-                         Metadata *Annotations, StorageType Storage,
-                         bool ShouldCreate) {
+                         unsigned Arg, DIFlags Flags, dwarf::MemorySpace MS,
+                         uint32_t AlignInBits, Metadata *Annotations,
+                         StorageType Storage, bool ShouldCreate) {
   // 64K ought to be enough for any frontend.
   assert(Arg <= UINT16_MAX && "Expected argument number to fit in 16-bits");
 
   assert(Scope && "Expected scope");
   assert(isCanonical(Name) && "Expected canonical MDString");
   DEFINE_GETIMPL_LOOKUP(DILocalVariable, (Scope, Name, File, Line, Type, Arg,
-                                          Flags, AlignInBits, Annotations));
+                                          Flags, MS, AlignInBits, Annotations));
   Metadata *Ops[] = {Scope, Name, File, Type, Annotations};
-  DEFINE_GETIMPL_STORE(DILocalVariable, (Line, Arg, Flags, AlignInBits), Ops);
+  DEFINE_GETIMPL_STORE(DILocalVariable, (Line, Arg, Flags, MS, AlignInBits),
+                       Ops);
+}
+
+DIFragment::DIFragment(LLVMContext &C, StorageType Storage)
+    : DIObject(C, DIFragmentKind, Storage, dwarf::DW_TAG_dwarf_procedure, {}) {
+  assert(Storage != Uniqued);
+}
+
+DIFragment *DIFragment::getImpl(LLVMContext &Context, StorageType Storage) {
+  assert(Storage != Uniqued && "Cannot unique DIFragment");
+  return storeImpl(new (0, Storage) DIFragment(Context, Storage), Storage);
 }
 
 DIVariable::DIVariable(LLVMContext &C, unsigned ID, StorageType Storage,
                        signed Line, ArrayRef<Metadata *> Ops,
-                       uint32_t AlignInBits)
-    : DINode(C, ID, Storage, dwarf::DW_TAG_variable, Ops), Line(Line) {
+                       dwarf::MemorySpace MS, uint32_t AlignInBits)
+    : DIObject(C, ID, Storage, dwarf::DW_TAG_variable, Ops), Line(Line),
+      MemorySpace(MS) {
   SubclassData32 = AlignInBits;
 }
+
 std::optional<uint64_t> DIVariable::getSizeInBits() const {
   // This is used by the Verifier so be mindful of broken types.
   const Metadata *RawType = getRawType();
@@ -2063,6 +2077,83 @@ DIExpression *DIExpression::appendExt(const DIExpression *Expr,
   return appendToStack(Expr, getExtOps(FromSize, ToSize, Signed));
 }
 
+StringRef DIOp::getAsmName(const Variant &V) {
+  return std::visit(makeVisitor([](auto &&Op) { return Op.getAsmName(); }), V);
+}
+
+unsigned DIOp::getBitcodeID(const Variant &V) {
+  return std::visit(makeVisitor([](auto &&Op) { return Op.getBitcodeID(); }), V);
+}
+
+namespace llvm {
+namespace DIOp {
+#define HANDLE_OP0(NAME)                                                       \
+  hash_code hash_value(const NAME &O) { return llvm::hash_value(0); }
+#define HANDLE_OP1(NAME, TYPE1, NAME1)                                         \
+  hash_code hash_value(const NAME &O) { return llvm::hash_value(O.NAME1); }
+#define HANDLE_OP2(NAME, TYPE1, NAME1, TYPE2, NAME2)                           \
+  hash_code hash_value(const NAME &O) { return hash_combine(O.NAME1, O.NAME2); }
+#include "llvm/IR/DIExprOps.def"
+} // namespace DIOp
+} // namespace llvm
+
+DIExprBuilder::DIExprBuilder(LLVMContext &C) : C(C) {}
+DIExprBuilder::DIExprBuilder(LLVMContext &C,
+                         std::initializer_list<DIOp::Variant> IL)
+    : C(C), Elements(IL) {}
+DIExprBuilder::DIExprBuilder(const DIExpr &E)
+    : C(E.getContext()), Elements(E.Elements) {}
+
+DIExprBuilder &DIExprBuilder::append(DIOp::Variant O) {
+  Elements.push_back(O);
+  return *this;
+}
+
+DIExprBuilder::Iterator DIExprBuilder::insert(Iterator I, DIOp::Variant O) {
+  return Elements.insert(I.Op, O);
+}
+
+DIExprBuilder::Iterator DIExprBuilder::erase(Iterator I) {
+  return Elements.erase(I.Op);
+}
+
+DIExprBuilder::Iterator DIExprBuilder::erase(Iterator From, Iterator To) {
+  return Elements.erase(From.Op, To.Op);
+}
+
+DIExpr *DIExprBuilder::intoExpr() {
+#ifndef NDEBUG
+  assert(!StateIsUnspecified);
+  StateIsUnspecified = true;
+#endif
+  return DIExpr::get(C, std::move(Elements));
+}
+
+DIExprBuilder &DIExprBuilder::removeReferrerIndirection(Type *PointeeType) {
+  for (auto &&I = begin(); I != end(); ++I) {
+    if (auto *ReferrerOp = std::get_if<DIOp::Referrer>(&*I)) {
+      auto *ResultType = ReferrerOp->getResultType();
+      assert(ResultType->isPointerTy() &&
+             "Expected pointer type for translated alloca");
+      ReferrerOp->setResultType(PointeeType);
+      ++I;
+      if (I != end() && std::holds_alternative<DIOp::Deref>(*I))
+        I = erase(I) - 1;
+      else
+        I = insert<DIOp::AddrOf>(I, ResultType->getPointerAddressSpace());
+    }
+  }
+  return *this;
+}
+
+DIExpr *DIExpr::getImpl(LLVMContext &Context,
+                        SmallVector<DIOp::Variant> &&Elements,
+                        StorageType Storage, bool ShouldCreate) {
+  assert(Storage != Distinct && "DIExpr cannot be distinct");
+  DEFINE_GETIMPL_LOOKUP(DIExpr, (Elements));
+  DEFINE_GETIMPL_STORE_NO_OPS(DIExpr, (std::move(Elements)));
+}
+
 DIGlobalVariableExpression *
 DIGlobalVariableExpression::getImpl(LLVMContext &Context, Metadata *Variable,
                                     Metadata *Expression, StorageType Storage,
@@ -2178,4 +2269,13 @@ void DIArgList::dropAllReferences(bool Untrack) {
     untrack();
   Args.clear();
   ReplaceableMetadataImpl::resolveAllUses(/* ResolveUsers */ false);
+}
+
+DILifetime *DILifetime::getImpl(LLVMContext &Context, Metadata *Obj,
+                                Metadata *Loc, ArrayRef<Metadata *> Args,
+                                StorageType Storage) {
+  Metadata *Ops[] = {Obj, Loc};
+  return storeImpl(new (std::size(Ops) + Args.size(), Storage)
+                       DILifetime(Context, Storage, Ops, Args),
+                   Storage);
 }

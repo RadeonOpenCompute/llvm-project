@@ -147,9 +147,20 @@ enum LocationAtom {
 };
 
 enum LlvmUserLocationAtom {
-#define HANDLE_DW_OP_LLVM_USEROP(ID, NAME) DW_OP_LLVM_##NAME = ID,
+#define HANDLE_DW_OP_LLVM_USEROP(ID, NAME) DW_OP_LLVM_USER_##NAME = ID,
 #include "llvm/BinaryFormat/Dwarf.def"
 };
+
+inline std::optional<LlvmUserLocationAtom> getUserOp(uint8_t Op) {
+  switch (Op) {
+#define HANDLE_HETEROGENEOUS_OP(NAME)                                          \
+  case DW_OP_LLVM_##NAME:                                                      \
+    return DW_OP_LLVM_USER_##NAME;
+#include "llvm/BinaryFormat/Dwarf.def"
+  default:
+    return std::nullopt;
+  }
+}
 
 enum TypeKind : uint8_t {
 #define HANDLE_DW_ATE(ID, NAME, VERSION, VENDOR) DW_ATE_##NAME = ID,
@@ -426,6 +437,19 @@ enum CallingConvention {
   DW_CC_hi_user = 0xff
 };
 
+enum MemorySpace {
+#define HANDLE_DW_MSPACE(ID, NAME) DW_MSPACE_LLVM_##NAME = ID,
+#include "llvm/BinaryFormat/Dwarf.def"
+  DW_MSPACE_LLVM_lo_user = 0x8000,
+  DW_MSPACE_LLVM_hi_user = 0xffff
+};
+
+enum AddressSpace {
+#define HANDLE_DW_ASPACE(ID, NAME) DW_ASPACE_LLVM_##NAME = ID,
+#define HANDLE_DW_ASPACE_PRED(ID, NAME, PRED) DW_ASPACE_LLVM_##NAME = ID,
+#include "llvm/BinaryFormat/Dwarf.def"
+};
+
 enum InlineAttribute {
   // Inline codes
   DW_INL_not_inlined = 0x00,
@@ -670,6 +694,8 @@ StringRef IndexString(unsigned Idx);
 StringRef FormatString(DwarfFormat Format);
 StringRef FormatString(bool IsDWARF64);
 StringRef RLEString(unsigned RLE);
+StringRef MemorySpaceString(unsigned MS);
+StringRef AddressSpaceString(unsigned AS, llvm::Triple TT);
 /// @}
 
 /// \defgroup DwarfConstantsParsing Dwarf constants parsing functions
@@ -689,6 +715,7 @@ unsigned getSubOperationEncoding(unsigned OpEncoding,
 unsigned getVirtuality(StringRef VirtualityString);
 unsigned getLanguage(StringRef LanguageString);
 unsigned getCallingConvention(StringRef LanguageString);
+unsigned getMemorySpace(StringRef LanguageString);
 unsigned getAttributeEncoding(StringRef EncodingString);
 unsigned getMacinfo(StringRef MacinfoString);
 unsigned getMacro(StringRef MacroString);

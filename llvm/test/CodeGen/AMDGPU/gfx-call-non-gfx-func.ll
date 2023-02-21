@@ -13,6 +13,7 @@ define amdgpu_gfx void @gfx_func() {
 ; SDAG-NEXT:    s_or_saveexec_b64 s[34:35], -1
 ; SDAG-NEXT:    buffer_store_dword v40, off, s[0:3], s33 ; 4-byte Folded Spill
 ; SDAG-NEXT:    s_mov_b64 exec, s[34:35]
+; SDAG-NEXT:    s_addk_i32 s32, 0x400
 ; SDAG-NEXT:    v_writelane_b32 v40, s4, 0
 ; SDAG-NEXT:    v_writelane_b32 v40, s5, 1
 ; SDAG-NEXT:    v_writelane_b32 v40, s6, 2
@@ -40,14 +41,13 @@ define amdgpu_gfx void @gfx_func() {
 ; SDAG-NEXT:    v_writelane_b32 v40, s28, 24
 ; SDAG-NEXT:    v_writelane_b32 v40, s29, 25
 ; SDAG-NEXT:    v_writelane_b32 v40, s30, 26
+; SDAG-NEXT:    v_writelane_b32 v40, s31, 27
 ; SDAG-NEXT:    s_mov_b32 s35, extern_c_func@abs32@hi
 ; SDAG-NEXT:    s_mov_b32 s34, extern_c_func@abs32@lo
 ; SDAG-NEXT:    s_mov_b64 s[8:9], 0
-; SDAG-NEXT:    s_addk_i32 s32, 0x400
-; SDAG-NEXT:    v_writelane_b32 v40, s31, 27
 ; SDAG-NEXT:    s_swappc_b64 s[30:31], s[34:35]
-; SDAG-NEXT:    v_readlane_b32 s31, v40, 27
 ; SDAG-NEXT:    v_readlane_b32 s30, v40, 26
+; SDAG-NEXT:    v_readlane_b32 s31, v40, 27
 ; SDAG-NEXT:    v_readlane_b32 s29, v40, 25
 ; SDAG-NEXT:    v_readlane_b32 s28, v40, 24
 ; SDAG-NEXT:    v_readlane_b32 s27, v40, 23
@@ -90,6 +90,7 @@ define amdgpu_gfx void @gfx_func() {
 ; GISEL-NEXT:    s_or_saveexec_b64 s[34:35], -1
 ; GISEL-NEXT:    buffer_store_dword v40, off, s[0:3], s33 ; 4-byte Folded Spill
 ; GISEL-NEXT:    s_mov_b64 exec, s[34:35]
+; GISEL-NEXT:    s_addk_i32 s32, 0x400
 ; GISEL-NEXT:    v_writelane_b32 v40, s4, 0
 ; GISEL-NEXT:    v_writelane_b32 v40, s5, 1
 ; GISEL-NEXT:    v_writelane_b32 v40, s6, 2
@@ -117,14 +118,13 @@ define amdgpu_gfx void @gfx_func() {
 ; GISEL-NEXT:    v_writelane_b32 v40, s28, 24
 ; GISEL-NEXT:    v_writelane_b32 v40, s29, 25
 ; GISEL-NEXT:    v_writelane_b32 v40, s30, 26
+; GISEL-NEXT:    v_writelane_b32 v40, s31, 27
 ; GISEL-NEXT:    s_mov_b32 s34, extern_c_func@abs32@lo
 ; GISEL-NEXT:    s_mov_b32 s35, extern_c_func@abs32@hi
 ; GISEL-NEXT:    s_mov_b64 s[8:9], 0
-; GISEL-NEXT:    s_addk_i32 s32, 0x400
-; GISEL-NEXT:    v_writelane_b32 v40, s31, 27
 ; GISEL-NEXT:    s_swappc_b64 s[30:31], s[34:35]
-; GISEL-NEXT:    v_readlane_b32 s31, v40, 27
 ; GISEL-NEXT:    v_readlane_b32 s30, v40, 26
+; GISEL-NEXT:    v_readlane_b32 s31, v40, 27
 ; GISEL-NEXT:    v_readlane_b32 s29, v40, 25
 ; GISEL-NEXT:    v_readlane_b32 s28, v40, 24
 ; GISEL-NEXT:    v_readlane_b32 s27, v40, 23

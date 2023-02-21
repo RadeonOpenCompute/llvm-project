@@ -1290,6 +1290,31 @@ static bool emitDebugLabelComment(const MachineInstr *MI, AsmPrinter &AP) {
   return true;
 }
 
+/// This method handles the target-independent form
+/// of DBG_DEF, returning true if it was able to do so.  A false return
+/// means the target will need to handle MI in EmitInstruction.
+bool AsmPrinter::emitDebugComment(const MachineInstr *MI) {
+  assert(MI->isDebugInstr());
+
+  if (!isVerbose())
+    return true;
+
+  switch(MI->getOpcode()) {
+      case TargetOpcode::DBG_DEF:
+      case TargetOpcode::DBG_KILL:
+        // FIXME(KZHURAVL): Implement for def/kill.
+        return true;
+      case TargetOpcode::DBG_VALUE:
+      case TargetOpcode::DBG_VALUE_LIST:
+        return emitDebugValueComment(MI, *this);
+      case TargetOpcode::DBG_LABEL:
+        return emitDebugLabelComment(MI, *this);
+      default:
+        break;
+  }
+  return false;
+}
+
 AsmPrinter::CFISection
 AsmPrinter::getFunctionCFISectionType(const Function &F) const {
   // Ignore functions that won't get emitted.
@@ -1765,11 +1790,13 @@ void AsmPrinter::emitFunctionBody() {
       case TargetOpcode::INLINEASM_BR:
         emitInlineAsm(&MI);
         break;
+      case TargetOpcode::DBG_DEF:
+      case TargetOpcode::DBG_KILL:
       case TargetOpcode::DBG_VALUE:
       case TargetOpcode::DBG_VALUE_LIST:
-        if (isVerbose()) {
-          if (!emitDebugValueComment(&MI, *this))
-            emitInstruction(&MI);
+      case TargetOpcode::DBG_LABEL:
+        if(!emitDebugComment(&MI)) {
+          emitInstruction(&MI);
         }
         break;
       case TargetOpcode::DBG_INSTR_REF:
@@ -1780,12 +1807,6 @@ void AsmPrinter::emitFunctionBody() {
       case TargetOpcode::DBG_PHI:
         // This instruction is only used to label a program point, it's purely
         // meta information.
-        break;
-      case TargetOpcode::DBG_LABEL:
-        if (isVerbose()) {
-          if (!emitDebugLabelComment(&MI, *this))
-            emitInstruction(&MI);
-        }
         break;
       case TargetOpcode::IMPLICIT_DEF:
         if (isVerbose()) emitImplicitDef(&MI);
@@ -2090,7 +2111,7 @@ void AsmPrinter::emitGlobalGOTEquivs() {
     emitGlobalVariable(GV);
 }
 
-void AsmPrinter::emitGlobalAlias(Module &M, const GlobalAlias &GA) {
+void AsmPrinter::emitGlobalAlias(const Module &M, const GlobalAlias &GA) {
   MCSymbol *Name = getSymbol(&GA);
   bool IsFunction = GA.getValueType()->isFunctionTy();
   // Treat bitcasts of functions as functions also. This is important at least

@@ -3226,16 +3226,20 @@ public:
     llvm::Value *Value;
     llvm::Type *ElementType;
     unsigned Alignment;
-    ParamValue(llvm::Value *V, llvm::Type *T, unsigned A)
-        : Value(V), ElementType(T), Alignment(A) {}
+    std::optional<Address> DebugAddr;
+    ParamValue(llvm::Value *V, llvm::Type *T, unsigned A,
+               std::optional<Address> DebugAddr)
+        : Value(V), ElementType(T), Alignment(A), DebugAddr(DebugAddr) {}
+
   public:
     static ParamValue forDirect(llvm::Value *value) {
-      return ParamValue(value, nullptr, 0);
+      return ParamValue(value, nullptr, 0, std::nullopt);
     }
-    static ParamValue forIndirect(Address addr) {
+    static ParamValue
+    forIndirect(Address addr, std::optional<Address> DebugAddr = std::nullopt) {
       assert(!addr.getAlignment().isZero());
       return ParamValue(addr.getPointer(), addr.getElementType(),
-                        addr.getAlignment().getQuantity());
+                        addr.getAlignment().getQuantity(), DebugAddr);
     }
 
     bool isIndirect() const { return Alignment != 0; }
@@ -3251,6 +3255,8 @@ public:
       return Address(Value, ElementType, CharUnits::fromQuantity(Alignment),
                      KnownNonNull);
     }
+
+    std::optional<Address> getDebugAddr() const { return DebugAddr; }
   };
 
   /// EmitParmDecl - Emit a ParmVarDecl or an ImplicitParamDecl.

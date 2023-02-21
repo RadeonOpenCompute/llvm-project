@@ -471,6 +471,7 @@ enum Kind {
   DwarfVirtuality,  // DW_VIRTUALITY_foo
   DwarfLang,        // DW_LANG_foo
   DwarfCC,          // DW_CC_foo
+  DwarfMSpaceLLVM,  // DW_MSPACE_LLVM_foo
   EmissionKind,     // lineTablesOnly
   NameTableKind,    // GNU
   DwarfOp,          // DW_OP_foo
@@ -478,6 +479,7 @@ enum Kind {
   DISPFlag,         // DISPFlagFoo
   DwarfMacinfo,     // DW_MACINFO_foo
   ChecksumKind,     // CSK_foo
+  DIOp,             // DIOpFoo
 
   // Type valued tokens (TyVal).
   Type,

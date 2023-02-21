@@ -12,6 +12,7 @@
 ; RUN:   | FileCheck -match-full-lines -strict-whitespace -check-prefix=GCN-O3 %s
 
 ; REQUIRES: asserts
+; REQUIRES: some-fixes
 
 ; GCN-O0:Target Library Information
 ; GCN-O0-NEXT:Target Pass Configuration

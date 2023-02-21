@@ -26,6 +26,7 @@
 #include "llvm/CodeGen/MachinePassRegistry.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/RegAllocRegistry.h"
+#include "llvm/IR/HeterogeneousDebugVerify.h"
 #include "llvm/IR/IRPrintingPasses.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassInstrumentation.h"
@@ -1051,6 +1052,8 @@ bool TargetPassConfig::addCoreISelPasses() {
 }
 
 bool TargetPassConfig::addISelPasses() {
+  addPass(createHeterogeneousDebugVerifyLegacyPass(TM->getOptLevel()));
+
   if (TM->useEmulatedTLS())
     addPass(createLowerEmuTLSPass());
 
