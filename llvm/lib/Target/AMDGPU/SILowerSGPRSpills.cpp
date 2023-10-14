@@ -30,6 +30,11 @@ using namespace llvm;
 
 using MBBVector = SmallVector<MachineBasicBlock *, 4>;
 
+static cl::opt<bool>
+    LegacySGPRSpillLowering("amdgpu-legacy-sgpr-spill-lowering",
+                            cl::desc("Enable the legacy SGPR spill lowering"),
+                            cl::ReallyHidden, cl::init(false));
+
 namespace {
 
 class SILowerSGPRSpills : public MachineFunctionPass {
@@ -53,6 +58,12 @@ public:
   bool spillCalleeSavedRegs(MachineFunction &MF,
                             SmallVectorImpl<int> &CalleeSavedFIs);
   void extendWWMVirtRegLiveness(MachineFunction &MF, LiveIntervals *LIS);
+
+  void legacySpillLowering(MachineFunction &MF, BitVector &SpillFIs,
+                           bool &NewReservedRegs);
+  void lowerSpills(MachineFunction &MF, SmallVectorImpl<int> &CalleeSavedFIs,
+                   BitVector &SpillFIs, bool &NewReservedRegs,
+                   bool &SpilledToVirtVGPRLanes);
 
   bool runOnMachineFunction(MachineFunction &MF) override;
 
@@ -299,6 +310,93 @@ void SILowerSGPRSpills::extendWWMVirtRegLiveness(MachineFunction &MF,
   }
 }
 
+// The fallback legacy spill method.
+void SILowerSGPRSpills::legacySpillLowering(MachineFunction &MF,
+                                            BitVector &SpillFIs,
+                                            bool &NewReservedRegs) {
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  SIMachineFunctionInfo *FuncInfo = MF.getInfo<SIMachineFunctionInfo>();
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : llvm::make_early_inc_range(MBB)) {
+      if (!TII->isSGPRSpill(MI))
+        continue;
+
+      int FI = TII->getNamedOperand(MI, AMDGPU::OpName::addr)->getIndex();
+      assert(MFI.getStackID(FI) == TargetStackID::SGPRSpill);
+
+      if (FuncInfo->allocateSGPRSpillToVGPRLane(MF, FI, true)) {
+        NewReservedRegs = true;
+        bool Spilled = TRI->eliminateSGPRToVGPRSpillFrameIndex(
+            MI, FI, nullptr, Indexes, LIS, true);
+        if (!Spilled)
+          llvm_unreachable(
+              "failed to spill SGPR to physical VGPR lane when allocated");
+      }
+      SpillFIs.set(FI);
+    }
+  }
+}
+
+// The improved method that spills sgprs into lanes of virtual vgprs. The
+// regalloc will efficiently allocate them with physical registers.
+void SILowerSGPRSpills::lowerSpills(MachineFunction &MF,
+                                    SmallVectorImpl<int> &CalleeSavedFIs,
+                                    BitVector &SpillFIs, bool &NewReservedRegs,
+                                    bool &SpilledToVirtVGPRLanes) {
+  MachineFrameInfo &MFI = MF.getFrameInfo();
+  SIMachineFunctionInfo *FuncInfo = MF.getInfo<SIMachineFunctionInfo>();
+  for (MachineBasicBlock &MBB : MF) {
+    for (MachineInstr &MI : llvm::make_early_inc_range(MBB)) {
+      if (!TII->isSGPRSpill(MI))
+        continue;
+
+      int FI = TII->getNamedOperand(MI, AMDGPU::OpName::addr)->getIndex();
+      assert(MFI.getStackID(FI) == TargetStackID::SGPRSpill);
+
+      bool IsCalleeSaveSGPRSpill = llvm::is_contained(CalleeSavedFIs, FI);
+      if (IsCalleeSaveSGPRSpill) {
+        // Spill callee-saved SGPRs into physical VGPR lanes.
+
+        // TODO: This is to ensure the CFIs are static for efficient frame
+        // unwinding in the debugger. Spilling them into virtual VGPR lanes
+        // involve regalloc to allocate the physical VGPRs and that might
+        // cause intermediate spill/split of such liveranges for successful
+        // allocation. This would result in broken CFI encoding unless the
+        // regalloc aware CFI generation to insert new CFIs along with the
+        // intermediate spills is implemented. There is no such support
+        // currently exist in the LLVM compiler.
+        if (FuncInfo->allocateSGPRSpillToVGPRLane(MF, FI, true)) {
+          NewReservedRegs = true;
+          bool Spilled = TRI->eliminateSGPRToVGPRSpillFrameIndex(
+              MI, FI, nullptr, Indexes, LIS, true);
+          if (!Spilled)
+            llvm_unreachable(
+                "failed to spill SGPR to physical VGPR lane when allocated");
+        }
+      } else {
+        if (FuncInfo->allocateSGPRSpillToVGPRLane(MF, FI)) {
+          bool Spilled = TRI->eliminateSGPRToVGPRSpillFrameIndex(
+              MI, FI, nullptr, Indexes, LIS);
+          if (!Spilled)
+            llvm_unreachable(
+                "failed to spill SGPR to virtual VGPR lane when allocated");
+          SpillFIs.set(FI);
+          SpilledToVirtVGPRLanes = true;
+        }
+      }
+    }
+  }
+
+  if (SpilledToVirtVGPRLanes) {
+    extendWWMVirtRegLiveness(MF, LIS);
+    if (LIS) {
+      // Compute the LiveInterval for the newly created virtual registers.
+      for (auto Reg : FuncInfo->getSGPRSpillVGPRs())
+        LIS->createAndComputeVirtRegInterval(Reg);
+    }
+  }
+}
+
 bool SILowerSGPRSpills::runOnMachineFunction(MachineFunction &MF) {
   const GCNSubtarget &ST = MF.getSubtarget<GCNSubtarget>();
   TII = ST.getInstrInfo();
@@ -331,8 +429,8 @@ bool SILowerSGPRSpills::runOnMachineFunction(MachineFunction &MF) {
 
   // TODO: CSR VGPRs will never be spilled to AGPRs. These can probably be
   // handled as SpilledToReg in regular PrologEpilogInserter.
-  const bool HasSGPRSpillToVGPR = TRI->spillSGPRToVGPR() &&
-                                  (HasCSRs || FuncInfo->hasSpilledSGPRs());
+  const bool HasSGPRSpillToVGPR =
+      TRI->spillSGPRToVGPR() && (HasCSRs || FuncInfo->hasSpilledSGPRs());
   if (HasSGPRSpillToVGPR) {
     // Process all SGPR spills before frame offsets are finalized. Ideally SGPRs
     // are spilled to VGPRs, in which case we can eliminate the stack usage.
@@ -343,58 +441,13 @@ bool SILowerSGPRSpills::runOnMachineFunction(MachineFunction &MF) {
     // To track the spill frame indices handled in this pass.
     BitVector SpillFIs(MFI.getObjectIndexEnd(), false);
 
-    for (MachineBasicBlock &MBB : MF) {
-      for (MachineInstr &MI : llvm::make_early_inc_range(MBB)) {
-        if (!TII->isSGPRSpill(MI))
-          continue;
-
-        int FI = TII->getNamedOperand(MI, AMDGPU::OpName::addr)->getIndex();
-        assert(MFI.getStackID(FI) == TargetStackID::SGPRSpill);
-
-        bool IsCalleeSaveSGPRSpill =
-            std::find(CalleeSavedFIs.begin(), CalleeSavedFIs.end(), FI) !=
-            CalleeSavedFIs.end();
-        if (IsCalleeSaveSGPRSpill) {
-          // Spill callee-saved SGPRs into physical VGPR lanes.
-
-          // TODO: This is to ensure the CFIs are static for efficient frame
-          // unwinding in the debugger. Spilling them into virtual VGPR lanes
-          // involve regalloc to allocate the physical VGPRs and that might
-          // cause intermediate spill/split of such liveranges for successful
-          // allocation. This would result in broken CFI encoding unless the
-          // regalloc aware CFI generation to insert new CFIs along with the
-          // intermediate spills is implemented. There is no such support
-          // currently exist in the LLVM compiler.
-          if (FuncInfo->allocateSGPRSpillToVGPRLane(MF, FI, true)) {
-            NewReservedRegs = true;
-            bool Spilled = TRI->eliminateSGPRToVGPRSpillFrameIndex(
-                MI, FI, nullptr, Indexes, LIS, true);
-            if (!Spilled)
-              llvm_unreachable(
-                  "failed to spill SGPR to physical VGPR lane when allocated");
-          }
-        } else {
-          if (FuncInfo->allocateSGPRSpillToVGPRLane(MF, FI)) {
-            bool Spilled = TRI->eliminateSGPRToVGPRSpillFrameIndex(
-                MI, FI, nullptr, Indexes, LIS);
-            if (!Spilled)
-              llvm_unreachable(
-                  "failed to spill SGPR to virtual VGPR lane when allocated");
-            SpillFIs.set(FI);
-            SpilledToVirtVGPRLanes = true;
-          }
-        }
-      }
-    }
-
-    if (SpilledToVirtVGPRLanes) {
-      extendWWMVirtRegLiveness(MF, LIS);
-      if (LIS) {
-        // Compute the LiveInterval for the newly created virtual registers.
-        for (auto Reg : FuncInfo->getSGPRSpillVGPRs())
-          LIS->createAndComputeVirtRegInterval(Reg);
-      }
-    }
+    // LegacySGPRSpillLowering switch is recommended to use only as a fallback
+    // method when the new spill lowering causes any runtime issues.
+    if (LegacySGPRSpillLowering)
+      legacySpillLowering(MF, SpillFIs, NewReservedRegs);
+    else
+      lowerSpills(MF, CalleeSavedFIs, SpillFIs, NewReservedRegs,
+                  SpilledToVirtVGPRLanes);
 
     for (MachineBasicBlock &MBB : MF) {
       // FIXME: The dead frame indices are replaced with a null register from
@@ -427,7 +480,7 @@ bool SILowerSGPRSpills::runOnMachineFunction(MachineFunction &MF) {
     MadeChange = true;
   }
 
-  if (SpilledToVirtVGPRLanes) {
+  if (!LegacySGPRSpillLowering && SpilledToVirtVGPRLanes) {
     const TargetRegisterClass *RC = TRI->getWaveMaskRegClass();
     // Shift back the reserved SGPR for EXEC copy into the lowest range.
     // This SGPR is reserved to handle the whole-wave spill/copy operations
