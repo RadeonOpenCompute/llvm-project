@@ -1,8 +1,10 @@
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 add_custom_command(
    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated_offload_arch.h
-   COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/make_generated_offload_arch_h.sh ${CMAKE_CURRENT_SOURCE_DIR}
+   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/make_generated_offload_arch_h.py ${CMAKE_CURRENT_SOURCE_DIR}
    DEPENDS
-     ${CMAKE_CURRENT_SOURCE_DIR}/make_generated_offload_arch_h.sh
+     ${CMAKE_CURRENT_SOURCE_DIR}/make_generated_offload_arch_h.py
      ${CMAKE_CURRENT_SOURCE_DIR}/amdgpu/pciid2codename.txt
      ${CMAKE_CURRENT_SOURCE_DIR}/amdgpu/codename2offloadarch.txt
      ${CMAKE_CURRENT_SOURCE_DIR}/nvidia/pciid2codename.txt
