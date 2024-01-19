@@ -3153,6 +3153,7 @@ genTargetOp(Fortran::lower::AbstractConverter &converter,
   llvm::SmallVector<mlir::Type> mapSymTypes;
   llvm::SmallVector<mlir::Location> mapSymLocs;
   llvm::SmallVector<const Fortran::semantics::Symbol *> mapSymbols;
+  llvm::SmallVector<const Fortran::semantics::Symbol *> redSymbols;
 
   ClauseProcessor cp(converter, clauseList);
   cp.processDevice(stmtCtx, deviceOperand);
@@ -3177,6 +3178,24 @@ genTargetOp(Fortran::lower::AbstractConverter &converter,
   if (!llvm::cast<mlir::omp::OffloadModuleInterface>(*converter.getModuleOp())
            .getIsTargetDevice())
     cp.processNowait(nowaitAttr);
+
+  if (outerCombined) {
+    for (const Fortran::parser::OmpClause &clause : clauseList.v) {
+      if (const auto &reductionClause =
+              std::get_if<Fortran::parser::OmpClause::Reduction>(&clause.u)) {
+        const auto &objectList{
+            std::get<Fortran::parser::OmpObjectList>(reductionClause->v.t)};
+
+        for (const Fortran::parser::OmpObject &ompObject : objectList.v) {
+          if (const auto *name{
+                  Fortran::parser::Unwrap<Fortran::parser::Name>(ompObject)}) {
+            if (const Fortran::semantics::Symbol * symbol{name->symbol})
+              redSymbols.push_back(symbol);
+          }
+        }
+      }
+    }
+  }
 
   // 5.8.1 Implicit Data-Mapping Attribute Rules
   // The following code follows the implicit data-mapping rules to map all the
@@ -3222,7 +3241,12 @@ genTargetOp(Fortran::lower::AbstractConverter &converter,
         if (auto refType = baseOp.getType().dyn_cast<fir::ReferenceType>())
           eleType = refType.getElementType();
 
-        if (fir::isa_trivial(eleType) || fir::isa_char(eleType)) {
+        // Do a tofrom map for reduction variables.
+        if (llvm::find(redSymbols, &sym) != redSymbols.end()) {
+          mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_FROM;
+          mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TO;
+          captureKind = mlir::omp::VariableCaptureKind::ByRef;
+        } else if (fir::isa_trivial(eleType) || fir::isa_char(eleType)) {
           captureKind = mlir::omp::VariableCaptureKind::ByCopy;
         } else if (!fir::isa_builtin_cptr_type(eleType)) {
           mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TO;
