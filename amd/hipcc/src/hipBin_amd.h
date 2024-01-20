@@ -878,6 +878,11 @@ void HipBinAmd::executeHipCCCmd(vector<string> argv) {
   string compiler;
   compiler = getHipCC();
   string CMD = compiler;
+
+  if (!var.hipClangLauncher_.empty()) {
+    CMD = "\"" + var.hipClangLauncher_ + "\" \"" + compiler + "\"";
+  }
+
   if (needCFLAGS) {
     CMD += " " + HIPCFLAGS;
   }

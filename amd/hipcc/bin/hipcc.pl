@@ -44,6 +44,9 @@ use Cwd 'abs_path';
 # HIP_ROCCLR_HOME : Path to HIP/ROCclr directory. Used on AMD platforms only.
 # HIP_CLANG_PATH : Path to HIP-Clang (default to ../../llvm/bin relative to this
 #                  script's abs_path). Used on AMD platforms only.
+# HIP_CLANG_LAUNCHER: Path to an executable to launch HIP-Clang with.
+#                     Analogous to CMAKE_C_COMPILER_LAUNCHER, this is commonly
+#                     used for launching HIP-Clang through a compiler cache.
 
 if(scalar @ARGV == 0){
     print "No Arguments passed, exiting ...\n";
@@ -82,6 +85,8 @@ $HIP_LIB_PATH=$ENV{'HIP_LIB_PATH'};
 $DEVICE_LIB_PATH=$ENV{'DEVICE_LIB_PATH'};
 $HIP_CLANG_HCC_COMPAT_MODE=$ENV{'HIP_CLANG_HCC_COMPAT_MODE'}; # HCC compatibility mode
 $HIP_COMPILE_CXX_AS_HIP=$ENV{'HIP_COMPILE_CXX_AS_HIP'} // "1";
+
+$HIP_CLANG_LAUNCHER=$ENV{'HIP_CLANG_LAUNCHER'};
 
 #---
 # Temporary directories
@@ -193,6 +198,7 @@ if ($HIP_PLATFORM eq "amd") {
         print ("HIP_LIB_PATH=$HIP_LIB_PATH\n");
         print ("DEVICE_LIB_PATH=$DEVICE_LIB_PATH\n");
         print ("HIP_CLANG_RT_LIB=$HIP_CLANG_RT_LIB\n");
+        print ("HIP_CLANG_LAUNCHER=$HIP_CLANG_LAUNCHER\n");
     }
 
     if ($HIP_CLANG_HCC_COMPAT_MODE) {
@@ -593,6 +599,10 @@ if ($HIPCC_LINK_FLAGS_APPEND) {
 
 # TODO: convert CMD to an array rather than a string
 my $CMD="$HIPCC";
+
+if ($HIP_CLANG_LAUNCHER) {
+    $CMD = "\"$HIP_CLANG_LAUNCHER\" \"$CMD\"";
+}
 
 if ($needCFLAGS) {
     $CMD .= " $HIPCFLAGS";
