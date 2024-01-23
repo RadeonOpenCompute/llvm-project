@@ -643,6 +643,9 @@ public:
                   llvm::SmallVectorImpl<mlir::Location> *mapSymLocs = nullptr,
                   llvm::SmallVectorImpl<const Fortran::semantics::Symbol *>
                       *mapSymbols = nullptr) const;
+  bool processTargetReduction(
+      llvm::SmallVector<const Fortran::semantics::Symbol *> &reductionSymbols)
+      const;
   bool processReduction(
       mlir::Location currentLocation,
       llvm::SmallVectorImpl<mlir::Value> &reductionVars,
@@ -1093,6 +1096,21 @@ public:
 
     builder.create<mlir::omp::YieldOp>(loc, reductionOp);
     return decl;
+  }
+
+  static void addReductionSym(
+      const Fortran::parser::OmpReductionClause &reduction,
+      llvm::SmallVector<const Fortran::semantics::Symbol *> &Symbols) {
+    const auto &objectList{
+        std::get<Fortran::parser::OmpObjectList>(reduction.t)};
+
+    for (const Fortran::parser::OmpObject &ompObject : objectList.v) {
+      if (const auto *name{
+              Fortran::parser::Unwrap<Fortran::parser::Name>(ompObject)}) {
+        if (const Fortran::semantics::Symbol * symbol{name->symbol})
+          Symbols.push_back(symbol);
+      }
+    }
   }
 
   /// Creates a reduction declaration and associates it with an OpenMP block
@@ -2008,6 +2026,17 @@ bool ClauseProcessor::processMap(
           if (mapSymbols)
             mapSymbols->push_back(getOmpObjectSymbol(ompObject));
         }
+      });
+}
+
+bool ClauseProcessor::processTargetReduction(
+    llvm::SmallVector<const Fortran::semantics::Symbol *> &reductionSymbols)
+    const {
+  return findRepeatableClause<ClauseTy::Reduction>(
+      [&](const ClauseTy::Reduction *reductionClause,
+          const Fortran::parser::CharBlock &) {
+        ReductionProcessor rp;
+        rp.addReductionSym(reductionClause->v, reductionSymbols);
       });
 }
 
@@ -3153,7 +3182,7 @@ genTargetOp(Fortran::lower::AbstractConverter &converter,
   llvm::SmallVector<mlir::Type> mapSymTypes;
   llvm::SmallVector<mlir::Location> mapSymLocs;
   llvm::SmallVector<const Fortran::semantics::Symbol *> mapSymbols;
-  llvm::SmallVector<const Fortran::semantics::Symbol *> redSymbols;
+  llvm::SmallVector<const Fortran::semantics::Symbol *> reductionSymbols;
 
   ClauseProcessor cp(converter, clauseList);
   cp.processDevice(stmtCtx, deviceOperand);
@@ -3179,23 +3208,8 @@ genTargetOp(Fortran::lower::AbstractConverter &converter,
            .getIsTargetDevice())
     cp.processNowait(nowaitAttr);
 
-  if (outerCombined) {
-    for (const Fortran::parser::OmpClause &clause : clauseList.v) {
-      if (const auto &reductionClause =
-              std::get_if<Fortran::parser::OmpClause::Reduction>(&clause.u)) {
-        const auto &objectList{
-            std::get<Fortran::parser::OmpObjectList>(reductionClause->v.t)};
-
-        for (const Fortran::parser::OmpObject &ompObject : objectList.v) {
-          if (const auto *name{
-                  Fortran::parser::Unwrap<Fortran::parser::Name>(ompObject)}) {
-            if (const Fortran::semantics::Symbol * symbol{name->symbol})
-              redSymbols.push_back(symbol);
-          }
-        }
-      }
-    }
-  }
+  if (outerCombined)
+    cp.processTargetReduction(reductionSymbols);
 
   // 5.8.1 Implicit Data-Mapping Attribute Rules
   // The following code follows the implicit data-mapping rules to map all the
@@ -3242,10 +3256,9 @@ genTargetOp(Fortran::lower::AbstractConverter &converter,
           eleType = refType.getElementType();
 
         // Do a tofrom map for reduction variables.
-        if (llvm::find(redSymbols, &sym) != redSymbols.end()) {
+        if (llvm::find(reductionSymbols, &sym) != reductionSymbols.end()) {
           mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_FROM;
           mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TO;
-          captureKind = mlir::omp::VariableCaptureKind::ByRef;
         } else if (fir::isa_trivial(eleType) || fir::isa_char(eleType)) {
           captureKind = mlir::omp::VariableCaptureKind::ByCopy;
         } else if (!fir::isa_builtin_cptr_type(eleType)) {
