@@ -3789,7 +3789,16 @@ static void genOMP(Fortran::lower::AbstractConverter &converter,
   }
 
   // 2.9.3.1 SIMD construct
-  if (llvm::omp::allSimdSet.test(ompDirective)) {
+  // Process simd loop:
+  // !$ omp simd
+  //    do-loop
+  // Worksharing loops like:
+  // !$ omp do simd
+  //    do-loop
+  // should be processed as other worksharing loops
+  // and they should be represented by omp.wsloop operation
+  if ((llvm::omp::OMPD_simd == ompDirective) ||
+      (llvm::omp::OMPD_target_simd == ompDirective)) {
     createSimdLoop(converter, eval, ompDirective, loopOpClauseList,
                    currentLocation);
   } else {
