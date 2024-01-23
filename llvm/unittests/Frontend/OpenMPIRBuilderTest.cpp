@@ -2299,8 +2299,14 @@ TEST_F(OpenMPIRBuilderTest, StaticWorkshareLoopTarget) {
   // Check that no variables except for loop counter are used in loop body
   EXPECT_EQ(Constant::getNullValue(Builder.getPtrTy()),
             WorkshareLoopRuntimeCall->getArgOperand(2));
-  // Check loop trip count argument
-  EXPECT_EQ(TripCount, WorkshareLoopRuntimeCall->getArgOperand(3));
+  // Check loop trip count argument.
+  ConstantInt *TripCountConstInt = dyn_cast<ConstantInt>(TripCount);
+  EXPECT_NE(TripCountConstInt, nullptr);
+  ConstantInt *WorkshareLoopRuntimeCallTripCount =
+      dyn_cast<ConstantInt>(WorkshareLoopRuntimeCall->getArgOperand(3));
+  EXPECT_NE(WorkshareLoopRuntimeCallTripCount, nullptr);
+  EXPECT_EQ(WorkshareLoopRuntimeCallTripCount->getSExtValue() + 1,
+            TripCountConstInt->getSExtValue());
 }
 
 TEST_F(OpenMPIRBuilderTest, StaticWorkShareLoop) {
