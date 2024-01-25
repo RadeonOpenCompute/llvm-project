@@ -5712,14 +5712,8 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createTargetInit(
           ? KernelEnvironmentGV
           : ConstantExpr::getAddrSpaceCast(KernelEnvironmentGV,
                                            KernelEnvironmentPtr);
-  LLVMContext &Ctx = Fn->getContext();
-  Type *PtrTy = PointerType::getUnqual(Ctx);
-  Value *KLEnv = Builder.CreateAlloca(PtrTy, nullptr, "kernel_launch_env");
-  Value *KLEnvAcast = Builder.CreatePointerBitCastOrAddrSpaceCast(KLEnv, PtrTy);
-  Builder.CreateStore(Kernel->getArg(0), KLEnvAcast);
-  Value *KernelLaunchEnvironment = Builder.CreateLoad(PtrTy, KLEnvAcast);
   CallInst *ThreadKind =
-      Builder.CreateCall(Fn, {KernelEnvironment, KernelLaunchEnvironment});
+      Builder.CreateCall(Fn, {KernelEnvironment, Kernel->getArg(0)});
 
   Value *ExecUserCode = Builder.CreateICmpEQ(
       ThreadKind, ConstantInt::get(ThreadKind->getType(), -1),
