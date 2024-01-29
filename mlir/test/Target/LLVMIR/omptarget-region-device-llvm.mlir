@@ -38,10 +38,7 @@ module attributes {llvm.target_triple = "amdgcn-amd-amdhsa", omp.is_target_devic
 // CHECK:        store ptr %[[ADDR_B]], ptr %[[TMP_B]], align 8
 // CHECK:        %[[TMP_C:.*]] = alloca ptr, align 8
 // CHECK:        store ptr %[[ADDR_C]], ptr %[[TMP_C]], align 8
-// CHECK:        %[[KERNEL_LAUNCH_ENV_TMP:.*]] = alloca ptr, align 8
-// CHECK:        store ptr %[[DYN_PTR]], ptr %[[KERNEL_LAUNCH_ENV_TMP]], align 8
-// CHECK:        %[[KERNEL_LAUNCH_ENV:.*]] = load ptr, ptr %[[KERNEL_LAUNCH_ENV_TMP]], align 8
-// CHECK:        %[[INIT:.*]] = call i32 @__kmpc_target_init(ptr @[[KERNEL_ENV]], ptr %[[KERNEL_LAUNCH_ENV]])
+// CHECK:        %[[INIT:.*]] = call i32 @__kmpc_target_init(ptr @[[KERNEL_ENV]], ptr %[[DYN_PTR]])
 // CHECK-NEXT:   %[[CMP:.*]] = icmp eq i32 %[[INIT]], -1
 // CHECK-NEXT:   br i1 %[[CMP]], label %[[LABEL_ENTRY:.*]], label %[[LABEL_EXIT:.*]]
 // CHECK:        [[LABEL_ENTRY]]:

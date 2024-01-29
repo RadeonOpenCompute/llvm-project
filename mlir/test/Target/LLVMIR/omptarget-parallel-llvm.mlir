@@ -63,11 +63,7 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<"dlti.alloca_memo
 // CHECK:         %[[TMP3:.*]] = alloca ptr, align 8, addrspace(5)
 // CHECK:         %[[TMP4:.*]] = addrspacecast ptr addrspace(5) %[[TMP3]] to ptr
 // CHECK:         store ptr %[[TMP0]], ptr %[[TMP4]], align 8
-// CHECK:         %[[KERNEL_LAUNCH_ENV_TMP:.*]] = alloca ptr, align 8, addrspace(5)
-// CHECK:         %[[KERNEL_LAUNCH_ENV_TMP_CAST:.*]] = addrspacecast ptr addrspace(5) %[[KERNEL_LAUNCH_ENV_TMP]] to ptr
-// CHECK:         store ptr %[[TMP]], ptr %[[KERNEL_LAUNCH_ENV_TMP_CAST]], align 8
-// CHECK:         %[[KERNEL_LAUNCH_ENV:.*]] = load ptr, ptr %[[KERNEL_LAUNCH_ENV_TMP_CAST]], align 8
-// CHECK:         %[[TMP5:.*]] = call i32 @__kmpc_target_init(ptr addrspacecast (ptr addrspace(1) @{{.*}} to ptr), ptr %[[KERNEL_LAUNCH_ENV]])
+// CHECK:         %[[TMP5:.*]] = call i32 @__kmpc_target_init(ptr addrspacecast (ptr addrspace(1) @{{.*}} to ptr), ptr %[[TMP]])
 // CHECK:         %[[EXEC_USER_CODE:.*]] = icmp eq i32 %[[TMP5]], -1
 // CHECK:         br i1 %[[EXEC_USER_CODE]], label %[[USER_CODE_ENTRY:.*]], label %[[WORKER_EXIT:.*]]
 // CHECK:         %[[TMP6:.*]] = load ptr, ptr %[[TMP4]], align 8

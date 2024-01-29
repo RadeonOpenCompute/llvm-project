@@ -5971,14 +5971,8 @@ TEST_F(OpenMPIRBuilderTest, TargetRegionDevice) {
   EXPECT_TRUE(isa<AllocaInst>(Alloca2));
   auto *Store2 = Alloca2->getNextNode();
   EXPECT_TRUE(isa<StoreInst>(Store2));
-  auto *Alloca3 = Store2->getNextNode();
-  EXPECT_TRUE(isa<AllocaInst>(Alloca3));
-  auto *Store3 = Alloca3->getNextNode();
-  EXPECT_TRUE(isa<StoreInst>(Store3));
-  auto *Load1 = Store3->getNextNode();
-  EXPECT_TRUE(isa<LoadInst>(Load1));
 
-  auto *InitCall = dyn_cast<CallInst>(Load1->getNextNode());
+  auto *InitCall = dyn_cast<CallInst>(Store2->getNextNode());
   EXPECT_NE(InitCall, nullptr);
   EXPECT_EQ(InitCall->getCalledFunction()->getName(), "__kmpc_target_init");
   EXPECT_EQ(InitCall->arg_size(), 2U);
@@ -6002,12 +5996,12 @@ TEST_F(OpenMPIRBuilderTest, TargetRegionDevice) {
   // Check user code block
   auto *UserCodeBlock = EntryBlockBranch->getSuccessor(0);
   EXPECT_EQ(UserCodeBlock->getName(), "user_code.entry");
-  auto *Load2 = UserCodeBlock->getFirstNonPHI();
+  auto *Load1 = UserCodeBlock->getFirstNonPHI();
+  EXPECT_TRUE(isa<LoadInst>(Load1));
+  auto *Load2 = Load1->getNextNode();
   EXPECT_TRUE(isa<LoadInst>(Load2));
-  auto *Load3 = Load2->getNextNode();
-  EXPECT_TRUE(isa<LoadInst>(Load3));
 
-  auto *Value1 = Load3->getNextNode();
+  auto *Value1 = Load2->getNextNode();
   EXPECT_EQ(Value1, Value);
   EXPECT_EQ(Value1->getNextNode(), TargetStore);
   auto *Deinit = TargetStore->getNextNode();
