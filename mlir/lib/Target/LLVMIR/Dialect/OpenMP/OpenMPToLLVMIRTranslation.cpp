@@ -1001,24 +1001,23 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
   std::optional<omp::ScheduleModifier> scheduleModifier =
       loop.getScheduleModifier();
   bool isSimd = loop.getSimdModifier();
-  // TODO: Handle distribute loop without parallel clause
-  bool distributeParallelCodeGen = opInst.getParentOfType<omp::DistributeOp>();
-  if (distributeParallelCodeGen) {
-    ompBuilder->applyWorkshareLoop(
-        ompLoc.DL, loopInfo, allocaIP, !loop.getNowait(),
-        convertToScheduleKind(schedule), chunk, isSimd,
-        scheduleModifier == omp::ScheduleModifier::monotonic,
-        scheduleModifier == omp::ScheduleModifier::nonmonotonic, isOrdered,
-        llvm::omp::WorksharingLoopType::DistributeForStaticLoop);
+
+  bool distributeCodeGen = opInst.getParentOfType<omp::DistributeOp>();
+  bool parallelCodeGen = opInst.getParentOfType<omp::ParallelOp>();
+  llvm::omp::WorksharingLoopType workshareLoopType;
+  if (distributeCodeGen && parallelCodeGen) {
+    workshareLoopType = llvm::omp::WorksharingLoopType::DistributeForStaticLoop;
+  } else if (distributeCodeGen) {
+    workshareLoopType = llvm::omp::WorksharingLoopType::DistributeStaticLoop;
+  } else {
+    workshareLoopType = llvm::omp::WorksharingLoopType::ForStaticLoop;
   }
-  else {
-    ompBuilder->applyWorkshareLoop(
-        ompLoc.DL, loopInfo, allocaIP, !loop.getNowait(),
-        convertToScheduleKind(schedule), chunk, isSimd,
-        scheduleModifier == omp::ScheduleModifier::monotonic,
-        scheduleModifier == omp::ScheduleModifier::nonmonotonic, isOrdered,
-        llvm::omp::WorksharingLoopType::ForStaticLoop);
-  }
+  ompBuilder->applyWorkshareLoop(
+      ompLoc.DL, loopInfo, allocaIP, !loop.getNowait(),
+      convertToScheduleKind(schedule), chunk, isSimd,
+      scheduleModifier == omp::ScheduleModifier::monotonic,
+      scheduleModifier == omp::ScheduleModifier::nonmonotonic, isOrdered,
+      workshareLoopType);
 
   // Continue building IR after the loop. Note that the LoopInfo returned by
   // `collapseLoops` points inside the outermost loop and is intended for
@@ -1044,7 +1043,7 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
       ompBuilder->createReductions(builder.saveIP(), allocaIP,
                                    ompBuilder->RIManager.getReductionInfos(),
                                    loop.getNowait(), /*IsTeamsReduction*/ false,
-                                   /*HasDistribute*/ distributeParallelCodeGen);
+                                   /*HasDistribute*/ distributeCodeGen);
   if (!contInsertPoint.getBlock())
     return loop->emitOpError() << "failed to convert reductions";
   auto nextInsertionPoint =
