@@ -39,9 +39,9 @@ module attributes {dlti.dl_spec = #dlti.dl_spec<#dlti.dl_entry<"dlti.alloca_memo
 
 // CHECK:      define internal void @[[LOOP_BODY_FUNC]](i32 %[[CNT:.*]], ptr %[[LOOP_BODY_ARG_PTR:.*]]) #[[ATTRS2:[0-9]+]] {
 
-// CHECK:      attributes #[[ATTRS2:.*]] = {
+// CHECK:      attributes #[[ATTRS1]] = {
 // CHECK-SAME:  "target-cpu"="gfx90a"
 // CHECK-SAME:  "target-features"="+gfx9-insts,+wavefrontsize64"
-// CHECK:      attributes #[[ATTRS1:.*]] = {
+// CHECK:      attributes #[[ATTRS2]] = {
 // CHECK-SAME:  "target-cpu"="gfx90a"
 // CHECK-SAME:  "target-features"="+gfx9-insts,+wavefrontsize64"

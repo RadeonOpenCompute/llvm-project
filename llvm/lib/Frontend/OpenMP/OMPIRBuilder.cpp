@@ -156,22 +156,14 @@ static Value *getTypeSizeInBytesValue(IRBuilder<> &Builder, Module &M,
   return Builder.getInt64(getTypeSizeInBytes(M, Type));
 }
 
-static const omp::GV &getGridValue(const Triple &T, StringRef Features) {
-  if (T.isAMDGPU()) {
-    if (Features.count("+wavefrontsize64"))
-      return omp::getAMDGPUGridValues<64>();
-    return omp::getAMDGPUGridValues<32>();
-  }
-  if (T.isNVPTX())
-    return omp::NVPTXGridValues;
-  llvm_unreachable("No grid value available for this architecture!");
-}
-
 static const omp::GV &getGridValue(const Triple &T, Function *Kernel) {
   if (T.isAMDGPU()) {
     StringRef Features =
         Kernel->getFnAttribute("target-features").getValueAsString();
-    return getGridValue(T, Features);
+
+    if (Features.count("+wavefrontsize64"))
+      return omp::getAMDGPUGridValues<64>();
+    return omp::getAMDGPUGridValues<32>();
   }
   if (T.isNVPTX())
     return omp::NVPTXGridValues;
@@ -5638,7 +5630,7 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createTargetInit(
   Function *Kernel = Builder.GetInsertBlock()->getParent();
 
   // Set the grid value in the config needed for lowering later on
-  Config.setGridValue(getGridValue(T, Config.TargetFeatures));
+  Config.setGridValue(getGridValue(T, Kernel));
 
   // Manifest the launch configuration in the metadata matching the kernel
   // environment.
@@ -5896,11 +5888,6 @@ void OpenMPIRBuilder::setOutlinedTargetRegionFunctionAttributes(
     if (T.isAMDGCN())
       OutlinedFn->setCallingConv(CallingConv::AMDGPU_KERNEL);
   }
-
-  if (!Config.TargetCPU.empty())
-    OutlinedFn->addFnAttr("target-cpu", Config.TargetCPU);
-  if (!Config.TargetFeatures.empty())
-    OutlinedFn->addFnAttr("target-features", Config.TargetFeatures);
 }
 
 Constant *OpenMPIRBuilder::createOutlinedFunctionID(Function *OutlinedFn,
@@ -6248,6 +6235,18 @@ static Function *createOutlinedFunction(
                                     /*isVarArg*/ false);
   auto Func = Function::Create(FuncType, GlobalValue::InternalLinkage, FuncName,
                                Builder.GetInsertBlock()->getModule());
+
+  // Forward target-cpu and target-features function attributes from the
+  // original function to the new outlined function.
+  Function *ParentFn = Builder.GetInsertBlock()->getParent();
+
+  auto TargetCpuAttr = ParentFn->getFnAttribute("target-cpu");
+  if (TargetCpuAttr.isStringAttribute())
+    Func->addFnAttr(TargetCpuAttr);
+
+  auto TargetFeaturesAttr = ParentFn->getFnAttribute("target-features");
+  if (TargetFeaturesAttr.isStringAttribute())
+    Func->addFnAttr(TargetFeaturesAttr);
 
   if (OMPBuilder.Config.isTargetDevice()) {
     std::vector<llvm::WeakTrackingVH> LLVMCompilerUsed;

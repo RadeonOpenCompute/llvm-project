@@ -103,14 +103,10 @@ public:
   /// Flag for specifying if offloading is mandatory.
   std::optional<bool> OpenMPOffloadMandatory;
 
-  /// Name of the target processor.
-  StringRef TargetCPU;
-  /// String representation of the target processor's features.
-  StringRef TargetFeatures;
-
   /// First separator used between the initial two parts of a name.
   std::optional<StringRef> FirstSeparator;
-  /// Separator used between all of the rest consecutive parts of s name
+
+  /// Separator used between all of the rest consecutive parts of a name
   std::optional<StringRef> Separator;
 
   // Grid Value for the GPU target
