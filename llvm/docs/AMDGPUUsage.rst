@@ -11845,8 +11845,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              before invalidating
                                                              the caches.
 
-                                                         3. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         3. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before
                                                              any following
@@ -11875,8 +11875,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              before invalidating
                                                              the caches.
 
-                                                         3. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         3. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before
                                                              any following
@@ -11982,8 +11982,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              invalidating the
                                                              caches.
 
-                                                         3. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         3. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before
                                                              any following
@@ -12013,8 +12013,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              invalidating the
                                                              caches.
 
-                                                         3. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         3. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before
                                                              any following
@@ -12209,8 +12209,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              the
                                                              fence-paired-atomic.
 
-                                                         2. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         2. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before any
                                                              following global/generic
@@ -12923,8 +12923,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              invalidating the
                                                              caches.
 
-                                                         4. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         4. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before
                                                              any following
@@ -12998,8 +12998,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              invalidating the
                                                              caches.
 
-                                                         4. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         4. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before
                                                              any following
@@ -13226,8 +13226,8 @@ table :ref:`amdgpu-amdhsa-memory-model-code-sequences-gfx10-gfx11-table`.
                                                              requirements of
                                                              release.
 
-                                                         2. buffer_gl0_inv;
-                                                            buffer_gl1_inv
+                                                         2. buffer_gl1_inv;
+                                                            buffer_gl0_inv
 
                                                            - Must happen before
                                                              any following

@@ -161,8 +161,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32(ptr addrspace(1) %ptr) #0 
 ; GFX10-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX10-NEXT:    global_atomic_cmpswap v1, v3, v[4:5], s[0:1] glc
 ; GFX10-NEXT:    s_waitcnt vmcnt(0)
-; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    buffer_gl1_inv
+; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v1, v5
 ; GFX10-NEXT:    s_or_b32 s3, vcc_lo, s3
 ; GFX10-NEXT:    s_andn2_b32 exec_lo, exec_lo, s3
@@ -203,8 +203,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32(ptr addrspace(1) %ptr) #0 
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    global_atomic_cmpswap_b32 v1, v3, v[4:5], s[0:1] glc
 ; GFX11-NEXT:    s_waitcnt vmcnt(0)
-; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    buffer_gl1_inv
+; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v1, v5
 ; GFX11-NEXT:    s_or_b32 s3, vcc_lo, s3
 ; GFX11-NEXT:    s_and_not1_b32 exec_lo, exec_lo, s3
@@ -385,8 +385,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32_ieee(ptr addrspace(1) %ptr
 ; GFX10-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX10-NEXT:    global_atomic_cmpswap v1, v3, v[4:5], s[0:1] glc
 ; GFX10-NEXT:    s_waitcnt vmcnt(0)
-; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    buffer_gl1_inv
+; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v1, v5
 ; GFX10-NEXT:    s_or_b32 s3, vcc_lo, s3
 ; GFX10-NEXT:    s_andn2_b32 exec_lo, exec_lo, s3
@@ -430,8 +430,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32_ieee(ptr addrspace(1) %ptr
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    global_atomic_add_f32 v3, v4, v3, s[0:1] glc
 ; GFX11-NEXT:    s_waitcnt vmcnt(0)
-; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    buffer_gl1_inv
+; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:  .LBB1_3:
 ; GFX11-NEXT:    s_or_b32 exec_lo, exec_lo, s4
 ; GFX11-NEXT:    v_cvt_f32_ubyte0_e32 v2, v2
@@ -577,8 +577,8 @@ define amdgpu_kernel void @global_atomic_fadd_noret_f32(ptr addrspace(1) %ptr) #
 ; GFX10-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX10-NEXT:    global_atomic_cmpswap v0, v3, v[0:1], s[0:1] glc
 ; GFX10-NEXT:    s_waitcnt vmcnt(0)
-; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    buffer_gl1_inv
+; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v0, v1
 ; GFX10-NEXT:    v_mov_b32_e32 v1, v0
 ; GFX10-NEXT:    s_or_b32 s2, vcc_lo, s2
@@ -613,8 +613,8 @@ define amdgpu_kernel void @global_atomic_fadd_noret_f32(ptr addrspace(1) %ptr) #
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    global_atomic_add_f32 v1, v0, s[0:1]
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
-; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    buffer_gl1_inv
+; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:  .LBB2_3:
 ; GFX11-NEXT:    s_endpgm
   %result = atomicrmw fadd ptr addrspace(1) %ptr, float 4.0 syncscope("agent") seq_cst
@@ -745,8 +745,8 @@ define amdgpu_kernel void @global_atomic_fadd_noret_f32_ieee(ptr addrspace(1) %p
 ; GFX10-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX10-NEXT:    global_atomic_cmpswap v0, v3, v[0:1], s[0:1] glc
 ; GFX10-NEXT:    s_waitcnt vmcnt(0)
-; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    buffer_gl1_inv
+; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v0, v1
 ; GFX10-NEXT:    v_mov_b32_e32 v1, v0
 ; GFX10-NEXT:    s_or_b32 s2, vcc_lo, s2
@@ -781,8 +781,8 @@ define amdgpu_kernel void @global_atomic_fadd_noret_f32_ieee(ptr addrspace(1) %p
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    global_atomic_add_f32 v1, v0, s[0:1]
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
-; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    buffer_gl1_inv
+; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:  .LBB3_3:
 ; GFX11-NEXT:    s_endpgm
   %result = atomicrmw fadd ptr addrspace(1) %ptr, float 4.0 syncscope("agent") seq_cst
@@ -944,8 +944,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32_agent(ptr addrspace(1) %pt
 ; GFX10-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX10-NEXT:    global_atomic_cmpswap v1, v3, v[4:5], s[0:1] glc
 ; GFX10-NEXT:    s_waitcnt vmcnt(0)
-; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    buffer_gl1_inv
+; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v1, v5
 ; GFX10-NEXT:    s_or_b32 s3, vcc_lo, s3
 ; GFX10-NEXT:    s_andn2_b32 exec_lo, exec_lo, s3
@@ -988,8 +988,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32_agent(ptr addrspace(1) %pt
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    global_atomic_add_f32 v3, v4, v3, s[0:1] glc
 ; GFX11-NEXT:    s_waitcnt vmcnt(0)
-; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    buffer_gl1_inv
+; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:  .LBB4_3:
 ; GFX11-NEXT:    s_or_b32 exec_lo, exec_lo, s4
 ; GFX11-NEXT:    v_cvt_f32_ubyte0_e32 v2, v2
@@ -1167,8 +1167,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32_system(ptr addrspace(1) %p
 ; GFX10-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX10-NEXT:    global_atomic_cmpswap v1, v3, v[4:5], s[0:1] glc
 ; GFX10-NEXT:    s_waitcnt vmcnt(0)
-; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    buffer_gl1_inv
+; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v1, v5
 ; GFX10-NEXT:    s_or_b32 s3, vcc_lo, s3
 ; GFX10-NEXT:    s_andn2_b32 exec_lo, exec_lo, s3
@@ -1209,8 +1209,8 @@ define amdgpu_kernel void @global_atomic_fadd_ret_f32_system(ptr addrspace(1) %p
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    global_atomic_cmpswap_b32 v1, v3, v[4:5], s[0:1] glc
 ; GFX11-NEXT:    s_waitcnt vmcnt(0)
-; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    buffer_gl1_inv
+; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v1, v5
 ; GFX11-NEXT:    s_or_b32 s3, vcc_lo, s3
 ; GFX11-NEXT:    s_and_not1_b32 exec_lo, exec_lo, s3
@@ -1517,8 +1517,8 @@ define amdgpu_kernel void @global_atomic_fadd_noret_f32_safe(ptr addrspace(1) %p
 ; GFX10-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX10-NEXT:    global_atomic_cmpswap v0, v3, v[0:1], s[0:1] glc
 ; GFX10-NEXT:    s_waitcnt vmcnt(0)
-; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    buffer_gl1_inv
+; GFX10-NEXT:    buffer_gl0_inv
 ; GFX10-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v0, v1
 ; GFX10-NEXT:    v_mov_b32_e32 v1, v0
 ; GFX10-NEXT:    s_or_b32 s2, vcc_lo, s2
@@ -1551,8 +1551,8 @@ define amdgpu_kernel void @global_atomic_fadd_noret_f32_safe(ptr addrspace(1) %p
 ; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    global_atomic_cmpswap_b32 v0, v3, v[0:1], s[0:1] glc
 ; GFX11-NEXT:    s_waitcnt vmcnt(0)
-; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    buffer_gl1_inv
+; GFX11-NEXT:    buffer_gl0_inv
 ; GFX11-NEXT:    v_cmp_eq_u32_e32 vcc_lo, v0, v1
 ; GFX11-NEXT:    v_mov_b32_e32 v1, v0
 ; GFX11-NEXT:    s_or_b32 s2, vcc_lo, s2
