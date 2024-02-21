@@ -193,7 +193,7 @@ define fastcc i32 @foo() {
   ; CHECK-NEXT:   frame-setup CFI_INSTRUCTION offset <badreg>, 0
   ; CHECK-NEXT:   $exec_lo = S_MOV_B32 killed $sgpr17
   ; CHECK-NEXT:   $vgpr40 = V_WRITELANE_B32 killed $sgpr16, 2, undef $vgpr40
-  ; CHECK-NEXT:   frame-setup CFI_INSTRUCTION escape 0x10, 0x41, 0x06, 0x90, 0xa8, 0x0c, 0xe9, 0x05, 0x08
+  ; CHECK-NEXT:   frame-setup CFI_INSTRUCTION escape 0x10, 0x41, 0x05, 0x90, 0xa8, 0x0c, 0xe4, 0x08
   ; CHECK-NEXT:   frame-setup CFI_INSTRUCTION def_cfa_register $sgpr33_lo16
   ; CHECK-NEXT:   $vgpr40 = V_WRITELANE_B32 killed $sgpr30, 0, killed $vgpr40, implicit-def $sgpr30_sgpr31, implicit $sgpr30_sgpr31
   ; CHECK-NEXT:   $sgpr32 = frame-setup S_ADDK_I32 $sgpr32, 512, implicit-def dead $scc
