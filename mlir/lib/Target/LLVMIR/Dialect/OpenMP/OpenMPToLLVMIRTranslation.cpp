@@ -127,6 +127,46 @@ findAllocaInsertPoint(llvm::IRBuilderBase &builder,
       &funcEntryBlock, funcEntryBlock.getFirstInsertionPt());
 }
 
+static bool isOpAllowedToBeLowered(Operation *opInst,
+                                   llvm::OpenMPIRBuilder *ompBuilder) {
+  if (!opInst)
+    return false;
+  // omp.target operation can be lowered for host and device MLIR
+  if (isa<omp::TargetOp>(opInst))
+    return true;
+
+  // OpenMP operations inside omp.target can be lowered for host and device MLIR
+  if (opInst->getParentOfType<omp::TargetOp>())
+    return true;
+
+  // TODO: Add support for test case:
+  // omp.parallel { //host pragma
+  //   omp.target { }
+  // }
+  bool hasTargetRegion =
+      opInst->walk([](omp::TargetOp) { return WalkResult::interrupt(); })
+          .wasInterrupted();
+  if (hasTargetRegion)
+    opInst->emitError("Target region inside other pragma is not yet supported");
+
+  // Check if given OpenMP operation belongs to function labelled with
+  // omp declare target pragma
+  LLVM::LLVMFuncOp funcOp = opInst->getParentOfType<LLVM::LLVMFuncOp>();
+  omp::DeclareTargetDeviceType declareType = omp::DeclareTargetDeviceType::host;
+
+  if (!funcOp)
+    return false;
+  auto declareTargetOp =
+      dyn_cast<omp::DeclareTargetInterface>(funcOp.getOperation());
+  if (declareTargetOp && declareTargetOp.isDeclareTarget())
+    declareType = declareTargetOp.getDeclareTargetDeviceType();
+  if ((declareType == omp::DeclareTargetDeviceType::host) &&
+      ompBuilder->Config.isGPU()) {
+    return false;
+  }
+  return true;
+}
+
 /// Converts the given region that appears within an OpenMP dialect operation to
 /// LLVM IR, creating a branch from the `sourceBlock` to the entry block of the
 /// region, and a branch from any block with an successor-less OpenMP terminator
@@ -3182,6 +3222,9 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
 
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
 
+  // Skip lowering of an OpenMP operation if it's context is not appropriate
+  if (!isOpAllowedToBeLowered(op, ompBuilder))
+    return success();
   return llvm::TypeSwitch<Operation *, LogicalResult>(op)
       .Case([&](omp::BarrierOp) {
         ompBuilder->createBarrier(builder.saveIP(), llvm::omp::OMPD_barrier);
