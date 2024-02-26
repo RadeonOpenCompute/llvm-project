@@ -439,9 +439,6 @@ static LogicalResult inlineConvertOmpRegions(
   return success();
 }
 
-namespace {
-} // namespace
-
 /// Create an OpenMPIRBuilder-compatible reduction generator for the given
 /// reduction declaration. The generator uses `builder` but ignores its
 /// insertion point.
@@ -3039,12 +3036,297 @@ convertDeclareTargetAttr(Operation *op, mlir::omp::DeclareTargetAttr attribute,
   return success();
 }
 
-namespace {
+///////////////////////////////////////////////////////////////////////////////
+// CombinedConstructs lowering forward declarations
+
+class OpenMPDialectLLVMIRTranslationInterface;
+
+using ConvertFunctionTy = std::function<std::pair<bool, LogicalResult>(
+    Operation *, llvm::IRBuilderBase &, LLVM::ModuleTranslation &)>;
+
+class ConversionDispatchList {
+private:
+  llvm::SmallVector<ConvertFunctionTy> functions;
+
+public:
+  std::pair<bool, LogicalResult>
+  convertOperation(Operation *op, llvm::IRBuilderBase &builder,
+                   LLVM::ModuleTranslation &moduleTranslation) {
+    for (auto riter = functions.rbegin(); riter != functions.rend(); ++riter) {
+      bool match = false;
+      LogicalResult result = failure();
+      std::tie(match, result) = (*riter)(op, builder, moduleTranslation);
+      if (match)
+        return { true, result };
+    }
+    return {false, failure()};
+  }
+
+  void pushConversionFunction(ConvertFunctionTy function) {
+    functions.push_back(function);
+  }
+  void popConversionFunction() {
+    functions.pop_back();
+  }
+};
+
+
+static LogicalResult convertOmpDistributeParallelWsLoop(
+    Operation *op, omp::DistributeOp distribute, omp::ParallelOp parallel,
+    omp::WsLoopOp wsloop, llvm::IRBuilderBase &builder,
+    LLVM::ModuleTranslation &moduleTranslation,
+    ConversionDispatchList &dispatchList);
+
+///////////////////////////////////////////////////////////////////////////////
+// Dispatch functions
+static LogicalResult convertCommonOperation(
+    Operation *op, llvm::IRBuilderBase &builder,
+    LLVM::ModuleTranslation &moduleTranslation) {
+  llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
+
+  return llvm::TypeSwitch<Operation *, LogicalResult>(op)
+      .Case([&](omp::BarrierOp) {
+        ompBuilder->createBarrier(builder.saveIP(), llvm::omp::OMPD_barrier);
+        return success();
+      })
+      .Case([&](omp::TaskwaitOp) {
+        ompBuilder->createTaskwait(builder.saveIP());
+        return success();
+      })
+      .Case([&](omp::TaskyieldOp) {
+        ompBuilder->createTaskyield(builder.saveIP());
+        return success();
+      })
+      .Case([&](omp::FlushOp) {
+        // No support in Openmp runtime function (__kmpc_flush) to accept
+        // the argument list.
+        // OpenMP standard states the following:
+        //  "An implementation may implement a flush with a list by ignoring
+        //   the list, and treating it the same as a flush without a list."
+        //
+        // The argument list is discarded so that, flush with a list is treated
+        // same as a flush without a list.
+        ompBuilder->createFlush(builder.saveIP());
+        return success();
+      })
+      .Case([&](omp::ParallelOp op) {
+        return convertOmpParallel(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::ReductionOp reductionOp) {
+        return convertOmpReductionOp(reductionOp, builder, moduleTranslation);
+      })
+      .Case([&](omp::MasterOp) {
+        return convertOmpMaster(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::CriticalOp) {
+        return convertOmpCritical(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::OrderedRegionOp) {
+        return convertOmpOrderedRegion(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::OrderedOp) {
+        return convertOmpOrdered(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::WsLoopOp) {
+        return convertOmpWsLoop(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::SimdLoopOp) {
+        return convertOmpSimdLoop(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::AtomicReadOp) {
+        return convertOmpAtomicRead(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::AtomicWriteOp) {
+        return convertOmpAtomicWrite(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::AtomicUpdateOp op) {
+        return convertOmpAtomicUpdate(op, builder, moduleTranslation);
+      })
+      .Case([&](omp::AtomicCaptureOp op) {
+        return convertOmpAtomicCapture(op, builder, moduleTranslation);
+      })
+      .Case([&](omp::SectionsOp) {
+        return convertOmpSections(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::SingleOp op) {
+        return convertOmpSingle(op, builder, moduleTranslation);
+      })
+      .Case([&](omp::TeamsOp op) {
+        return convertOmpTeams(op, builder, moduleTranslation);
+      })
+      .Case([&](omp::TaskOp op) {
+        return convertOmpTaskOp(op, builder, moduleTranslation);
+      })
+      .Case([&](omp::TaskGroupOp op) {
+        return convertOmpTaskgroupOp(op, builder, moduleTranslation);
+      })
+      .Case<omp::YieldOp, omp::TerminatorOp, omp::ReductionDeclareOp,
+            omp::CriticalDeclareOp>([](auto op) {
+        // `yield` and `terminator` can be just omitted. The block structure
+        // was created in the region that handles their parent operation.
+        // `reduction.declare` will be used by reductions and is not
+        // converted directly, skip it.
+        // `critical.declare` is only used to declare names of critical
+        // sections which will be used by `critical` ops and hence can be
+        // ignored for lowering. The OpenMP IRBuilder will create unique
+        // name for critical section names.
+        return success();
+      })
+      .Case([&](omp::ThreadprivateOp) {
+        return convertOmpThreadprivate(*op, builder, moduleTranslation);
+            })
+      .Case<omp::DataOp, omp::EnterDataOp, omp::ExitDataOp, omp::UpdateDataOp>(
+          [&](auto op) {
+            return convertOmpTargetData(op, builder, moduleTranslation);
+          })
+      .Case([&](omp::TargetOp) {
+        return convertOmpTarget(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::DistributeOp) {
+        return convertOmpDistribute(*op, builder, moduleTranslation);
+      })
+      .Case<omp::MapInfoOp, omp::DataBoundsOp>([&](auto op) {
+        // No-op, should be handled by relevant owning operations e.g.
+        // TargetOp, EnterDataOp, ExitDataOp, DataOp etc. and then
+        // discarded
+        return success();
+      })
+      .Default([&](Operation *inst) {
+        return inst->emitError("unsupported OpenMP operation: ")
+               << inst->getName();
+      });
+}
+
+// Returns true if the given block has a single instruction.
+static bool singleInstrBlock(Block &block) {
+  bool result =  (block.getOperations().size() == 2);
+  if (!result) {
+    llvm::errs() << "Num ops: " << block.getOperations().size() << "\n";
+  }
+  return result;
+}
+
+// Returns the operation if it only contains one instruction otherwise
+// return nullptr.
+template <typename OpType>
+Operation *getContainedInstr(OpType op) {
+  Region &region = op.getRegion();
+  if (!region.hasOneBlock()) {
+    llvm::errs() << "Region has multiple blocks\n";
+    return nullptr;
+  }
+  Block &block = region.front();
+  if (!singleInstrBlock(block)) {
+    return nullptr;
+  }
+  return &(block.getOperations().front());
+}
+
+// Returns the operation if it only contains one instruction otherwise
+// return nullptr.
+template <typename OpType>
+Block &getContainedBlock(OpType op) {
+  Region &region = op.getRegion();
+  return region.front();
+}
+
+
+template <typename... OpTypes>
+bool matchOpNest(Operation *op, OpTypes... matchOp) {
+  return true;
+}
+
+template <typename... OpTypes>
+bool matchOpNestScan(Block &op, OpTypes... matchOp) {
+  return true;
+}
+
+template <typename FirstOpType, typename... RestOpTypes>
+bool matchOpNest(Operation *op, FirstOpType &firstOp, RestOpTypes... restOps) {
+  if (auto firstOp = mlir::dyn_cast<FirstOpType>(op)) {
+    if (sizeof...(RestOpTypes) == 0)
+      return true;
+    Block &innerBlock = getContainedBlock(firstOp);
+    return matchOpNestScan(innerBlock, restOps...);
+  }
+  return false;
+}
+
+template <typename FirstOpType, typename... RestOpTypes>
+bool matchOpScanNest(Block &block, FirstOpType &firstOp, RestOpTypes... restOps) {
+  for (Operation *op : block) {
+    if (auto firstOp = mlir::dyn_cast<FirstOpType>(op)) {
+      if (sizeof...(RestOpTypes) == 0)
+        return true;
+      Block &innerBlock = getContainedBlock(firstOp);
+      return matchOpNestScan(innerBlock, restOps...);
+    }
+  }
+  return false;
+}
+
+static LogicalResult
+convertTargetDeviceOp(Operation *op, llvm::IRBuilderBase &builder,
+                      LLVM::ModuleTranslation &moduleTranslation,
+                      ConversionDispatchList &dispatchList) {
+
+  omp::DistributeOp distribute;
+  omp::ParallelOp parallel;
+  omp::WsLoopOp wsloop;
+  // Match composite constructs
+  if (matchOpNest(op, distribute, parallel, wsloop)) {
+    return convertOmpDistributeParallelWsLoop(op, distribute, parallel, wsloop,
+                                              builder, moduleTranslation,
+                                              dispatchList);
+  }
+  if (matchOpNest(op, parallel, wsloop)) {
+    llvm::errs() << "Matching parallel wsloop\n";
+    return convertCommonOperation(op, builder, moduleTranslation);
+  }
+  return convertCommonOperation(op, builder, moduleTranslation);
+}
+
+static LogicalResult
+convertTargetDeviceTopLevelOp(Operation *op, llvm::IRBuilderBase &builder,
+                              LLVM::ModuleTranslation &moduleTranslation) {
+  return llvm::TypeSwitch<Operation *, LogicalResult>(op)
+      .Case<omp::DataOp, omp::EnterDataOp, omp::ExitDataOp, omp::UpdateDataOp>(
+          [&](auto op) {
+            return convertOmpTargetData(op, builder, moduleTranslation);
+          })
+      .Case([&](omp::TargetOp) {
+        return convertOmpTarget(*op, builder, moduleTranslation);
+      })
+      // Skip omp ops that are not legal top level ops for the target device
+      .Case<omp::BarrierOp, omp::TaskwaitOp, omp::TaskyieldOp, omp::FlushOp,
+            omp::ParallelOp, omp::ReductionOp, omp::MasterOp, omp::CriticalOp,
+            omp::OrderedRegionOp, omp::OrderedOp, omp::WsLoopOp,
+            omp::SimdLoopOp, omp::AtomicReadOp, omp::AtomicWriteOp,
+            omp::AtomicUpdateOp, omp::AtomicCaptureOp, omp::SectionsOp,
+            omp::SingleOp, omp::TeamsOp, omp::TaskOp, omp::TaskGroupOp,
+            omp::YieldOp, omp::TerminatorOp, omp::ReductionDeclareOp,
+            omp::ThreadprivateOp, omp::DistributeOp, omp::MapInfoOp,
+            omp::DataBoundsOp, omp::CriticalDeclareOp>(
+          [&](auto op) { return success(); })
+      .Default([&](Operation *inst) {
+        return inst->emitError("unsupported OpenMP operation: ")
+               << inst->getName();
+      });
+}
+
+static LogicalResult
+convertHostOp(Operation *op, llvm::IRBuilderBase &builder,
+                     LLVM::ModuleTranslation &moduleTranslation) {
+  return convertCommonOperation(op, builder, moduleTranslation);
+}
 
 /// Implementation of the dialect interface that converts operations belonging
 /// to the OpenMP dialect to LLVM IR.
 class OpenMPDialectLLVMIRTranslationInterface
     : public LLVMTranslationDialectInterface {
+private:
+  mutable ConversionDispatchList dispatchList;
+
 public:
   using LLVMTranslationDialectInterface::LLVMTranslationDialectInterface;
 
@@ -3062,7 +3344,55 @@ public:
                  LLVM::ModuleTranslation &moduleTranslation) const final;
 };
 
-} // namespace
+// Implementation converting a nest of operations in a single function. This
+// just overrides the parallel and wsloop dispatches but does the normal
+// lowering for now.
+static LogicalResult convertOmpDistributeParallelWsLoop(
+    Operation *op, omp::DistributeOp distribute, omp::ParallelOp parallel,
+    omp::WsLoopOp wsloop, llvm::IRBuilderBase &builder,
+    LLVM::ModuleTranslation &moduleTranslation,
+    ConversionDispatchList &dispatchList) {
+
+  // Convert parallel alternative implementation
+  ConvertFunctionTy convertParallel =
+      [](Operation *op, llvm::IRBuilderBase &builder,
+         LLVM::ModuleTranslation &moduleTranslation) {
+        // Could potentially check that this op is exactly the same parallel
+        // op passed in
+        if (!isa<omp::ParallelOp>(op)) {
+          return std::make_pair(false, failure());
+        }
+        llvm::errs() << "====== Matching Alternative Parallel Lowering =====\n";
+        LogicalResult result =
+            convertCommonOperation(op, builder, moduleTranslation);
+        return std::make_pair(true, result);
+      };
+
+  // Convert wsloop alternative implementation
+  ConvertFunctionTy convertWsLoop =
+      [](Operation *op, llvm::IRBuilderBase &builder,
+         LLVM::ModuleTranslation &moduleTranslation) {
+        if (!isa<omp::WsLoopOp>(op)) {
+          return std::make_pair(false, failure());
+        }
+        llvm::errs() << "====== Matching Alternative WsLoop Lowering =====\n";
+        LogicalResult result =
+            convertCommonOperation(op, builder, moduleTranslation);
+        return std::make_pair(true, result);
+      };
+
+  // Push the new alternative functions
+  dispatchList.pushConversionFunction(convertParallel);
+  dispatchList.pushConversionFunction(convertWsLoop);
+
+  // Lower the current distribute operation
+  LogicalResult result =
+      convertOmpDistribute(*op, builder, moduleTranslation);
+
+  // Pop the alternative functions
+  dispatchList.popConversionFunction();
+  dispatchList.popConversionFunction();
+}
 
 LogicalResult OpenMPDialectLLVMIRTranslationInterface::amendOperation(
     Operation *op, ArrayRef<llvm::Instruction *> instructions,
@@ -3159,119 +3489,24 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
     Operation *op, llvm::IRBuilderBase &builder,
     LLVM::ModuleTranslation &moduleTranslation) const {
 
-  llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
+  // Check to see if there is a lowering that overrides the default lowering
+  // if not use the default dispatch.
+  bool match = false;
+  LogicalResult result = success();
+  std::tie(match, result) =
+      dispatchList.convertOperation(op, builder, moduleTranslation);
+  if (match)
+    return result;
 
-  return llvm::TypeSwitch<Operation *, LogicalResult>(op)
-      .Case([&](omp::BarrierOp) {
-        ompBuilder->createBarrier(builder.saveIP(), llvm::omp::OMPD_barrier);
-        return success();
-      })
-      .Case([&](omp::TaskwaitOp) {
-        ompBuilder->createTaskwait(builder.saveIP());
-        return success();
-      })
-      .Case([&](omp::TaskyieldOp) {
-        ompBuilder->createTaskyield(builder.saveIP());
-        return success();
-      })
-      .Case([&](omp::FlushOp) {
-        // No support in Openmp runtime function (__kmpc_flush) to accept
-        // the argument list.
-        // OpenMP standard states the following:
-        //  "An implementation may implement a flush with a list by ignoring
-        //   the list, and treating it the same as a flush without a list."
-        //
-        // The argument list is discarded so that, flush with a list is treated
-        // same as a flush without a list.
-        ompBuilder->createFlush(builder.saveIP());
-        return success();
-      })
-      .Case([&](omp::ParallelOp op) {
-        return convertOmpParallel(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::ReductionOp reductionOp) {
-        return convertOmpReductionOp(reductionOp, builder, moduleTranslation);
-      })
-      .Case([&](omp::MasterOp) {
-        return convertOmpMaster(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::CriticalOp) {
-        return convertOmpCritical(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::OrderedRegionOp) {
-        return convertOmpOrderedRegion(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::OrderedOp) {
-        return convertOmpOrdered(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::WsLoopOp) {
-        return convertOmpWsLoop(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::SimdLoopOp) {
-        return convertOmpSimdLoop(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::AtomicReadOp) {
-        return convertOmpAtomicRead(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::AtomicWriteOp) {
-        return convertOmpAtomicWrite(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::AtomicUpdateOp op) {
-        return convertOmpAtomicUpdate(op, builder, moduleTranslation);
-      })
-      .Case([&](omp::AtomicCaptureOp op) {
-        return convertOmpAtomicCapture(op, builder, moduleTranslation);
-      })
-      .Case([&](omp::SectionsOp) {
-        return convertOmpSections(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::SingleOp op) {
-        return convertOmpSingle(op, builder, moduleTranslation);
-      })
-      .Case([&](omp::TeamsOp op) {
-        return convertOmpTeams(op, builder, moduleTranslation);
-      })
-      .Case([&](omp::TaskOp op) {
-        return convertOmpTaskOp(op, builder, moduleTranslation);
-      })
-      .Case([&](omp::TaskGroupOp op) {
-        return convertOmpTaskgroupOp(op, builder, moduleTranslation);
-      })
-      .Case<omp::YieldOp, omp::TerminatorOp, omp::ReductionDeclareOp,
-            omp::CriticalDeclareOp>([](auto op) {
-        // `yield` and `terminator` can be just omitted. The block structure
-        // was created in the region that handles their parent operation.
-        // `reduction.declare` will be used by reductions and is not
-        // converted directly, skip it.
-        // `critical.declare` is only used to declare names of critical
-        // sections which will be used by `critical` ops and hence can be
-        // ignored for lowering. The OpenMP IRBuilder will create unique
-        // name for critical section names.
-        return success();
-      })
-      .Case([&](omp::ThreadprivateOp) {
-        return convertOmpThreadprivate(*op, builder, moduleTranslation);
-      })
-      .Case<omp::DataOp, omp::EnterDataOp, omp::ExitDataOp, omp::UpdateDataOp>(
-          [&](auto op) {
-            return convertOmpTargetData(op, builder, moduleTranslation);
-          })
-      .Case([&](omp::TargetOp) {
-        return convertOmpTarget(*op, builder, moduleTranslation);
-      })
-      .Case([&](omp::DistributeOp) {
-        return convertOmpDistribute(*op, builder, moduleTranslation);
-      })
-      .Case<omp::MapInfoOp, omp::DataBoundsOp>([&](auto op) {
-        // No-op, should be handled by relevant owning operations e.g.
-        // TargetOp, EnterDataOp, ExitDataOp, DataOp etc. and then
-        // discarded
-        return success();
-      })
-      .Default([&](Operation *inst) {
-        return inst->emitError("unsupported OpenMP operation: ")
-               << inst->getName();
-      });
+  llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
+  if (ompBuilder->Config.isTargetDevice())
+    if (op->getParentOfType<omp::TargetOp>())
+      return convertTargetDeviceOp(op, builder, moduleTranslation,
+                                   dispatchList);
+    else
+      return convertTargetDeviceTopLevelOp(op, builder, moduleTranslation);
+  else
+    return convertHostOp(op, builder, moduleTranslation);
 }
 
 void mlir::registerOpenMPDialectTranslation(DialectRegistry &registry) {
