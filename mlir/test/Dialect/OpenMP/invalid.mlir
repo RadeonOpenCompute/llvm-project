@@ -87,6 +87,41 @@ func.func @proc_bind_once() {
 
 // -----
 
+func.func @invalid_parent(%lb : index, %ub : index, %step : index) {
+  // expected-error@+1 {{op expects parent op to be one of 'omp.distribute, omp.simdloop, omp.taskloop, omp.wsloop'}}
+  omp.canonical_loop (%iv) : index = (%lb) to (%ub) step (%step) {
+    omp.yield
+  }
+}
+
+// -----
+
+func.func @type_mismatch(%lb : index, %ub : index, %step : index) {
+  omp.wsloop for (%iv) : index = (%lb) to (%ub) step (%step) {
+    // expected-error@+1 {{range argument type does not match corresponding IV type}}
+    "omp.canonical_loop" (%lb, %ub, %step) ({
+    ^bb0(%iv2: i32):
+      omp.yield
+    }) : (index, index, index) -> ()
+    omp.yield
+  }
+}
+
+// -----
+
+func.func @iv_number_mismatch(%lb : index, %ub : index, %step : index) {
+  omp.wsloop for (%iv) : index = (%lb) to (%ub) step (%step) {
+    // expected-error@+1 {{number of range arguments and IVs do not match}}
+    "omp.canonical_loop" (%lb, %ub, %step) ({
+    ^bb0(%iv1 : index, %iv2 : index):
+      omp.yield
+    }) : (index, index, index) -> ()
+    omp.yield
+  }
+}
+
+// -----
+
 func.func @inclusive_not_a_clause(%lb : index, %ub : index, %step : index) {
   // expected-error @below {{expected 'for'}}
   omp.wsloop nowait inclusive

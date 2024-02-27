@@ -507,6 +507,71 @@ def SingleOp : OpenMP_Op<"single", [AttrSizedOperandSegments]> {
 }
 
 //===----------------------------------------------------------------------===//
+// 2.9.1 Canonical Loop
+//===----------------------------------------------------------------------===//
+
+def CanonicalLoopOp : OpenMP_Op<"canonical_loop", [SameVariadicOperandSize,
+                        AllTypesMatch<["lowerBound", "upperBound", "step"]>,
+                        ParentOneOf<["DistributeOp", "SimdLoopOp", "TaskLoopOp",
+                                     "WsLoopOp"]>,
+                        RecursiveMemoryEffects]> {
+  let summary = "canonical loop";
+  let description = [{
+    All loops that conform to OpenMP's definition of a canonical loop can be
+    simplified to a CanonicalLoopOp. In particular, there are no loop-carried
+    variables and the number of iterations it will execute is known before the
+    operation. This allows e.g. to determine the number of threads and chunks
+    the iterations space is split into before executing any iteration. More
+    restrictions may apply in cases such as (collapsed) loop nests, doacross
+    loops, etc.
+
+    The lower and upper bounds specify a half-open range: the range includes the
+    lower bound but does not include the upper bound. If the `inclusive`
+    attribute is specified then the upper bound is also included.
+
+    The body region can contain any number of blocks. The region is terminated
+    by "omp.yield" instruction without operands. The induction variables,
+    represented as entry block arguments to the canonical loop operation's
+    single region, match the types of the `lowerBound`, `upperBound` and `step`
+    arguments.
+
+    ```mlir
+    omp.canonical_loop (%i1, %i2) : i32 = (%c0, %c0) to (%c10, %c10) step (%c1, %c1) {
+      %a = load %arrA[%i1, %i2] : memref<?x?xf32>
+      %b = load %arrB[%i1, %i2] : memref<?x?xf32>
+      %sum = arith.addf %a, %b : f32
+      store %sum, %arrC[%i1, %i2] : memref<?x?xf32>
+      omp.yield
+    }
+    ```
+
+    This is a temporary simplified definition of canonical loop based on
+    existing OpenMP loop operations intended to serve as a stopgap solution
+    until discussion over its long-term representation reaches a conclusion.
+    Specifically, this approach is not intended to help with the addition of
+    support for loop transformations.
+  }];
+
+  let arguments = (ins Variadic<IntLikeType>:$lowerBound,
+                       Variadic<IntLikeType>:$upperBound,
+                       Variadic<IntLikeType>:$step,
+                       UnitAttr:$inclusive);
+
+  let regions = (region AnyRegion:$region);
+
+  let extraClassDeclaration = [{
+    /// Returns the number of loops in the canonical loop nest.
+    unsigned getNumLoops() { return getLowerBound().size(); }
+
+    /// Returns the induction variables of the canonical loop nest.
+    ArrayRef<BlockArgument> getIVs() { return getRegion().getArguments(); }
+  }];
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // 2.9.2 Workshare Loop Construct
 //===----------------------------------------------------------------------===//
 
@@ -714,7 +779,7 @@ def SimdLoopOp : OpenMP_Op<"simdloop", [AttrSizedOperandSegments,
 
 def YieldOp : OpenMP_Op<"yield",
     [Pure, ReturnLike, Terminator,
-     ParentOneOf<["WsLoopOp", "ReductionDeclareOp",
+     ParentOneOf<["CanonicalLoopOp", "WsLoopOp", "ReductionDeclareOp",
      "AtomicUpdateOp", "SimdLoopOp", "PrivateClauseOp"]>]> {
   let summary = "loop yield and termination operation";
   let description = [{
