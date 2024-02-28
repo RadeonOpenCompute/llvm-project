@@ -1312,10 +1312,14 @@ Operation *TargetOp::getInnermostCapturedOmpOp() {
 
 bool TargetOp::isTargetSPMDLoop() {
   Operation *capturedOp = getInnermostCapturedOmpOp();
-  if (!isa_and_present<WsLoopOp, SimdLoopOp>(capturedOp))
+  if (!isa_and_present<LoopNestOp>(capturedOp))
     return false;
 
-  Operation *parallelOp = capturedOp->getParentOp();
+  Operation *wsloopOp = capturedOp->getParentOp();
+  if (!isa_and_present<WsLoopOp>(wsloopOp))
+    return false;
+
+  Operation *parallelOp = wsloopOp->getParentOp();
   if (!isa_and_present<ParallelOp>(parallelOp))
     return false;
 
@@ -1391,6 +1395,11 @@ static LogicalResult verifyPrivateVarList(OpType &op) {
 }
 
 LogicalResult ParallelOp::verify() {
+  if (getComposite()) {
+    // TODO Check if wrapper: Single omp.wsloop
+  }
+
+  // This can be checked after adding a 'composite' attribute.
   if (getAllocateVars().size() != getAllocatorsVars().size())
     return emitError(
         "expected equal sizes for allocate and allocator variables");
@@ -1558,87 +1567,48 @@ LogicalResult LoopNestOp::verify() {
   return success();
 }
 
+SmallVector<LoopWrapperInterface> LoopNestOp::getWrappers() {
+  SmallVector<LoopWrapperInterface> wrappers;
+  Operation *parent = (*this)->getParentOp();
+  while (auto wrapper =
+             llvm::dyn_cast_if_present<LoopWrapperInterface>(parent)) {
+    wrappers.push_back(wrapper);
+    parent = parent->getParentOp();
+  }
+  return wrappers;
+}
+
 //===----------------------------------------------------------------------===//
 // WsLoopOp
 //===----------------------------------------------------------------------===//
 
-/// loop-control ::= `(` ssa-id-list `)` `:` type `=`  loop-bounds
-/// loop-bounds := `(` ssa-id-list `)` to `(` ssa-id-list `)` inclusive? steps
-/// steps := `step` `(`ssa-id-list`)`
 ParseResult
 parseWsLoop(OpAsmParser &parser, Region &region,
-            SmallVectorImpl<OpAsmParser::UnresolvedOperand> &lowerBound,
-            SmallVectorImpl<OpAsmParser::UnresolvedOperand> &upperBound,
-            SmallVectorImpl<OpAsmParser::UnresolvedOperand> &steps,
-            SmallVectorImpl<Type> &loopVarTypes,
             SmallVectorImpl<OpAsmParser::UnresolvedOperand> &reductionOperands,
-            SmallVectorImpl<Type> &reductionTypes, ArrayAttr &reductionSymbols,
-            UnitAttr &inclusive) {
+            SmallVectorImpl<Type> &reductionTypes,
+            ArrayAttr &reductionSymbols) {
 
   // Parse an optional reduction clause
   llvm::SmallVector<OpAsmParser::Argument> privates;
-  bool hasReduction = succeeded(parser.parseOptionalKeyword("reduction")) &&
-                      succeeded(parseClauseWithRegionArgs(
-                          parser, region, reductionOperands, reductionTypes,
-                          reductionSymbols, privates));
+  if (succeeded(parser.parseOptionalKeyword("reduction"))) {
+    if (failed(parseClauseWithRegionArgs(parser, region, reductionOperands,
+                                         reductionTypes, reductionSymbols,
+                                         privates)))
+      return failure();
+  }
 
-  if (parser.parseKeyword("for"))
-    return failure();
-
-  // Parse an opening `(` followed by induction variables followed by `)`
-  SmallVector<OpAsmParser::Argument> ivs;
-  Type loopVarType;
-  if (parser.parseArgumentList(ivs, OpAsmParser::Delimiter::Paren) ||
-      parser.parseColonType(loopVarType) ||
-      // Parse loop bounds.
-      parser.parseEqual() ||
-      parser.parseOperandList(lowerBound, ivs.size(),
-                              OpAsmParser::Delimiter::Paren) ||
-      parser.parseKeyword("to") ||
-      parser.parseOperandList(upperBound, ivs.size(),
-                              OpAsmParser::Delimiter::Paren))
-    return failure();
-
-  if (succeeded(parser.parseOptionalKeyword("inclusive")))
-    inclusive = UnitAttr::get(parser.getBuilder().getContext());
-
-  // Parse step values.
-  if (parser.parseKeyword("step") ||
-      parser.parseOperandList(steps, ivs.size(), OpAsmParser::Delimiter::Paren))
-    return failure();
-
-  // Now parse the body.
-  loopVarTypes = SmallVector<Type>(ivs.size(), loopVarType);
-  for (auto &iv : ivs)
-    iv.type = loopVarType;
-
-  SmallVector<OpAsmParser::Argument> regionArgs{ivs};
-  if (hasReduction)
-    llvm::copy(privates, std::back_inserter(regionArgs));
-
-  return parser.parseRegion(region, regionArgs);
+  return parser.parseRegion(region, privates);
 }
 
 void printWsLoop(OpAsmPrinter &p, Operation *op, Region &region,
-                 ValueRange lowerBound, ValueRange upperBound, ValueRange steps,
-                 TypeRange loopVarTypes, ValueRange reductionOperands,
-                 TypeRange reductionTypes, ArrayAttr reductionSymbols,
-                 UnitAttr inclusive) {
+                 ValueRange reductionOperands, TypeRange reductionTypes,
+                 ArrayAttr reductionSymbols) {
   if (reductionSymbols) {
-    auto reductionArgs =
-        region.front().getArguments().drop_front(loopVarTypes.size());
+    auto reductionArgs = region.front().getArguments();
     printClauseWithRegionArgs(p, op, reductionArgs, "reduction",
                               reductionOperands, reductionTypes,
                               reductionSymbols);
   }
-
-  p << " for ";
-  auto args = region.front().getArguments().drop_back(reductionOperands.size());
-  p << " (" << args << ") : " << args[0].getType() << " = (" << lowerBound
-    << ") to (" << upperBound << ") ";
-  if (inclusive)
-    p << "inclusive ";
-  p << "step (" << steps << ") ";
   p.printRegion(region, /*printEntryBlockArgs=*/false);
 }
 
@@ -1695,13 +1665,20 @@ void printLoopControl(OpAsmPrinter &p, Operation *op, Region &region,
 }
 
 //===----------------------------------------------------------------------===//
-// Verifier for Simd construct [2.9.3.1]
+// Simd construct [2.9.3.1]
 //===----------------------------------------------------------------------===//
 
+void SimdLoopOp::build(OpBuilder &builder, OperationState &state,
+                       ArrayRef<NamedAttribute> attributes) {
+  build(builder, state, /*aligned_vars=*/ValueRange(),
+        /*alignment_values=*/nullptr, /*if_expr=*/nullptr,
+        /*nontemporal_vars=*/ValueRange(), /*order_val=*/nullptr,
+        /*simdlen=*/nullptr, /*safelen=*/nullptr,
+        /*composite=*/false);
+  state.addAttributes(attributes);
+}
+
 LogicalResult SimdLoopOp::verify() {
-  if (this->getLowerBound().empty()) {
-    return emitOpError() << "empty lowerbound for simd loop operation";
-  }
   if (this->getSimdlen().has_value() && this->getSafelen().has_value() &&
       this->getSimdlen().value() > this->getSafelen().value()) {
     return emitOpError()
@@ -1714,12 +1691,30 @@ LogicalResult SimdLoopOp::verify() {
     return failure();
   if (verifyNontemporalClause(*this, this->getNontemporalVars()).failed())
     return failure();
+
+  if (!this->isWrapper())
+    return emitOpError() << "must be a loop wrapper";
+
+  if (!isa<LoopNestOp>(this->getRegion().front().front()))
+    return emitOpError() << "must wrap an 'omp.loopnest' directly";
+
+  // TODO If composite, must have compatible wrapper parent (taskloop do
+  // distribute). Otherwise, no wrapper.
   return success();
 }
 
 //===----------------------------------------------------------------------===//
-// Verifier for Distribute construct [2.9.4.1]
+// Distribute construct [2.9.4.1]
 //===----------------------------------------------------------------------===//
+
+void DistributeOp::build(OpBuilder &builder, OperationState &state,
+                         ArrayRef<NamedAttribute> attributes) {
+  build(builder, state, /*dist_schedule_static=*/false,
+        /*chunk_size=*/nullptr, /*allocate_vars=*/ValueRange(),
+        /*allocators_vars=*/ValueRange(), /*order_val=*/nullptr,
+        /*composite=*/false);
+  state.addAttributes(attributes);
+}
 
 LogicalResult DistributeOp::verify() {
   if (this->getChunkSize() && !this->getDistScheduleStatic())
@@ -1729,6 +1724,17 @@ LogicalResult DistributeOp::verify() {
   if (getAllocateVars().size() != getAllocatorsVars().size())
     return emitError(
         "expected equal sizes for allocate and allocator variables");
+
+  if (!this->isWrapper())
+    return emitOpError() << "must be a loop wrapper";
+
+  // TODO If has a nested omp.parallel, check that both are composite.
+  // TODO Accept simdloop and parallel if composite. loopnest if not.
+  // TODO Check there's no wrapper parent.
+  if (!isa<LoopNestOp, SimdLoopOp, ParallelOp>(
+          this->getRegion().front().front()))
+    return emitOpError()
+           << "must wrap an 'omp.loopnest', 'omp.simd' or 'omp.parallel'";
 
   return success();
 }
@@ -1849,6 +1855,21 @@ SmallVector<Value> TaskLoopOp::getAllReductionVars() {
   return allReductionNvars;
 }
 
+void TaskLoopOp::build(OpBuilder &builder, OperationState &state,
+                       ArrayRef<NamedAttribute> attributes) {
+  build(builder, state,
+        /*if_expr=*/nullptr, /*final_expr=*/nullptr, /*untied=*/false,
+        /*mergeable=*/false,
+        /*in_reduction_vars=*/ValueRange(), /*in_reductions=*/nullptr,
+        /*reduction_vars=*/ValueRange(),
+        /*reductions=*/nullptr, /*priority=*/nullptr,
+        /*allocate_vars=*/ValueRange(),
+        /*allocators_vars=*/ValueRange(), /*grain_size=*/nullptr,
+        /*num_tasks=*/nullptr,
+        /*nogroup=*/false, /*composite=*/false);
+  state.addAttributes(attributes);
+}
+
 LogicalResult TaskLoopOp::verify() {
   if (getAllocateVars().size() != getAllocatorsVars().size())
     return emitError(
@@ -1873,6 +1894,15 @@ LogicalResult TaskLoopOp::verify() {
         "the grainsize clause and num_tasks clause are mutually exclusive and "
         "may not appear on the same taskloop directive");
   }
+
+  if (!this->isWrapper())
+    return emitOpError() << "must be a loop wrapper";
+
+  // TODO Accept simd if composite, loopnest if not
+  // TODO Check that it's not wrapped
+  if (!isa<LoopNestOp, SimdLoopOp>(this->getRegion().front().front()))
+    return emitOpError() << "must wrap an 'omp.loopnest' or 'omp.simd'";
+
   return success();
 }
 
@@ -1881,19 +1911,28 @@ LogicalResult TaskLoopOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void WsLoopOp::build(OpBuilder &builder, OperationState &state,
-                     ValueRange lowerBound, ValueRange upperBound,
-                     ValueRange step, ArrayRef<NamedAttribute> attributes) {
-  build(builder, state, lowerBound, upperBound, step,
-        /*linear_vars=*/ValueRange(),
+                     ArrayRef<NamedAttribute> attributes) {
+  build(builder, state, /*linear_vars=*/ValueRange(),
         /*linear_step_vars=*/ValueRange(), /*reduction_vars=*/ValueRange(),
         /*reductions=*/nullptr, /*schedule_val=*/nullptr,
         /*schedule_chunk_var=*/nullptr, /*schedule_modifier=*/nullptr,
         /*simd_modifier=*/false, /*nowait=*/false, /*ordered_val=*/nullptr,
-        /*order_val=*/nullptr, /*inclusive=*/false);
+        /*order_val=*/nullptr, /*composite=*/false);
   state.addAttributes(attributes);
 }
 
 LogicalResult WsLoopOp::verify() {
+  if (!isWrapper())
+    return emitOpError() << "must be a loop wrapper";
+
+  // TODO Do not accept loopnest if composite. Do not accept simd if not
+  // composite.
+  if (!isa<LoopNestOp, SimdLoopOp>(this->getRegion().front().front()))
+    return emitOpError() << "must wrap an 'omp.loopnest' or 'omp.simd'";
+
+  // TODO If composite, must have composite parallel parent or simd and no
+  // wrapper parent. Otherwise, no composite parent.
+
   return verifyReductionVarList(*this, getReductions(), getReductionVars());
 }
 

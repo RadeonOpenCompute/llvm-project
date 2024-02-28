@@ -69,6 +69,79 @@ def ReductionClauseInterface : OpInterface<"ReductionClauseInterface"> {
   ];
 }
 
+// TODO Test these methods
+def LoopWrapperInterface : OpInterface<"LoopWrapperInterface"> {
+  let description = [{
+    OpenMP operations that can wrap a single loop nest. When taking a wrapper
+    role, these operations must only contain a single region with a single block
+    in which there's a single operation and a terminator. That nested operation
+    must be another loop wrapper or an `omp.loopnest`.
+  }];
+
+  let cppNamespace = "::mlir::omp";
+
+  let methods = [
+    InterfaceMethod<
+      /*description=*/[{
+        Tell whether the operation could be taking the role of a loop wrapper.
+        That is, it has a single region with a single block in which there are
+        two operations: another wrapper or loop nest operation and a terminator.
+      }],
+      /*retTy=*/"bool",
+      /*methodName=*/"isWrapper",
+      (ins ), [{}], [{
+        if ($_op->getNumRegions() != 1)
+          return false;
+
+        ::mlir::Region &r = $_op->getRegion(0);
+        if (!r.hasOneBlock())
+          return false;
+
+        if (std::distance(r.op_begin(), r.op_end()) != 2)
+          return false;
+
+        ::mlir::Operation &firstOp = *r.op_begin();
+        ::mlir::Operation &secondOp = *(++r.op_begin());
+        return ::llvm::isa<::mlir::omp::LoopNestOp,
+                           ::mlir::omp::LoopWrapperInterface>(firstOp) &&
+               secondOp.hasTrait<::mlir::OpTrait::IsTerminator>();
+      }]
+    >,
+    InterfaceMethod<
+      /*description=*/[{
+        If this is a loop wrapper and there is another wrapper immediately
+        nested inside, return that operation.
+      }],
+      /*retTy=*/"::mlir::omp::LoopWrapperInterface",
+      /*methodName=*/"getNestedWrapper",
+      (ins), [{}], [{
+        if (!$_op.isWrapper())
+          return nullptr;
+
+        ::mlir::Operation *nested = &*$_op->getRegion(0).op_begin();
+        return ::llvm::dyn_cast<::mlir::omp::LoopWrapperInterface>(nested);
+      }]
+    >,
+    InterfaceMethod<
+      /*description=*/[{
+        If this is a loop wrapper, return the loop nest nested directly or
+        indirectly inside.
+      }],
+      /*retTy=*/"::mlir::Operation *",
+      /*methodName=*/"getWrappedLoop",
+      (ins), [{}], [{
+        if (!$_op.isWrapper())
+          return nullptr;
+
+        if (::mlir::omp::LoopWrapperInterface nested = $_op.getNestedWrapper())
+          return nested.getWrappedLoop();
+        
+        return &*$_op->getRegion(0).op_begin();
+      }]
+    >
+  ];
+}
+
 def DeclareTargetInterface : OpInterface<"DeclareTargetInterface"> {
   let description = [{
     OpenMP operations that support declare target have this interface.
