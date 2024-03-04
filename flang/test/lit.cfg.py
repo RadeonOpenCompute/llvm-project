@@ -199,3 +199,7 @@ else:
 result = lit_config.params.get("LIBPGMATH")
 if result:
     config.environment["LIBPGMATH"] = True
+
+# Determine if OpenMP runtime was built (enable OpenMP tests via REQUIRES in test file)
+if config.have_openmp_rtl:
+    config.available_features.add("openmp_runtime")
