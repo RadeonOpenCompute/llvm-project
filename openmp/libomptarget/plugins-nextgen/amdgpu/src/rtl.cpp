@@ -3430,19 +3430,11 @@ struct AMDGPUPluginTy final : public GenericPluginTy {
     if (auto Err = HostDevice->init())
       return std::move(Err);
 
-#if 0//<<<<<<< HEAD
 #ifdef OMPT_SUPPORT
     ::OmptCallbackInit();
 #endif
 
-    // Initialize flags for device type:
-    hasAPUDevice();
-    // check for dGPUs with USM support
-    hasGfx90aDevice();
-    hasMI300xDevice();
-#else//=======
     scanForUSMCapableDevices();
-#endif//>>>>>>> 1abd5de10b93 ([OpenMP][MI300] Revised the APU detection algorithm. Only for a GFX942 the last bit of the chip id is used to distinguish between an MI300A and MI300X. There is only a single iteration over the agent vector necessary instead of three, as before.)
 
     readEnvVars();
 
