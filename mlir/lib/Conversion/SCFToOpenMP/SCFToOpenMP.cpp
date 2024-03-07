@@ -461,7 +461,11 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
       // Replace the loop.
       {
         OpBuilder::InsertionGuard allocaGuard(rewriter);
-        auto loop = rewriter.create<omp::WsLoopOp>(
+        // TODO Test that this didn't break something.
+        auto wsloop = rewriter.create<omp::WsLoopOp>(parallelOp.getLoc());
+        rewriter.createBlock(&wsloop.getRegion());
+
+        auto loop = rewriter.create<omp::LoopNestOp>(
             parallelOp.getLoc(), parallelOp.getLowerBound(),
             parallelOp.getUpperBound(), parallelOp.getStep());
         rewriter.create<omp::TerminatorOp>(loc);
@@ -482,9 +486,9 @@ struct ParallelOpLowering : public OpRewritePattern<scf::ParallelOp> {
         rewriter.setInsertionPointToEnd(&*scope.getBodyRegion().begin());
         rewriter.create<memref::AllocaScopeReturnOp>(loc, ValueRange());
         if (!reductionVariables.empty()) {
-          loop.setReductionsAttr(
+          wsloop.setReductionsAttr(
               ArrayAttr::get(rewriter.getContext(), reductionDeclSymbols));
-          loop.getReductionVarsMutable().append(reductionVariables);
+          wsloop.getReductionVarsMutable().append(reductionVariables);
         }
       }
     }

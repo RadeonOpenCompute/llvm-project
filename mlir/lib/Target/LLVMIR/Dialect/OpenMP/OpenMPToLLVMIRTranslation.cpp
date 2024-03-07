@@ -893,31 +893,32 @@ static LogicalResult
 convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
                  LLVM::ModuleTranslation &moduleTranslation) {
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
-  auto loop = cast<omp::WsLoopOp>(opInst);
+  auto wsloop = cast<omp::WsLoopOp>(opInst);
+  auto loop = cast<omp::LoopNestOp>(wsloop.getWrappedLoop());
   // TODO: this should be in the op verifier instead.
   if (loop.getLowerBound().empty())
     return failure();
 
   // Static is the default.
   auto schedule =
-      loop.getScheduleVal().value_or(omp::ClauseScheduleKind::Static);
+      wsloop.getScheduleVal().value_or(omp::ClauseScheduleKind::Static);
 
   // Find the loop configuration.
   llvm::Value *step = moduleTranslation.lookupValue(loop.getStep()[0]);
   llvm::Type *ivType = step->getType();
   llvm::Value *chunk = nullptr;
-  if (loop.getScheduleChunkVar()) {
+  if (wsloop.getScheduleChunkVar()) {
     llvm::Value *chunkVar =
-        moduleTranslation.lookupValue(loop.getScheduleChunkVar());
+        moduleTranslation.lookupValue(wsloop.getScheduleChunkVar());
     chunk = builder.CreateSExtOrTrunc(chunkVar, ivType);
   }
   SmallVector<omp::ReductionDeclareOp> reductionDecls;
-  collectReductionDecls(loop, reductionDecls);
+  collectReductionDecls(wsloop, reductionDecls);
   llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
       findAllocaInsertPoint(builder, moduleTranslation);
 
   DenseMap<Value, llvm::Value *> reductionVariableMap;
-  allocReductionVars(loop, builder, *ompBuilder, moduleTranslation, allocaIP,
+  allocReductionVars(wsloop, builder, *ompBuilder, moduleTranslation, allocaIP,
                      reductionDecls, reductionVariableMap);
 
   // Store the mapping between reduction variables and their private copies on
@@ -929,7 +930,7 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
   // Before the loop, store the initial values of reductions into reduction
   // variables. Although this could be done after allocas, we don't want to mess
   // up with the alloca insertion point.
-  for (unsigned i = 0; i < loop.getNumReductionVars(); ++i) {
+  for (unsigned i = 0; i < wsloop.getNumReductionVars(); ++i) {
     SmallVector<llvm::Value *> phis;
     if (failed(inlineConvertOmpRegions(reductionDecls[i].getInitializerRegion(),
                                        "omp.reduction.neutral", builder,
@@ -1020,10 +1021,10 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
   allocaIP = findAllocaInsertPoint(builder, moduleTranslation);
 
   // TODO: Handle doacross loops when the ordered clause has a parameter.
-  bool isOrdered = loop.getOrderedVal().has_value();
+  bool isOrdered = wsloop.getOrderedVal().has_value();
   std::optional<omp::ScheduleModifier> scheduleModifier =
-      loop.getScheduleModifier();
-  bool isSimd = loop.getSimdModifier();
+      wsloop.getScheduleModifier();
+  bool isSimd = wsloop.getSimdModifier();
 
   bool distributeCodeGen = opInst.getParentOfType<omp::DistributeOp>();
   bool parallelCodeGen = opInst.getParentOfType<omp::ParallelOp>();
@@ -1036,7 +1037,7 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
     workshareLoopType = llvm::omp::WorksharingLoopType::ForStaticLoop;
   }
   ompBuilder->applyWorkshareLoop(
-      ompLoc.DL, loopInfo, allocaIP, !loop.getNowait(),
+      ompLoc.DL, loopInfo, allocaIP, !wsloop.getNowait(),
       convertToScheduleKind(schedule), chunk, isSimd,
       scheduleModifier == omp::ScheduleModifier::monotonic,
       scheduleModifier == omp::ScheduleModifier::nonmonotonic, isOrdered,
@@ -1049,12 +1050,12 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
   builder.restoreIP(afterIP);
 
   // Process the reductions if required.
-  if (loop.getNumReductionVars() == 0)
+  if (wsloop.getNumReductionVars() == 0)
     return success();
 
   // Create the reduction generators. We need to own them here because
   // ReductionInfo only accepts references to the generators.
-  collectReductionInfo(loop, builder, *ompBuilder, moduleTranslation,
+  collectReductionInfo(wsloop, builder, *ompBuilder, moduleTranslation,
                        reductionDecls);
   // The call to createReductions below expects the block to have a
   // terminator. Create an unreachable instruction to serve as terminator
@@ -1063,12 +1064,12 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
   builder.SetInsertPoint(tempTerminator);
 
   llvm::OpenMPIRBuilder::InsertPointTy contInsertPoint =
-      ompBuilder->createReductions(builder.saveIP(), allocaIP,
-                                   ompBuilder->RIManager.getReductionInfos(),
-                                   loop.getNowait(), /*IsTeamsReduction*/ false,
-                                   /*HasDistribute*/ distributeCodeGen);
+      ompBuilder->createReductions(
+          builder.saveIP(), allocaIP, ompBuilder->RIManager.getReductionInfos(),
+          wsloop.getNowait(), /*IsTeamsReduction*/ false,
+          /*HasDistribute*/ distributeCodeGen);
   if (!contInsertPoint.getBlock())
-    return loop->emitOpError() << "failed to convert reductions";
+    return wsloop->emitOpError() << "failed to convert reductions";
   auto nextInsertionPoint =
       ompBuilder->createBarrier(contInsertPoint, llvm::omp::OMPD_for);
   tempTerminator->eraseFromParent();
@@ -1331,7 +1332,8 @@ convertOmpParallel(Operation &opInst1, llvm::IRBuilderBase &builder,
 static LogicalResult
 convertOmpSimdLoop(Operation &opInst, llvm::IRBuilderBase &builder,
                    LLVM::ModuleTranslation &moduleTranslation) {
-  auto loop = cast<omp::SimdLoopOp>(opInst);
+  auto simd = cast<omp::SimdLoopOp>(opInst);
+  auto loop = cast<omp::LoopNestOp>(simd.getWrappedLoop());
 
   llvm::OpenMPIRBuilder::LocationDescription ompLoc(builder);
 
@@ -1410,17 +1412,17 @@ convertOmpSimdLoop(Operation &opInst, llvm::IRBuilderBase &builder,
       ompBuilder->collapseLoops(ompLoc.DL, loopInfos, {});
 
   llvm::ConstantInt *simdlen = nullptr;
-  if (std::optional<uint64_t> simdlenVar = loop.getSimdlen())
+  if (std::optional<uint64_t> simdlenVar = simd.getSimdlen())
     simdlen = builder.getInt64(simdlenVar.value());
 
   llvm::ConstantInt *safelen = nullptr;
-  if (std::optional<uint64_t> safelenVar = loop.getSafelen())
+  if (std::optional<uint64_t> safelenVar = simd.getSafelen())
     safelen = builder.getInt64(safelenVar.value());
 
   llvm::MapVector<llvm::Value *, llvm::Value *> alignedVars;
   ompBuilder->applySimd(
       loopInfo, alignedVars,
-      loop.getIfExpr() ? moduleTranslation.lookupValue(loop.getIfExpr())
+      simd.getIfExpr() ? moduleTranslation.lookupValue(simd.getIfExpr())
                        : nullptr,
       llvm::omp::OrderKind::OMP_ORDER_unknown, simdlen, safelen);
 
@@ -3320,11 +3322,11 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
         ompBuilder->createBarrier(builder.saveIP(), llvm::omp::OMPD_barrier);
         return success();
       })
-      .Case([&](omp::TaskwaitOp) {
+      .Case([&](omp::TaskWaitOp) {
         ompBuilder->createTaskwait(builder.saveIP());
         return success();
       })
-      .Case([&](omp::TaskyieldOp) {
+      .Case([&](omp::TaskYieldOp) {
         ompBuilder->createTaskyield(builder.saveIP());
         return success();
       })

@@ -105,9 +105,12 @@ public:
     step.push_back(rewriter.clone(*stepOp)->getResult(0));
     // ==== TODO (1) End ====
 
-    auto wsLoopOp = rewriter.create<mlir::omp::WsLoopOp>(
-        doLoop.getLoc(), lowerBound, upperBound, step);
-    wsLoopOp.setInclusive(true);
+    auto wsLoopOp = rewriter.create<mlir::omp::WsLoopOp>(doLoop.getLoc());
+    rewriter.createBlock(&wsLoopOp.getRegion());
+
+    // TODO Test that this didn't break something.
+    auto loopNestOp = rewriter.create<mlir::omp::LoopNestOp>(
+        doLoop.getLoc(), lowerBound, upperBound, step, /*inclusive=*/true);
 
     auto outlineableOp =
         mlir::dyn_cast<mlir::omp::OutlineableOpenMPOpInterface>(*parallelOp);
@@ -180,11 +183,11 @@ public:
 
     // Clone the loop's body inside the worksharing construct using the mapped
     // memref values.
-    rewriter.cloneRegionBefore(doLoop.getRegion(), wsLoopOp.getRegion(),
-                               wsLoopOp.getRegion().begin(), mapper);
+    rewriter.cloneRegionBefore(doLoop.getRegion(), loopNestOp.getRegion(),
+                               loopNestOp.getRegion().begin(), mapper);
 
-    mlir::Operation *terminator = wsLoopOp.getRegion().back().getTerminator();
-    rewriter.setInsertionPointToEnd(&wsLoopOp.getRegion().back());
+    mlir::Operation *terminator = loopNestOp.getRegion().back().getTerminator();
+    rewriter.setInsertionPointToEnd(&loopNestOp.getRegion().back());
     rewriter.create<mlir::omp::YieldOp>(terminator->getLoc());
     rewriter.eraseOp(terminator);
 

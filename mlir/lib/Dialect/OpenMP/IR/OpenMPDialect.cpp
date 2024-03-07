@@ -1933,6 +1933,9 @@ LogicalResult WsLoopOp::verify() {
   // TODO If composite, must have composite parallel parent or simd and no
   // wrapper parent. Otherwise, no composite parent.
 
+  // TODO If composite, must have composite parallel parent or simd and no
+  // wrapper parent. Otherwise, no composite parent.
+
   return verifyReductionVarList(*this, getReductions(), getReductionVars());
 }
 

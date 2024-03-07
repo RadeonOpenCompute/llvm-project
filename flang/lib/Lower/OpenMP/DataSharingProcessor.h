@@ -24,6 +24,7 @@ namespace omp {
 
 class DataSharingProcessor {
 public:
+  // TODO Replace with PrivateClauseOps.
   /// Collects all the information needed for delayed privatization. This can be
   /// used by ops with data-sharing clauses to properly generate their regions
   /// (e.g. add region arguments) and map the original SSA values to their

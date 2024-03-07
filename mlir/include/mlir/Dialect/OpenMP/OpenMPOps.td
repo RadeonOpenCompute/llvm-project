@@ -1204,7 +1204,7 @@ def TaskGroupOp : OpenMP_Op<"taskgroup", [AttrSizedOperandSegments,
 // 2.10.4 taskyield Construct
 //===----------------------------------------------------------------------===//
 
-def TaskyieldOp : OpenMP_Op<"taskyield"> {
+def TaskYieldOp : OpenMP_Op<"taskyield"> {
   let summary = "taskyield construct";
   let description = [{
     The taskyield construct specifies that the current task can be suspended
@@ -1723,6 +1723,10 @@ def TargetOp : OpenMP_Op<"target",[IsolatedFromAbove, MapClauseOwningOpInterface
     TODO:  is_device_ptr, defaultmap, in_reduction
   }];
 
+  // TODO Remove num_teams_lower, num_teams_upper, teams_thread_limit and
+  // num_threads args and instead calculate them outside and implicitly map
+  // them. If not used and implicitly mapped, they can be omitted from the
+  // outlined function arg list.
   let arguments = (ins Optional<I1>:$if_expr,
                        Optional<AnyInteger>:$device,
                        Optional<AnyInteger>:$thread_limit,
@@ -1914,7 +1918,7 @@ def OrderedRegionOp : OpenMP_Op<"ordered_region"> {
 // 2.17.5 taskwait Construct
 //===----------------------------------------------------------------------===//
 
-def TaskwaitOp : OpenMP_Op<"taskwait"> {
+def TaskWaitOp : OpenMP_Op<"taskwait"> {
   let summary = "taskwait construct";
   let description = [{
     The taskwait construct specifies a wait on the completion of child tasks

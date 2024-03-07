@@ -60,7 +60,7 @@ ReductionProcessor::ReductionIdentifier ReductionProcessor::getReductionType(
 
 void ReductionProcessor::addReductionSym(
     const Fortran::parser::OmpReductionClause &reduction,
-    llvm::SmallVector<const Fortran::semantics::Symbol *> &symbols) {
+    llvm::SmallVectorImpl<const Fortran::semantics::Symbol *> &symbols) {
   const auto &objectList{std::get<Fortran::parser::OmpObjectList>(reduction.t)};
 
   for (const Fortran::parser::OmpObject &ompObject : objectList.v) {

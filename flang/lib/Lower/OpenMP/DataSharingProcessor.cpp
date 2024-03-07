@@ -213,21 +213,23 @@ void DataSharingProcessor::insertLastPrivateCompare(mlir::Operation *op) {
             firOpBuilder.restoreInsertionPoint(unstructuredSectionsIP);
           }
         }
-      } else if (mlir::isa<mlir::omp::WsLoopOp>(op)) {
-        // Update the original variable just before exiting the worksharing
-        // loop. Conversion as follows:
+      } else if (mlir::isa<mlir::omp::LoopNestOp>(op)) {
+        // TODO Check that the change from WsLoopOp to LoopNestOp didn't
+        // break anything here.
+        // Update the original variable just before exiting the loop. Conversion
+        // as follows:
         //
-        //                       omp.wsloop {
-        // omp.wsloop {            ...
-        //    ...                  store
-        //    store       ===>     %v = arith.addi %iv, %step
-        //    omp.yield            %cmp = %step < 0 ? %v < %ub : %v > %ub
-        // }                       fir.if %cmp {
-        //                           fir.store %v to %loopIV
-        //                           ^%lpv_update_blk:
-        //                         }
-        //                         omp.yield
+        //                     omp.loopnest {
+        // omp.loopnest {        ...
+        //    ...                store
+        //    store       ===>   %v = arith.addi %iv, %step
+        //    omp.yield          %cmp = %step < 0 ? %v < %ub : %v > %ub
+        // }                     fir.if %cmp {
+        //                         fir.store %v to %loopIV
+        //                         ^%lpv_update_blk:
         //                       }
+        //                       omp.yield
+        //                     }
         //
 
         // Only generate the compare once in presence of multiple LastPrivate
@@ -242,8 +244,8 @@ void DataSharingProcessor::insertLastPrivateCompare(mlir::Operation *op) {
 
         mlir::Value iv = op->getRegion(0).front().getArguments()[0];
         mlir::Value ub =
-            mlir::dyn_cast<mlir::omp::WsLoopOp>(op).getUpperBound()[0];
-        mlir::Value step = mlir::dyn_cast<mlir::omp::WsLoopOp>(op).getStep()[0];
+            mlir::cast<mlir::omp::LoopNestOp>(op).getUpperBound()[0];
+        mlir::Value step = mlir::cast<mlir::omp::LoopNestOp>(op).getStep()[0];
 
         // v = iv + step
         // cmp = step < 0 ? v < ub : v > ub

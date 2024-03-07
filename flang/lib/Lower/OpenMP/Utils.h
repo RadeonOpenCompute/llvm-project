@@ -68,6 +68,9 @@ void genObjectList(const Fortran::parser::OmpObjectList &objectList,
                    Fortran::lower::AbstractConverter &converter,
                    llvm::SmallVectorImpl<mlir::Value> &operands);
 
+mlir::Type getLoopVarType(Fortran::lower::AbstractConverter &converter,
+                          std::size_t loopVarTypeSize);
+
 mlir::omp::TargetOp findParentTargetOp(mlir::OpBuilder &builder);
 
 } // namespace omp
