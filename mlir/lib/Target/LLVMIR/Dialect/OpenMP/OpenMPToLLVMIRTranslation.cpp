@@ -796,9 +796,15 @@ allocReductionVars(T loop, llvm::IRBuilderBase &builder,
   for (std::size_t i = 0; i < loop.getNumReductionVars(); ++i) {
     llvm::Value *var = builder.CreateAlloca(
         moduleTranslation.convertType(reductionDecls[i].getType()));
-    moduleTranslation.mapValue(args[i], var);
-    privateReductionVariables.push_back(var);
-    reductionVariableMap.try_emplace(loop.getReductionVars()[i], var);
+
+    var->setName("private_redvar");
+    llvm::Type *ptrTy = llvm::PointerType::getUnqual(builder.getContext());
+    llvm::Value *castVar =
+      builder.CreatePointerBitCastOrAddrSpaceCast(var, ptrTy);
+
+    moduleTranslation.mapValue(args[i], castVar);
+    privateReductionVariables.push_back(castVar);
+    reductionVariableMap.try_emplace(loop.getReductionVars()[i], castVar);
   }
 }
 
@@ -881,9 +887,13 @@ static void getSinkableAllocas(LLVM::ModuleTranslation &moduleTranslation,
 }
 
 /// Converts an OpenMP workshare loop into LLVM IR using OpenMPIRBuilder.
-static LogicalResult
-convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
-                 LLVM::ModuleTranslation &moduleTranslation) {
+static LogicalResult convertOmpWsLoop(
+    Operation &opInst, llvm::IRBuilderBase &builder,
+    LLVM::ModuleTranslation &moduleTranslation,
+    llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP,
+    SmallVector<OwningReductionGen> &owningReductionGens,
+    SmallVector<OwningAtomicReductionGen> &owningAtomicReductionGens,
+    SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> &reductionInfos) {
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
   auto loop = cast<omp::WsLoopOp>(opInst);
   // TODO: this should be in the op verifier instead.
@@ -905,13 +915,12 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
   }
   SmallVector<omp::ReductionDeclareOp> reductionDecls;
   collectReductionDecls(loop, reductionDecls);
-  llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
-      findAllocaInsertPoint(builder, moduleTranslation);
 
   SmallVector<llvm::Value *> privateReductionVariables;
   DenseMap<Value, llvm::Value *> reductionVariableMap;
-  allocReductionVars(loop, builder, moduleTranslation, allocaIP, reductionDecls,
-                     privateReductionVariables, reductionVariableMap);
+  allocReductionVars(loop, builder, moduleTranslation, redAllocaIP,
+                     reductionDecls, privateReductionVariables,
+                     reductionVariableMap);
 
   // Store the mapping between reduction variables and their private copies on
   // ModuleTranslation stack. It can be then recovered when translating
@@ -1009,7 +1018,8 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
   llvm::CanonicalLoopInfo *loopInfo =
       ompBuilder->collapseLoops(ompLoc.DL, loopInfos, {});
 
-  allocaIP = findAllocaInsertPoint(builder, moduleTranslation);
+  llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
+      findAllocaInsertPoint(builder, moduleTranslation);
 
   // TODO: Handle doacross loops when the ordered clause has a parameter.
   bool isOrdered = loop.getOrderedVal().has_value();
@@ -1046,9 +1056,6 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
 
   // Create the reduction generators. We need to own them here because
   // ReductionInfo only accepts references to the generators.
-  SmallVector<OwningReductionGen> owningReductionGens;
-  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
-  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
   collectReductionInfo(loop, builder, moduleTranslation, reductionDecls,
                        owningReductionGens, owningAtomicReductionGens,
                        privateReductionVariables, reductionInfos);
@@ -1072,6 +1079,21 @@ convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
 
   return success();
 }
+
+static LogicalResult
+convertOmpWsLoop(Operation &opInst, llvm::IRBuilderBase &builder,
+                 LLVM::ModuleTranslation &moduleTranslation) {
+  llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP =
+    findAllocaInsertPoint(builder, moduleTranslation);
+  SmallVector<OwningReductionGen> owningReductionGens;
+  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
+  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
+
+  return convertOmpWsLoop(opInst, builder, moduleTranslation, redAllocaIP,
+                          owningReductionGens, owningAtomicReductionGens,
+                          reductionInfos);
+}
+
 
 /// Converts the OpenMP parallel operation to LLVM IR.
 static LogicalResult
@@ -2326,9 +2348,11 @@ convertOmpTargetData(Operation *op, llvm::IRBuilderBase &builder,
   return bodyGenStatus;
 }
 
-static LogicalResult
-convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
-                     LLVM::ModuleTranslation &moduleTranslation) {
+static LogicalResult convertOmpDistribute(
+    Operation &opInst, llvm::IRBuilderBase &builder,
+    LLVM::ModuleTranslation &moduleTranslation,
+    llvm::OpenMPIRBuilder::InsertPointTy *redAllocaIP,
+    SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> &reductionInfos) {
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
 
   using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
@@ -2344,12 +2368,11 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
 
     // DistributeOp has only one region associated with it.
     builder.restoreIP(codeGenIP);
-    // FIXME(JAN): Need to get allocation location passed in
-    //   ompBuilder->RIManager.setPrivateVarAllocaIP(allocaIP);
+    *redAllocaIP = allocaIP;
+    mlir::Region& reg = opInst.getRegion(0);
     auto regionBlock =
-        convertOmpOpRegions(opInst.getRegion(0), "omp.distribute.region",
+        convertOmpOpRegions(reg, "omp.distribute.region",
                             builder, moduleTranslation, bodyGenStatus);
-
     builder.SetInsertPoint(regionBlock->getTerminator());
 
     // FIXME(JAN): We need to know if we are inside a distribute and
@@ -2359,8 +2382,6 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
     // that instead of the reduction clause that could have been on the
     // omp.parallel
     auto IP = builder.saveIP();
-    // FIXME(JAN): Need to get reduction infos passed in
-    SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
     if (ompBuilder->Config.isGPU()) {
       llvm::OpenMPIRBuilder::InsertPointTy contInsertPoint =
           ompBuilder->createReductions(IP, allocaIP, reductionInfos, false,
@@ -2373,8 +2394,17 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
       findAllocaInsertPoint(builder, moduleTranslation);
   llvm::OpenMPIRBuilder::LocationDescription ompLoc(builder);
   builder.restoreIP(ompBuilder->createDistribute(ompLoc, allocaIP, bodyGenCB));
-
   return success();
+}
+
+static LogicalResult
+convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
+                     LLVM::ModuleTranslation &moduleTranslation) {
+  // No reductions are present so we just create dummy variables.
+  llvm::OpenMPIRBuilder::InsertPointTy dummyRedAllocaIP;
+  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> dummyReductionInfos;
+  return convertOmpDistribute(opInst, builder, moduleTranslation,
+                              &dummyRedAllocaIP, dummyReductionInfos);
 }
 
 /// Lowers the FlagsAttr which is applied to the module on the device
@@ -3094,7 +3124,8 @@ public:
 
 
 static LogicalResult convertOmpDistributeParallelWsLoop(
-    Operation *op, omp::DistributeOp distribute, omp::ParallelOp parallel,
+                                                        Operation *op,
+    omp::DistributeOp distribute, omp::ParallelOp parallel,
     omp::WsLoopOp wsloop, llvm::IRBuilderBase &builder,
     LLVM::ModuleTranslation &moduleTranslation,
     ConversionDispatchList &dispatchList);
@@ -3302,7 +3333,6 @@ convertTargetDeviceOp(Operation *op, llvm::IRBuilderBase &builder,
                                               dispatchList);
   }
   if (matchOpNest(op, parallel, wsloop)) {
-    llvm::errs() << "Matching parallel wsloop\n";
     return convertCommonOperation(op, builder, moduleTranslation);
   }
   return convertCommonOperation(op, builder, moduleTranslation);
@@ -3375,45 +3405,41 @@ static LogicalResult convertOmpDistributeParallelWsLoop(
     LLVM::ModuleTranslation &moduleTranslation,
     ConversionDispatchList &dispatchList) {
 
-  // Convert parallel alternative implementation
-  ConvertFunctionTy convertParallel =
-      [](Operation *op, llvm::IRBuilderBase &builder,
-         LLVM::ModuleTranslation &moduleTranslation) {
-        // Could potentially check that this op is exactly the same parallel
-        // op passed in
-        if (!isa<omp::ParallelOp>(op)) {
-          return std::make_pair(false, failure());
-        }
-        llvm::errs() << "====== Matching Alternative Parallel Lowering =====\n";
-        LogicalResult result =
-            convertCommonOperation(op, builder, moduleTranslation);
-        return std::make_pair(true, result);
-      };
+  // Reduction related data structures
+  SmallVector<OwningReductionGen> owningReductionGens;
+  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
+  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
+  llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP;
 
   // Convert wsloop alternative implementation
-  ConvertFunctionTy convertWsLoop =
-      [](Operation *op, llvm::IRBuilderBase &builder,
-         LLVM::ModuleTranslation &moduleTranslation) {
-        if (!isa<omp::WsLoopOp>(op)) {
-          return std::make_pair(false, failure());
-        }
-        llvm::errs() << "====== Matching Alternative WsLoop Lowering =====\n";
-        LogicalResult result =
-            convertCommonOperation(op, builder, moduleTranslation);
-        return std::make_pair(true, result);
-      };
+  ConvertFunctionTy convertWsLoop = [&redAllocaIP, &owningReductionGens,
+                                     &owningAtomicReductionGens,
+                                     &reductionInfos](
+                                        Operation *op,
+                                        llvm::IRBuilderBase &builder,
+                                        LLVM::ModuleTranslation
+                                            &moduleTranslation) {
+    if (!isa<omp::WsLoopOp>(op)) {
+      return std::make_pair(false, failure());
+    }
+
+    LogicalResult result = convertOmpWsLoop(
+        *op, builder, moduleTranslation, redAllocaIP, owningReductionGens,
+        owningAtomicReductionGens, reductionInfos);
+    return std::make_pair(true, result);
+  };
 
   // Push the new alternative functions
-  dispatchList.pushConversionFunction(convertParallel);
   dispatchList.pushConversionFunction(convertWsLoop);
 
   // Lower the current distribute operation
-  LogicalResult result =
-      convertOmpDistribute(*op, builder, moduleTranslation);
+  LogicalResult result = convertOmpDistribute(*op, builder, moduleTranslation,
+                                              &redAllocaIP, reductionInfos);
 
   // Pop the alternative functions
   dispatchList.popConversionFunction();
-  dispatchList.popConversionFunction();
+
+  return result;
 }
 
 LogicalResult OpenMPDialectLLVMIRTranslationInterface::amendOperation(
