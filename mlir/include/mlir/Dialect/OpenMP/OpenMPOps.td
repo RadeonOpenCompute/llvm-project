@@ -515,7 +515,7 @@ def LoopNestOp : OpenMP_Op<"loopnest", [SameVariadicOperandSize,
                         ParentOneOf<["DistributeOp", "SimdLoopOp", "TaskLoopOp",
                                      "WsLoopOp"]>,
                         RecursiveMemoryEffects]> {
-  let summary = "canonical loop";
+  let summary = "rectangular loop nest";
   let description = [{
     This operation represents a collapsed rectangular loop nest. For each
     rectangular loop of the nest represented by an instance of this operation,
@@ -527,8 +527,8 @@ def LoopNestOp : OpenMP_Op<"loopnest", [SameVariadicOperandSize,
 
     The body region can contain any number of blocks. The region is terminated
     by "omp.yield" instruction without operands. The induction variables,
-    represented as entry block arguments to the canonical loop operation's
-    single region, match the types of the `lowerBound`, `upperBound` and `step`
+    represented as entry block arguments to the loop nest operation's single
+    region, match the types of the `lowerBound`, `upperBound` and `step`
     arguments.
 
     ```mlir
