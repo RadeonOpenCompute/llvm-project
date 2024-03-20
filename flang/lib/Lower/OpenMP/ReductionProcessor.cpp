@@ -280,20 +280,20 @@ mlir::Value ReductionProcessor::createScalarCombiner(
   return reductionOp;
 }
 
-mlir::omp::ReductionDeclareOp ReductionProcessor::createReductionDecl(
+mlir::omp::DeclareReductionOp ReductionProcessor::createDeclareReduction(
     fir::FirOpBuilder &builder, llvm::StringRef reductionOpName,
     const ReductionIdentifier redId, mlir::Type type, mlir::Location loc) {
   mlir::OpBuilder::InsertionGuard guard(builder);
   mlir::ModuleOp module = builder.getModule();
 
   auto decl =
-      module.lookupSymbol<mlir::omp::ReductionDeclareOp>(reductionOpName);
+      module.lookupSymbol<mlir::omp::DeclareReductionOp>(reductionOpName);
   if (decl)
     return decl;
 
   mlir::OpBuilder modBuilder(module.getBodyRegion());
 
-  decl = modBuilder.create<mlir::omp::ReductionDeclareOp>(loc, reductionOpName,
+  decl = modBuilder.create<mlir::omp::DeclareReductionOp>(loc, reductionOpName,
                                                           type);
   builder.createBlock(&decl.getInitializerRegion(),
                       decl.getInitializerRegion().end(), {type}, {loc});
@@ -316,7 +316,7 @@ mlir::omp::ReductionDeclareOp ReductionProcessor::createReductionDecl(
   return decl;
 }
 
-void ReductionProcessor::addReductionDecl(
+void ReductionProcessor::addDeclareReduction(
     mlir::Location currentLocation,
     Fortran::lower::AbstractConverter &converter,
     const Fortran::parser::OmpReductionClause &reduction,
@@ -325,7 +325,7 @@ void ReductionProcessor::addReductionDecl(
     llvm::SmallVectorImpl<const Fortran::semantics::Symbol *>
         *reductionSymbols) {
   fir::FirOpBuilder &firOpBuilder = converter.getFirOpBuilder();
-  mlir::omp::ReductionDeclareOp decl;
+  mlir::omp::DeclareReductionOp decl;
   const auto &redOperator{
       std::get<Fortran::parser::OmpReductionOperator>(reduction.t)};
   const auto &objectList{std::get<Fortran::parser::OmpObjectList>(reduction.t)};
@@ -361,12 +361,12 @@ void ReductionProcessor::addReductionDecl(
               symVal.getType().cast<fir::ReferenceType>().getEleTy();
           reductionVars.push_back(symVal);
           if (redType.isa<fir::LogicalType>())
-            decl = createReductionDecl(
+            decl = createDeclareReduction(
                 firOpBuilder,
                 getReductionName(intrinsicOp, firOpBuilder.getI1Type()), redId,
                 redType, currentLocation);
           else if (redType.isIntOrIndexOrFloat()) {
-            decl = createReductionDecl(firOpBuilder,
+            decl = createDeclareReduction(firOpBuilder,
                                        getReductionName(intrinsicOp, redType),
                                        redId, redType, currentLocation);
           } else {
@@ -398,7 +398,7 @@ void ReductionProcessor::addReductionDecl(
             reductionVars.push_back(symVal);
             assert(redType.isIntOrIndexOrFloat() &&
                    "Unsupported reduction type");
-            decl = createReductionDecl(
+            decl = createDeclareReduction(
                 firOpBuilder,
                 getReductionName(getRealName(*reductionIntrinsic).ToString(),
                                  redType),
