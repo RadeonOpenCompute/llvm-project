@@ -3319,7 +3319,7 @@ bool matchOpScanNest(Block &block, FirstOpType &firstOp, RestOpTypes... restOps)
 }
 
 static LogicalResult
-convertTargetDeviceOp(Operation *op, llvm::IRBuilderBase &builder,
+convertInternalTargetOp(Operation *op, llvm::IRBuilderBase &builder,
                       LLVM::ModuleTranslation &moduleTranslation,
                       ConversionDispatchList &dispatchList) {
 
@@ -3332,44 +3332,22 @@ convertTargetDeviceOp(Operation *op, llvm::IRBuilderBase &builder,
                                               builder, moduleTranslation,
                                               dispatchList);
   }
-  if (matchOpNest(op, parallel, wsloop)) {
-    return convertCommonOperation(op, builder, moduleTranslation);
-  }
+
   return convertCommonOperation(op, builder, moduleTranslation);
 }
 
 static LogicalResult
-convertTargetDeviceTopLevelOp(Operation *op, llvm::IRBuilderBase &builder,
+convertTopLevelTargetOp(Operation *op, llvm::IRBuilderBase &builder,
                               LLVM::ModuleTranslation &moduleTranslation) {
-  return llvm::TypeSwitch<Operation *, LogicalResult>(op)
-      .Case<omp::DataOp, omp::EnterDataOp, omp::ExitDataOp, omp::UpdateDataOp>(
-          [&](auto op) {
-            return convertOmpTargetData(op, builder, moduleTranslation);
-          })
-      .Case([&](omp::TargetOp) {
-        return convertOmpTarget(*op, builder, moduleTranslation);
-      })
-      // Skip omp ops that are not legal top level ops for the target device
-      .Case<omp::BarrierOp, omp::TaskwaitOp, omp::TaskyieldOp, omp::FlushOp,
-            omp::ParallelOp, omp::ReductionOp, omp::MasterOp, omp::CriticalOp,
-            omp::OrderedRegionOp, omp::OrderedOp, omp::WsLoopOp,
-            omp::SimdLoopOp, omp::AtomicReadOp, omp::AtomicWriteOp,
-            omp::AtomicUpdateOp, omp::AtomicCaptureOp, omp::SectionsOp,
-            omp::SingleOp, omp::TeamsOp, omp::TaskOp, omp::TaskGroupOp,
-            omp::YieldOp, omp::TerminatorOp, omp::ReductionDeclareOp,
-            omp::ThreadprivateOp, omp::DistributeOp, omp::MapInfoOp,
-            omp::DataBoundsOp, omp::CriticalDeclareOp>(
-          [&](auto op) { return success(); })
-      .Default([&](Operation *inst) {
-        return inst->emitError("unsupported OpenMP operation: ")
-               << inst->getName();
-      });
-}
-
-static LogicalResult
-convertHostOp(Operation *op, llvm::IRBuilderBase &builder,
-                     LLVM::ModuleTranslation &moduleTranslation) {
-  return convertCommonOperation(op, builder, moduleTranslation);
+  if (isa<omp::TargetOp>(op))
+    return convertOmpTarget(*op, builder, moduleTranslation);
+  bool interrupted =
+      op->walk<WalkOrder::PreOrder>([&](omp::TargetOp targetOp) {
+          if (failed(convertOmpTarget(*targetOp, builder, moduleTranslation)))
+            return WalkResult::interrupt();
+          return WalkResult::skip();
+        }).wasInterrupted();
+  return failure(interrupted);
 }
 
 /// Implementation of the dialect interface that converts operations belonging
@@ -3531,6 +3509,23 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::amendOperation(
   return failure();
 }
 
+static bool isInternalTargetDeviceOp(Operation *op) {
+  // Assumes no reverse offloading
+  if (op->getParentOfType<omp::TargetOp>())
+    return true;
+
+  if (auto parentFn = op->getParentOfType<LLVM::LLVMFuncOp>())
+    if (auto declareTargetIface =
+            llvm::dyn_cast<mlir::omp::DeclareTargetInterface>(
+                parentFn.getOperation()))
+      if (declareTargetIface.isDeclareTarget() &&
+          declareTargetIface.getDeclareTargetDeviceType() !=
+              mlir::omp::DeclareTargetDeviceType::host)
+        return true;
+
+  return false;
+}
+
 /// Given an OpenMP MLIR operation, create the corresponding LLVM IR
 /// (including OpenMP runtime calls).
 LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
@@ -3547,14 +3542,15 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
     return result;
 
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
-  if (ompBuilder->Config.isTargetDevice())
-    if (op->getParentOfType<omp::TargetOp>())
-      return convertTargetDeviceOp(op, builder, moduleTranslation,
-                                   dispatchList);
-    else
-      return convertTargetDeviceTopLevelOp(op, builder, moduleTranslation);
-  else
-    return convertHostOp(op, builder, moduleTranslation);
+  if (ompBuilder->Config.isTargetDevice()) {
+    if (isInternalTargetDeviceOp(op)) {
+      return convertInternalTargetOp(op, builder, moduleTranslation, dispatchList);
+    } else {
+      return convertTopLevelTargetOp(op, builder, moduleTranslation);
+    }
+  }
+
+  return convertCommonOperation(op, builder, moduleTranslation);
 }
 
 void mlir::registerOpenMPDialectTranslation(DialectRegistry &registry) {
