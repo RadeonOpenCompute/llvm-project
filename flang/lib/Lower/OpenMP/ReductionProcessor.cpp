@@ -366,9 +366,9 @@ void ReductionProcessor::addDeclareReduction(
                 getReductionName(intrinsicOp, firOpBuilder.getI1Type()), redId,
                 redType, currentLocation);
           else if (redType.isIntOrIndexOrFloat()) {
-            decl = createDeclareReduction(firOpBuilder,
-                                       getReductionName(intrinsicOp, redType),
-                                       redId, redType, currentLocation);
+            decl = createDeclareReduction(
+                firOpBuilder, getReductionName(intrinsicOp, redType), redId,
+                redType, currentLocation);
           } else {
             TODO(currentLocation, "Reduction of some types is not supported");
           }

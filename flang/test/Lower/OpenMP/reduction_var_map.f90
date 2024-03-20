@@ -20,9 +20,9 @@ subroutine omp_target_combined
    return
 end subroutine omp_target_combined
 !CHECK-LABEL: func.func @_QPomp_target_combined() {
-!CHECK: omp.map_info var_ptr({{.*}} : !fir.ref<i64>, i64) map_clauses(implicit, tofrom) capture(ByRef) -> !fir.ref<i64> {name = "s1"}
-!CHECK: omp.map_info var_ptr({{.*}} : !fir.ref<i64>, i64) map_clauses(implicit, tofrom) capture(ByRef) -> !fir.ref<i64> {name = "s2"}
-!CHECK: omp.map_info var_ptr({{.*}} : !fir.ref<i32>, i32) map_clauses(implicit, exit_release_or_enter_alloc) capture(ByCopy) -> !fir.ref<i32> {name = "i"}
+!CHECK: omp.map.info var_ptr({{.*}} : !fir.ref<i64>, i64) map_clauses(implicit, tofrom) capture(ByRef) -> !fir.ref<i64> {name = "s1"}
+!CHECK: omp.map.info var_ptr({{.*}} : !fir.ref<i64>, i64) map_clauses(implicit, tofrom) capture(ByRef) -> !fir.ref<i64> {name = "s2"}
+!CHECK: omp.map.info var_ptr({{.*}} : !fir.ref<i32>, i32) map_clauses(implicit, exit_release_or_enter_alloc) capture(ByCopy) -> !fir.ref<i32> {name = "i"}
 
 subroutine omp_target_team_separate
    implicit none
@@ -40,4 +40,4 @@ subroutine omp_target_team_separate
    return
 end subroutine omp_target_team_separate
 !CHECK-LABEL: func.func @_QPomp_target_team_separate() {
-!CHECK:  omp.map_info var_ptr({{.*}} : !fir.ref<i64>, i64) map_clauses(implicit, exit_release_or_enter_alloc) capture(ByCopy) -> !fir.ref<i64> {name = "s3"}
+!CHECK:  omp.map.info var_ptr({{.*}} : !fir.ref<i64>, i64) map_clauses(implicit, exit_release_or_enter_alloc) capture(ByCopy) -> !fir.ref<i64> {name = "s3"}

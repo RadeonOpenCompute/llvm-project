@@ -105,7 +105,7 @@ public:
     step.push_back(rewriter.clone(*stepOp)->getResult(0));
     // ==== TODO (1) End ====
 
-    auto wsLoopOp = rewriter.create<mlir::omp::WsLoopOp>(
+    auto wsLoopOp = rewriter.create<mlir::omp::WsloopOp>(
         doLoop.getLoc(), lowerBound, upperBound, step);
     wsLoopOp.setInclusive(true);
 

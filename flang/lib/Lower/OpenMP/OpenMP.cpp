@@ -822,7 +822,6 @@ genParallelOp(Fortran::lower::AbstractConverter &converter,
     dsp.processStep2();
   }
 
-
   const auto &delayedPrivatizationInfo = dsp.getDelayedPrivatizationInfo();
 
   auto genRegionEntryCB = [&](mlir::Operation *op) {
@@ -1265,7 +1264,7 @@ genTargetOp(Fortran::lower::AbstractConverter &converter,
 
   ClauseProcessor cp(converter, semaCtx, clauseList);
   cp.processIf(Fortran::parser::OmpIfClause::DirectiveNameModifier::Target,
-              ifClauseOperand);
+               ifClauseOperand);
   cp.processDevice(stmtCtx, deviceOperand);
   cp.processThreadLimit(stmtCtx, threadLimitOperand);
   cp.processDepend(dependTypeOperands, dependOperands);

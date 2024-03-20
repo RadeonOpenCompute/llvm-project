@@ -450,9 +450,6 @@ static LogicalResult inlineConvertOmpRegions(
   return success();
 }
 
-namespace {
-} // namespace
-
 /// Create an OpenMPIRBuilder-compatible reduction generator for the given
 /// reduction declaration. The generator uses `builder` but ignores its
 /// insertion point.
@@ -834,8 +831,7 @@ collectReductionInfo(T &loop, llvm::IRBuilderBase &builder,
     llvm::OpenMPIRBuilder::ReductionInfo RI =
         ompBuilder.RIManager.getReductionInfo(i);
     RI.Variable = variable;
-    RI.ElementType =
-        moduleTranslation.convertType(reductionDecls[i].getType());
+    RI.ElementType = moduleTranslation.convertType(reductionDecls[i].getType());
     RI.ReductionGen =
         makeReductionGen(reductionDecls[i], builder, moduleTranslation);
     RI.AtomicReductionGen =
@@ -2830,8 +2826,7 @@ static OpTy castOrGetParentOfType(Operation *op, bool immediateParent = false) {
 static void initTargetDefaultBounds(
     omp::TargetOp targetOp,
     llvm::OpenMPIRBuilder::TargetKernelDefaultBounds &bounds,
-    bool isTargetDevice,
-    bool isGPU) {
+    bool isTargetDevice, bool isGPU) {
   // TODO Handle constant IF clauses
   Operation *innermostCapturedOmpOp = targetOp.getInnermostCapturedOmpOp();
 
@@ -2919,7 +2914,7 @@ static void initTargetDefaultBounds(
   int32_t reductionDataSize = 0;
   if (isGPU && innermostCapturedOmpOp) {
     if (auto wsLoopOp =
-            mlir::dyn_cast<mlir::omp::WsLoopOp>(innermostCapturedOmpOp)) {
+            mlir::dyn_cast<mlir::omp::WsloopOp>(innermostCapturedOmpOp)) {
       if (wsLoopOp.getNumReductionVars() > 0) {
         assert(wsLoopOp.getNumReductionVars() &&
                "Only 1 reduction variable currently supported");

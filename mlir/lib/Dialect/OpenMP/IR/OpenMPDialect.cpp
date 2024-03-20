@@ -1313,7 +1313,7 @@ Operation *TargetOp::getInnermostCapturedOmpOp() {
 
 bool TargetOp::isTargetSPMDLoop() {
   Operation *capturedOp = getInnermostCapturedOmpOp();
-  if (!isa_and_present<WsLoopOp, SimdLoopOp>(capturedOp))
+  if (!isa_and_present<WsloopOp, SimdLoopOp>(capturedOp))
     return false;
 
   Operation *parallelOp = capturedOp->getParentOp();
