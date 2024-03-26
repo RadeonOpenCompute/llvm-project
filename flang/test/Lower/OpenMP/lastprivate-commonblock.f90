@@ -15,7 +15,8 @@
 !CHECK:    %[[PRIVATE_X_DECL:.*]]:2 = hlfir.declare %[[PRIVATE_X_REF]] {uniq_name = "_QFlastprivate_commonEx"} : (!fir.ref<f32>) -> (!fir.ref<f32>, !fir.ref<f32>)
 !CHECK:    %[[PRIVATE_Y_REF:.*]] = fir.alloca f32 {bindc_name = "y", pinned, uniq_name = "_QFlastprivate_commonEy"}
 !CHECK:    %[[PRIVATE_Y_DECL:.*]]:2 = hlfir.declare %[[PRIVATE_Y_REF]] {uniq_name = "_QFlastprivate_commonEy"} : (!fir.ref<f32>) -> (!fir.ref<f32>, !fir.ref<f32>)
-!CHECK:    omp.wsloop   for  (%[[I:.*]]) : i32 = (%{{.*}}) to (%{{.*}}) inclusive step (%{{.*}}) {
+!CHECK:    omp.wsloop   {
+!CHECK:    omp.loopnest  (%[[I:.*]]) : i32 = (%{{.*}}) to (%{{.*}}) inclusive step (%{{.*}}) {
 !CHECK:      %[[V:.*]] = arith.addi %[[I]], %{{.*}} : i32
 !CHECK:      %[[C0:.*]] = arith.constant 0 : i32
 !CHECK:      %[[NEG_STEP:.*]] = arith.cmpi slt, %{{.*}}, %[[C0]] : i32

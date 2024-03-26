@@ -12,7 +12,8 @@ subroutine simple_loop
   !$OMP PARALLEL
   ! CHECK-DAG:     %[[ALLOCA_IV:.*]] = fir.alloca i32 {{{.*}}, pinned}
   ! CHECK:     %[[IV:.*]]    = fir.declare %[[ALLOCA_IV]] {uniq_name = "_QFsimple_loopEi"} : (!fir.ref<i32>) -> !fir.ref<i32>
-  ! CHECK:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_ST]]) to (%[[WS_END]]) inclusive step (%[[WS_ST]])
+  ! CHECK:     omp.wsloop {
+  ! CHECK:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_ST]]) to (%[[WS_END]]) inclusive step (%[[WS_ST]])
   !$OMP DO
   do i=1, 9
   ! CHECK:             fir.store %[[I]] to %[[IV:.*]] : !fir.ref<i32>

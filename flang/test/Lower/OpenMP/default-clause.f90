@@ -192,7 +192,7 @@ subroutine nested_default_clause_tests
 !CHECK: %[[INNER_PRIVATE_K:.*]] = fir.alloca i32 {bindc_name = "k", pinned, uniq_name = "_QFnested_default_clause_testsEk"}
 !CHECK: %[[INNER_PRIVATE_K_DECL:.*]]:2 = hlfir.declare %[[INNER_PRIVATE_K]] {uniq_name = "_QFnested_default_clause_testsEk"} : (!fir.ref<i32>) -> (!fir.ref<i32>, !fir.ref<i32>)
 !CHECK: %[[TEMP:.*]] = fir.load %[[PRIVATE_K_DECL]]#0 : !fir.ref<i32>
-!CHECK: hlfir.assign %[[TEMP]] to %[[INNER_PRIVATE_K_DECL]]#0 temporary_lhs : i32, !fir.ref<i32> 
+!CHECK: hlfir.assign %[[TEMP]] to %[[INNER_PRIVATE_K_DECL]]#0 temporary_lhs : i32, !fir.ref<i32>
 !CHECK: %[[CONST:.*]] = arith.constant 30 : i32
 !CHECK: hlfir.assign %[[CONST]] to %[[PRIVATE_Y_DECL]]#0 : i32, !fir.ref<i32>
 !CHECK: %[[CONST:.*]] = arith.constant 40 : i32
@@ -205,21 +205,21 @@ subroutine nested_default_clause_tests
 !CHECK: }
 !CHECK: omp.terminator
 !CHECK: }
-    !$omp parallel  firstprivate(x) private(y) shared(w) default(private)  
+    !$omp parallel  firstprivate(x) private(y) shared(w) default(private)
         !$omp parallel default(private)
            y = 20
-           x = 10 
-        !$omp end parallel 
+           x = 10
+        !$omp end parallel
 
-        !$omp parallel default(firstprivate) shared(y) private(w) 
+        !$omp parallel default(firstprivate) shared(y) private(w)
             y = 30
-            w = 40 
+            w = 40
             z = 50
             k = 40
         !$omp end parallel
     !$omp end parallel
-    
-    
+
+
 !CHECK: omp.parallel {
 !CHECK: %[[PRIVATE_X_DECL:.*]]:2 = hlfir.declare %[[PRIVATE_X]] {uniq_name = "_QFnested_default_clause_testsEx"} : (!fir.ref<i32>) -> (!fir.ref<i32>, !fir.ref<i32>)
 !CHECK: %[[PRIVATE_Y:.*]] = fir.alloca i32 {bindc_name = "y", pinned, uniq_name = "_QFnested_default_clause_testsEy"}
@@ -260,8 +260,8 @@ subroutine nested_default_clause_tests
         !$omp parallel default(private) shared(z)
             w = x + z
         !$omp end parallel
-    !$omp end parallel    
-    
+    !$omp end parallel
+
 !CHECK: omp.parallel {
 !CHECK: %[[PRIVATE_X:.*]] = fir.alloca i32 {bindc_name = "x", pinned, uniq_name = "_QFnested_default_clause_testsEx"}
 !CHECK: %[[PRIVATE_X_DECL:.*]]:2 = hlfir.declare %[[PRIVATE_X]] {uniq_name = "_QFnested_default_clause_testsEx"} : (!fir.ref<i32>) -> (!fir.ref<i32>, !fir.ref<i32>)
@@ -319,7 +319,7 @@ subroutine nested_default_clause_tests
 !CHECK: omp.terminator
 !CHECK: }
 !CHECK: return
-!CHECK: } 
+!CHECK: }
 	!$omp parallel default(firstprivate)
 		!$omp single
 			x = y
@@ -352,7 +352,8 @@ subroutine skipped_default_clause_checks()
        type(it)::iii
 
 !CHECK: omp.parallel {
-!CHECK: omp.wsloop reduction(@min_i_32 %[[VAL_Z_DECLARE]]#0 -> %[[PRV:.+]] : !fir.ref<i32>) for (%[[ARG:.*]]) {{.*}} {
+!CHECK: omp.wsloop reduction(@min_i_32 %[[VAL_Z_DECLARE]]#0 -> %[[PRV:.+]] : !fir.ref<i32>) {
+!CHECK: omp.loopnest (%[[ARG:.*]]) {{.*}} {
 !CHECK: omp.yield
 !CHECK: }
 !CHECK: omp.terminator

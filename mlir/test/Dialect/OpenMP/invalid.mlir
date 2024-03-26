@@ -98,7 +98,7 @@ func.func @invalid_parent(%lb : index, %ub : index, %step : index) {
 
 func.func @type_mismatch(%lb : index, %ub : index, %step : index) {
   // TODO Remove induction variables from omp.wsloop.
-  omp.wsloop for (%iv) : index = (%lb) to (%ub) step (%step) {
+  omp.wsloop {
     // expected-error@+1 {{range argument type does not match corresponding IV type}}
     "omp.loopnest" (%lb, %ub, %step) ({
     ^bb0(%iv2: i32):
@@ -112,7 +112,7 @@ func.func @type_mismatch(%lb : index, %ub : index, %step : index) {
 
 func.func @iv_number_mismatch(%lb : index, %ub : index, %step : index) {
   // TODO Remove induction variables from omp.wsloop.
-  omp.wsloop for (%iv) : index = (%lb) to (%ub) step (%step) {
+  omp.wsloop {
     // expected-error@+1 {{number of range arguments and IVs do not match}}
     "omp.loopnest" (%lb, %ub, %step) ({
     ^bb0(%iv1 : index, %iv2 : index):
@@ -125,7 +125,7 @@ func.func @iv_number_mismatch(%lb : index, %ub : index, %step : index) {
 // -----
 
 func.func @inclusive_not_a_clause(%lb : index, %ub : index, %step : index) {
-  // expected-error @below {{expected 'for'}}
+  // expected-error @below {{expected '{' to begin a region}}
   omp.wsloop nowait inclusive
   for (%iv) : index = (%lb) to (%ub) step (%step) {
     omp.yield
@@ -145,7 +145,7 @@ func.func @order_value(%lb : index, %ub : index, %step : index) {
 // -----
 
 func.func @if_not_allowed(%lb : index, %ub : index, %step : index, %bool_var : i1) {
-  // expected-error @below {{expected 'for'}}
+  // expected-error @below {{expected '{'}}
   omp.wsloop if(%bool_var: i1)
   for (%iv) : index = (%lb) to (%ub) step (%step) {
     omp.yield
@@ -155,7 +155,7 @@ func.func @if_not_allowed(%lb : index, %ub : index, %step : index, %bool_var : i
 // -----
 
 func.func @num_threads_not_allowed(%lb : index, %ub : index, %step : index, %int_var : i32) {
-  // expected-error @below {{expected 'for'}}
+  // expected-error @below {{expected '{'}}
   omp.wsloop num_threads(%int_var: i32)
   for (%iv) : index = (%lb) to (%ub) step (%step) {
     omp.yield
@@ -479,11 +479,13 @@ func.func @foo(%lb : index, %ub : index, %step : index) {
   %1 = llvm.alloca %c1 x i32 : (i32) -> !llvm.ptr
 
   // expected-error @below {{expected symbol reference @foo to point to a reduction declaration}}
-  omp.wsloop reduction(@foo %0 -> %prv : !llvm.ptr)
-  for (%iv) : index = (%lb) to (%ub) step (%step) {
+  omp.wsloop reduction(@foo %0 -> %prv : !llvm.ptr) {
+  omp.loopnest (%iv) : index = (%lb) to (%ub) step (%step) {
     %2 = arith.constant 2.0 : f32
     omp.reduction %2, %1 : f32, !llvm.ptr
     omp.yield
+  }
+  omp.terminator
   }
   return
 }
@@ -507,11 +509,13 @@ func.func @foo(%lb : index, %ub : index, %step : index) {
   %0 = llvm.alloca %c1 x i32 : (i32) -> !llvm.ptr
 
   // expected-error @below {{accumulator variable used more than once}}
-  omp.wsloop reduction(@add_f32 %0 -> %prv : !llvm.ptr, @add_f32 %0 -> %prv1 : !llvm.ptr)
-  for (%iv) : index = (%lb) to (%ub) step (%step) {
+  omp.wsloop reduction(@add_f32 %0 -> %prv : !llvm.ptr, @add_f32 %0 -> %prv1 : !llvm.ptr) {
+  omp.loopnest (%iv) : index = (%lb) to (%ub) step (%step) {
     %2 = arith.constant 2.0 : f32
     omp.reduction %2, %0 : f32, !llvm.ptr
     omp.yield
+  }
+  omp.terminator
   }
   return
 }
@@ -540,11 +544,13 @@ func.func @foo(%lb : index, %ub : index, %step : index, %mem : memref<1xf32>) {
   %c1 = arith.constant 1 : i32
 
   // expected-error @below {{expected accumulator ('memref<1xf32>') to be the same type as reduction declaration ('!llvm.ptr')}}
-  omp.wsloop reduction(@add_f32 %mem -> %prv : memref<1xf32>)
-  for (%iv) : index = (%lb) to (%ub) step (%step) {
+  omp.wsloop reduction(@add_f32 %mem -> %prv : memref<1xf32>) {
+  omp.loopnest (%iv) : index = (%lb) to (%ub) step (%step) {
     %2 = arith.constant 2.0 : f32
     omp.reduction %2, %mem : f32, memref<1xf32>
     omp.yield
+  }
+  omp.terminator
   }
   return
 }
@@ -577,13 +583,15 @@ omp.critical.declare @mutex hint(invalid_hint)
 // -----
 
 func.func @omp_ordered1(%arg1 : i32, %arg2 : i32, %arg3 : i32) -> () {
-  omp.wsloop ordered(1)
-  for (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
+  omp.wsloop ordered(1) {
+  omp.loopnest (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
     // expected-error @below {{ordered region must be closely nested inside a worksharing-loop region with an ordered clause without parameter present}}
     omp.ordered_region {
       omp.terminator
     }
     omp.yield
+  }
+  omp.terminator
   }
   return
 }
@@ -591,12 +599,15 @@ func.func @omp_ordered1(%arg1 : i32, %arg2 : i32, %arg3 : i32) -> () {
 // -----
 
 func.func @omp_ordered2(%arg1 : i32, %arg2 : i32, %arg3 : i32) -> () {
-  omp.wsloop for (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
+  omp.wsloop {
+    omp.loopnest (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
     // expected-error @below {{ordered region must be closely nested inside a worksharing-loop region with an ordered clause without parameter present}}
     omp.ordered_region {
       omp.terminator
     }
     omp.yield
+  }
+  omp.terminator
   }
   return
 }
@@ -612,24 +623,28 @@ func.func @omp_ordered3(%vec0 : i64) -> () {
 // -----
 
 func.func @omp_ordered4(%arg1 : i32, %arg2 : i32, %arg3 : i32, %vec0 : i64) -> () {
-  omp.wsloop ordered(0)
-  for (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
+  omp.wsloop ordered(0) {
+  omp.loopnest (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
     // expected-error @below {{ordered depend directive must be closely nested inside a worksharing-loop with ordered clause with parameter present}}
     omp.ordered depend_type(dependsink) depend_vec(%vec0 : i64) {num_loops_val = 1 : i64}
 
     omp.yield
+  }
+  omp.terminator
   }
   return
 }
 // -----
 
 func.func @omp_ordered5(%arg1 : i32, %arg2 : i32, %arg3 : i32, %vec0 : i64, %vec1 : i64) -> () {
-  omp.wsloop ordered(1)
-  for (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
+  omp.wsloop ordered(1) {
+  omp.loopnest (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
     // expected-error @below {{number of variables in depend clause does not match number of iteration variables in the doacross loop}}
     omp.ordered depend_type(dependsource) depend_vec(%vec0, %vec1 : i64, i64) {num_loops_val = 2 : i64}
 
     omp.yield
+  }
+  omp.terminator
   }
   return
 }
@@ -1462,11 +1477,13 @@ func.func @omp_cancel2() {
 // -----
 
 func.func @omp_cancel3(%arg1 : i32, %arg2 : i32, %arg3 : i32) -> () {
-  omp.wsloop nowait
-    for (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
+  omp.wsloop nowait {
+    omp.loopnest (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
     // expected-error @below {{A worksharing construct that is canceled must not have a nowait clause}}
     omp.cancel cancellation_construct_type(loop)
     // CHECK: omp.terminator
+    omp.terminator
+  }
     omp.terminator
   }
   return
@@ -1475,11 +1492,13 @@ func.func @omp_cancel3(%arg1 : i32, %arg2 : i32, %arg3 : i32) -> () {
 // -----
 
 func.func @omp_cancel4(%arg1 : i32, %arg2 : i32, %arg3 : i32) -> () {
-  omp.wsloop ordered(1)
-    for (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
+  omp.wsloop ordered(1) {
+    omp.loopnest (%0) : i32 = (%arg1) to (%arg2) step (%arg3) {
     // expected-error @below {{A worksharing construct that is canceled must not have an ordered clause}}
     omp.cancel cancellation_construct_type(loop)
     // CHECK: omp.terminator
+    omp.terminator
+  }
     omp.terminator
   }
   return

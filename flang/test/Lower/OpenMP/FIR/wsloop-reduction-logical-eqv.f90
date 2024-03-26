@@ -30,7 +30,8 @@
 ! CHECK:             %[[VAL_6:.*]] = arith.constant 1 : i32
 ! CHECK:             %[[VAL_7:.*]] = arith.constant 100 : i32
 ! CHECK:             %[[VAL_8:.*]] = arith.constant 1 : i32
-! CHECK:             omp.wsloop reduction(@eqv_reduction %[[VAL_2]] -> %[[VAL_9:.*]] : !fir.ref<!fir.logical<4>>)  for  (%[[VAL_10:.*]]) : i32 = (%[[VAL_6]]) to (%[[VAL_7]]) inclusive step (%[[VAL_8]]) {
+! CHECK:             omp.wsloop reduction(@eqv_reduction %[[VAL_2]] -> %[[VAL_9:.*]] : !fir.ref<!fir.logical<4>>)  {
+! CHECK:             omp.loopnest  (%[[VAL_10:.*]]) : i32 = (%[[VAL_6]]) to (%[[VAL_7]]) inclusive step (%[[VAL_8]]) {
 ! CHECK:               fir.store %[[VAL_10]] to %[[VAL_5]] : !fir.ref<i32>
 ! CHECK:               %[[VAL_11:.*]] = fir.load %[[VAL_9]] : !fir.ref<!fir.logical<4>>
 ! CHECK:               %[[VAL_12:.*]] = fir.load %[[VAL_5]] : !fir.ref<i32>
@@ -72,7 +73,8 @@ end subroutine
 ! CHECK:             %[[VAL_6:.*]] = arith.constant 1 : i32
 ! CHECK:             %[[VAL_7:.*]] = arith.constant 100 : i32
 ! CHECK:             %[[VAL_8:.*]] = arith.constant 1 : i32
-! CHECK:             omp.wsloop reduction(@eqv_reduction %[[VAL_2]] -> %[[VAL_9:.*]] : !fir.ref<!fir.logical<4>>)  for  (%[[VAL_10:.*]]) : i32 = (%[[VAL_6]]) to (%[[VAL_7]]) inclusive step (%[[VAL_8]]) {
+! CHECK:             omp.wsloop reduction(@eqv_reduction %[[VAL_2]] -> %[[VAL_9:.*]] : !fir.ref<!fir.logical<4>>)  {
+! CHECK:             omp.loopnest  (%[[VAL_10:.*]]) : i32 = (%[[VAL_6]]) to (%[[VAL_7]]) inclusive step (%[[VAL_8]]) {
 ! CHECK:               fir.store %[[VAL_10]] to %[[VAL_5]] : !fir.ref<i32>
 ! CHECK:               %[[VAL_11:.*]] = fir.load %[[VAL_5]] : !fir.ref<i32>
 ! CHECK:               %[[VAL_12:.*]] = fir.convert %[[VAL_11]] : (i32) -> i64
@@ -122,7 +124,8 @@ end subroutine
 ! CHECK:             %[[VAL_12:.*]] = arith.constant 1 : i32
 ! CHECK:             %[[VAL_13:.*]] = arith.constant 100 : i32
 ! CHECK:             %[[VAL_14:.*]] = arith.constant 1 : i32
-! CHECK:             omp.wsloop reduction(@eqv_reduction %[[VAL_2]] -> %[[VAL_15:.*]] : !fir.ref<!fir.logical<4>>, @eqv_reduction %[[VAL_3]] -> %[[VAL_16:.*]] : !fir.ref<!fir.logical<4>>, @eqv_reduction %[[VAL_4]] -> %[[VAL_17:.*]] : !fir.ref<!fir.logical<4>>)  for  (%[[VAL_18:.*]]) : i32 = (%[[VAL_12]]) to (%[[VAL_13]]) inclusive step (%[[VAL_14]]) {
+! CHECK:             omp.wsloop reduction(@eqv_reduction %[[VAL_2]] -> %[[VAL_15:.*]] : !fir.ref<!fir.logical<4>>, @eqv_reduction %[[VAL_3]] -> %[[VAL_16:.*]] : !fir.ref<!fir.logical<4>>, @eqv_reduction %[[VAL_4]] -> %[[VAL_17:.*]] : !fir.ref<!fir.logical<4>>)  {
+! CHECK:             omp.loopnest  (%[[VAL_18:.*]]) : i32 = (%[[VAL_12]]) to (%[[VAL_13]]) inclusive step (%[[VAL_14]]) {
 ! CHECK:               fir.store %[[VAL_18]] to %[[VAL_11]] : !fir.ref<i32>
 ! CHECK:               %[[VAL_19:.*]] = fir.load %[[VAL_15]] : !fir.ref<!fir.logical<4>>
 ! CHECK:               %[[VAL_20:.*]] = fir.load %[[VAL_11]] : !fir.ref<i32>
