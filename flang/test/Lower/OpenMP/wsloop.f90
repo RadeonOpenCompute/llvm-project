@@ -12,7 +12,8 @@ subroutine simple_loop
   ! CHECK:     %[[WS_LB:.*]] = arith.constant 1 : i32
   ! CHECK:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! CHECK:     %[[WS_STEP:.*]] = arith.constant 1 : i32
-  ! CHECK:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! CHECK:     omp.wsloop {
+  ! CHECK:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]]) {
   !$OMP DO
   do i=1, 9
   ! CHECK:             fir.store %[[I]] to %[[IV_DECL:.*]]#1 : !fir.ref<i32>
@@ -36,7 +37,8 @@ subroutine simple_loop_with_step
   ! CHECK:     %[[WS_LB:.*]] = arith.constant 1 : i32
   ! CHECK:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! CHECK:     %[[WS_STEP:.*]] = arith.constant 2 : i32
-  ! CHECK:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! CHECK:     omp.wsloop {
+  ! CHECK:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]]) {
   ! CHECK:       fir.store %[[I]] to %[[IV_DECL]]#1 : !fir.ref<i32>
   ! CHECK:       %[[LOAD_IV:.*]] = fir.load %[[IV_DECL]]#0 : !fir.ref<i32>
   !$OMP DO
@@ -60,7 +62,8 @@ subroutine loop_with_schedule_nowait
   ! CHECK:     %[[WS_LB:.*]] = arith.constant 1 : i32
   ! CHECK:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! CHECK:     %[[WS_STEP:.*]] = arith.constant 1 : i32
-  ! CHECK:     omp.wsloop schedule(runtime) nowait for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! CHECK:     omp.wsloop schedule(runtime) nowait {
+  ! CHECK:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]]) {
   !$OMP DO SCHEDULE(runtime)
   do i=1, 9
   ! CHECK:       fir.store %[[I]] to %[[IV_DECL]]#1 : !fir.ref<i32>

@@ -71,7 +71,8 @@ func.func @branch_loop() {
 func.func @wsloop(%arg0: index, %arg1: index, %arg2: index, %arg3: index, %arg4: index, %arg5: index) {
   // CHECK: omp.parallel
   omp.parallel {
-    // CHECK: omp.wsloop for (%[[ARG6:.*]], %[[ARG7:.*]]) : i64 = (%[[ARG0]], %[[ARG1]]) to (%[[ARG2]], %[[ARG3]]) step (%[[ARG4]], %[[ARG5]]) {
+    // CHECK: omp.wsloop {
+    // CHECK: omp.loopnest   (%[[ARG6:.*]], %[[ARG7:.*]]) : i64 = (%[[ARG0]], %[[ARG1]]) to (%[[ARG2]], %[[ARG3]]) step (%[[ARG4]], %[[ARG5]]) {
     "omp.wsloop"(%arg0, %arg1, %arg2, %arg3, %arg4, %arg5) ({
     ^bb0(%arg6: index, %arg7: index):
       // CHECK-DAG: %[[CAST_ARG6:.*]] = builtin.unrealized_conversion_cast %[[ARG6]] : i64 to index
@@ -320,7 +321,8 @@ llvm.func @_QPsb() {
 // CHECK-LABEL:  @_QPsimple_reduction
 // CHECK:    %[[RED_ACCUMULATOR:.*]] = llvm.alloca %{{.*}} x i32 {bindc_name = "x", uniq_name = "_QFsimple_reductionEx"} : (i64) -> !llvm.ptr
 // CHECK:    omp.parallel
-// CHECK:      omp.wsloop reduction(@eqv_reduction %{{.+}} -> %[[PRV:.+]] : !llvm.ptr) for
+// CHECK:      omp.wsloop reduction(@eqv_reduction %{{.+}} -> %[[PRV:.+]] : !llvm.ptr) {
+// CHECK:      omp.loopnest
 // CHECK:        %[[LPRV:.+]] = llvm.load %[[PRV]] : !llvm.ptr -> i32
 // CHECK:        %[[CMP:.+]] = llvm.icmp "eq" %{{.*}}, %[[LPRV]] : i32
 // CHECK:        %[[ZEXT:.+]] = llvm.zext %[[CMP]] : i1 to i32
@@ -353,7 +355,8 @@ llvm.func @_QPsimple_reduction(%arg0: !llvm.ptr {fir.bindc_name = "y"}) {
   llvm.store %5, %4 : i32, !llvm.ptr
   omp.parallel   {
     %6 = llvm.alloca %3 x i32 {adapt.valuebyref, in_type = i32, operandSegmentSizes = array<i32: 0, 0>, pinned} : (i64) -> !llvm.ptr
-    omp.wsloop   reduction(@eqv_reduction %4 -> %prv : !llvm.ptr) for  (%arg1) : i32 = (%1) to (%0) inclusive step (%1) {
+    omp.wsloop   reduction(@eqv_reduction %4 -> %prv : !llvm.ptr) {
+    omp.loopnest  (%arg1) : i32 = (%1) to (%0) inclusive step (%1) {
       llvm.store %arg1, %6 : i32, !llvm.ptr
       %7 = llvm.load %6 : !llvm.ptr -> i32
       %8 = llvm.sext %7 : i32 to i64
@@ -365,6 +368,8 @@ llvm.func @_QPsimple_reduction(%arg0: !llvm.ptr {fir.bindc_name = "y"}) {
       %14 = llvm.zext %13 : i1 to i32
       llvm.store %14, %prv : i32, !llvm.ptr
       omp.yield
+    }
+    omp.terminator
     }
     omp.terminator
   }

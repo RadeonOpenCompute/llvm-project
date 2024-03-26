@@ -9,7 +9,8 @@ subroutine simple_parallel_do
   ! CHECK:     %[[WS_LB:.*]] = arith.constant 1 : i32
   ! CHECK:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! CHECK:     %[[WS_STEP:.*]] = arith.constant 1 : i32
-  ! CHECK:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! CHECK:     omp.wsloop {
+  ! CHECK:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
   !$OMP PARALLEL DO
   do i=1, 9
   ! CHECK:    fir.store %[[I]] to %[[IV_ADDR:.*]]#1 : !fir.ref<i32>
@@ -37,7 +38,8 @@ subroutine parallel_do_with_parallel_clauses(cond, nt)
   ! CHECK:     %[[WS_LB:.*]] = arith.constant 1 : i32
   ! CHECK:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! CHECK:     %[[WS_STEP:.*]] = arith.constant 1 : i32
-  ! CHECK:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! CHECK:     omp.wsloop {
+  ! CHECK:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
   !$OMP PARALLEL DO IF(cond) NUM_THREADS(nt) PROC_BIND(close)
   do i=1, 9
   ! CHECK:    fir.store %[[I]] to %[[IV_ADDR:.*]]#1 : !fir.ref<i32>
@@ -61,7 +63,8 @@ subroutine parallel_do_with_clauses(nt)
   ! CHECK:     %[[WS_LB:.*]] = arith.constant 1 : i32
   ! CHECK:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! CHECK:     %[[WS_STEP:.*]] = arith.constant 1 : i32
-  ! CHECK:     omp.wsloop schedule(dynamic) for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! CHECK:     omp.wsloop schedule(dynamic) {
+  ! CHECK:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
   !$OMP PARALLEL DO NUM_THREADS(nt) SCHEDULE(dynamic)
   do i=1, 9
   ! CHECK:    fir.store %[[I]] to %[[IV_ADDR:.*]]#1 : !fir.ref<i32>
@@ -97,7 +100,8 @@ subroutine parallel_do_with_privatisation_clauses(cond,nt)
   ! CHECK:    %[[WS_LB:.*]] = arith.constant 1 : i32
   ! CHECK:    %[[WS_UB:.*]] = arith.constant 9 : i32
   ! CHECK:    %[[WS_STEP:.*]] = arith.constant 1 : i32
-  ! CHECK:    omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! CHECK:    omp.wsloop {
+  ! CHECK:    omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
   !$OMP PARALLEL DO PRIVATE(cond) FIRSTPRIVATE(nt)
   do i=1, 9
   ! CHECK:    fir.store %[[I]] to %[[IV_ADDR:.*]]#1 : !fir.ref<i32>
@@ -150,7 +154,8 @@ end subroutine parallel_private_do
 ! CHECK:             %[[VAL_7:.*]] = arith.constant 1 : i32
 ! CHECK:             %[[VAL_8:.*]] = arith.constant 9 : i32
 ! CHECK:             %[[VAL_9:.*]] = arith.constant 1 : i32
-! CHECK:             omp.wsloop   for  (%[[I:.*]]) : i32 = (%[[VAL_7]]) to (%[[VAL_8]]) inclusive step (%[[VAL_9]]) {
+! CHECK:             omp.wsloop   {
+! CHECK:             omp.loopnest  (%[[I:.*]]) : i32 = (%[[VAL_7]]) to (%[[VAL_8]]) inclusive step (%[[VAL_9]]) {
 ! CHECK:               fir.store %[[I]] to %[[I_PRIV_DECL]]#1 : !fir.ref<i32>
 ! CHECK:               fir.call @_QPfoo(%[[I_PRIV_DECL]]#1, %[[COND_DECL]]#1, %[[NT_PRIV_DECL]]#1) {{.*}}: (!fir.ref<i32>, !fir.ref<!fir.logical<4>>, !fir.ref<i32>) -> ()
 ! CHECK:               omp.yield
@@ -196,7 +201,8 @@ end subroutine omp_parallel_multiple_firstprivate_do
 ! CHECK:             %[[VAL_8:.*]] = arith.constant 1 : i32
 ! CHECK:             %[[VAL_9:.*]] = arith.constant 10 : i32
 ! CHECK:             %[[VAL_10:.*]] = arith.constant 1 : i32
-! CHECK:             omp.wsloop   for  (%[[I:.*]]) : i32 = (%[[VAL_8]]) to (%[[VAL_9]]) inclusive step (%[[VAL_10]]) {
+! CHECK:             omp.wsloop   {
+! CHECK:             omp.loopnest  (%[[I:.*]]) : i32 = (%[[VAL_8]]) to (%[[VAL_9]]) inclusive step (%[[VAL_10]]) {
 ! CHECK:               fir.store %[[I]] to %[[I_PRIV_DECL]]#1 : !fir.ref<i32>
 ! CHECK:               fir.call @_QPbar(%[[I_PRIV_DECL]]#1, %[[A_PRIV_DECL]]#1) {{.*}}: (!fir.ref<i32>, !fir.ref<i32>) -> ()
 ! CHECK:               omp.yield
@@ -241,7 +247,8 @@ end subroutine parallel_do_private
 ! CHECK:             %[[VAL_7:.*]] = arith.constant 1 : i32
 ! CHECK:             %[[VAL_8:.*]] = arith.constant 9 : i32
 ! CHECK:             %[[VAL_9:.*]] = arith.constant 1 : i32
-! CHECK:             omp.wsloop   for  (%[[I:.*]]) : i32 = (%[[VAL_7]]) to (%[[VAL_8]]) inclusive step (%[[VAL_9]]) {
+! CHECK:             omp.wsloop   {
+! CHECK:             omp.loopnest  (%[[I:.*]]) : i32 = (%[[VAL_7]]) to (%[[VAL_8]]) inclusive step (%[[VAL_9]]) {
 ! CHECK:               fir.store %[[I]] to %[[I_PRIV_DECL]]#1 : !fir.ref<i32>
 ! CHECK:               fir.call @_QPfoo(%[[I_PRIV_DECL]]#1, %[[COND_PRIV_DECL]]#1, %[[NT_PRIV_DECL]]#1) {{.*}}: (!fir.ref<i32>, !fir.ref<!fir.logical<4>>, !fir.ref<i32>) -> ()
 ! CHECK:               omp.yield
@@ -287,7 +294,8 @@ end subroutine omp_parallel_do_multiple_firstprivate
 ! CHECK:             %[[VAL_8:.*]] = arith.constant 1 : i32
 ! CHECK:             %[[VAL_9:.*]] = arith.constant 10 : i32
 ! CHECK:             %[[VAL_10:.*]] = arith.constant 1 : i32
-! CHECK:             omp.wsloop   for  (%[[I:.*]]) : i32 = (%[[VAL_8]]) to (%[[VAL_9]]) inclusive step (%[[VAL_10]]) {
+! CHECK:             omp.wsloop   {
+! CHECK:             omp.loopnest  (%[[I:.*]]) : i32 = (%[[VAL_8]]) to (%[[VAL_9]]) inclusive step (%[[VAL_10]]) {
 ! CHECK:               fir.store %[[I]] to %[[I_PRIV_DECL]]#1 : !fir.ref<i32>
 ! CHECK:               fir.call @_QPbar(%[[I_PRIV_DECL]]#1, %[[A_PRIV_DECL]]#1) {{.*}}: (!fir.ref<i32>, !fir.ref<i32>) -> ()
 ! CHECK:               omp.yield

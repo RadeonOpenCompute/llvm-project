@@ -3,7 +3,7 @@
 
 ! RUN: bbc -fopenmp -emit-fir -hlfir=false %s -o - | FileCheck %s
 
-! CHECK: func @_QPomp_do_firstprivate(%[[ARG0:.*]]: !fir.ref<i32> {fir.bindc_name = "a"}) 
+! CHECK: func @_QPomp_do_firstprivate(%[[ARG0:.*]]: !fir.ref<i32> {fir.bindc_name = "a"})
 subroutine omp_do_firstprivate(a)
   integer::a
   integer::n
@@ -17,7 +17,8 @@ subroutine omp_do_firstprivate(a)
   ! CHECK: %[[LB:.*]] = arith.constant 1 : i32
   ! CHECK-NEXT: %[[UB:.*]] = fir.load %[[CLONE]] : !fir.ref<i32>
   ! CHECK-NEXT: %[[STEP:.*]] = arith.constant 1 : i32
-  ! CHECK-NEXT: omp.wsloop   for  (%[[ARG1:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]])
+  ! CHECK-NEXT: omp.wsloop   {
+  ! CHECK-NEXT: omp.loopnest  (%[[ARG1:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]])
   ! CHECK-NEXT: fir.store %[[ARG1]] to %[[REF]] : !fir.ref<i32>
   ! CHECK-NEXT: fir.call @_QPfoo(%[[REF]], %[[CLONE]]) {{.*}}: (!fir.ref<i32>, !fir.ref<i32>) -> ()
   ! CHECK-NEXT: omp.yield
@@ -29,7 +30,7 @@ subroutine omp_do_firstprivate(a)
   call bar(a)
 end subroutine omp_do_firstprivate
 
-! CHECK: func @_QPomp_do_firstprivate2(%[[ARG0:.*]]: !fir.ref<i32> {fir.bindc_name = "a"}, %[[ARG1:.*]]: !fir.ref<i32> {fir.bindc_name = "n"}) 
+! CHECK: func @_QPomp_do_firstprivate2(%[[ARG0:.*]]: !fir.ref<i32> {fir.bindc_name = "a"}, %[[ARG1:.*]]: !fir.ref<i32> {fir.bindc_name = "n"})
 subroutine omp_do_firstprivate2(a, n)
   integer::a
   integer::n
@@ -48,7 +49,8 @@ subroutine omp_do_firstprivate2(a, n)
   ! CHECK: %[[LB:.*]] = fir.load %[[CLONE]] : !fir.ref<i32>
   ! CHECK-NEXT: %[[UB:.*]] = fir.load %[[CLONE1]] : !fir.ref<i32>
   ! CHECK-NEXT: %[[STEP:.*]] = arith.constant 1 : i32
-  ! CHECK-NEXT: omp.wsloop   for  (%[[ARG2:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]])
+  ! CHECK-NEXT: omp.wsloop   {
+  ! CHECK-NEXT: omp.loopnest  (%[[ARG2:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]])
   ! CHECK-NEXT: fir.store %[[ARG2]] to %[[REF]] : !fir.ref<i32>
   ! CHECK-NEXT: fir.call @_QPfoo(%[[REF]], %[[CLONE]]) {{.*}}: (!fir.ref<i32>, !fir.ref<i32>) -> ()
   ! CHECK-NEXT: omp.yield

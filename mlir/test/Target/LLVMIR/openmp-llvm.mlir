@@ -320,7 +320,8 @@ llvm.func @wsloop_simple(%arg0: !llvm.ptr) {
   %1 = llvm.mlir.constant(10 : index) : i64
   %2 = llvm.mlir.constant(1 : index) : i64
   omp.parallel {
-    "omp.wsloop"(%1, %0, %2) ({
+    omp.wsloop {
+    "omp.loopnest" (%1, %0, %2) ({
     ^bb0(%arg1: i64):
       // The form of the emitted IR is controlled by OpenMPIRBuilder and
       // tested there. Just check that the right functions are called.
@@ -334,6 +335,8 @@ llvm.func @wsloop_simple(%arg0: !llvm.ptr) {
     }) {operandSegmentSizes = array<i32: 1, 1, 1, 0, 0, 0, 0>} : (i64, i64, i64) -> ()
     omp.terminator
   }
+  omp.terminator
+  }
   llvm.return
 }
 
@@ -345,13 +348,16 @@ llvm.func @wsloop_inclusive_1(%arg0: !llvm.ptr) {
   %1 = llvm.mlir.constant(10 : index) : i64
   %2 = llvm.mlir.constant(1 : index) : i64
   // CHECK: store i64 31, ptr %{{.*}}upperbound
-  "omp.wsloop"(%1, %0, %2) ({
+  omp.wsloop {
+  "omp.loopnest"(%1, %0, %2) ({
   ^bb0(%arg1: i64):
     %3 = llvm.mlir.constant(2.000000e+00 : f32) : f32
     %4 = llvm.getelementptr %arg0[%arg1] : (!llvm.ptr, i64) -> !llvm.ptr, f32
     llvm.store %3, %4 : f32, !llvm.ptr
     omp.yield
   }) {operandSegmentSizes = array<i32: 1, 1, 1, 0, 0, 0, 0>} : (i64, i64, i64) -> ()
+  omp.terminator
+  }
   llvm.return
 }
 
@@ -363,13 +369,16 @@ llvm.func @wsloop_inclusive_2(%arg0: !llvm.ptr) {
   %1 = llvm.mlir.constant(10 : index) : i64
   %2 = llvm.mlir.constant(1 : index) : i64
   // CHECK: store i64 32, ptr %{{.*}}upperbound
-  "omp.wsloop"(%1, %0, %2) ({
+  omp.wsloop {
+  "omp.loopnest"(%1, %0, %2) ({
   ^bb0(%arg1: i64):
     %3 = llvm.mlir.constant(2.000000e+00 : f32) : f32
     %4 = llvm.getelementptr %arg0[%arg1] : (!llvm.ptr, i64) -> !llvm.ptr, f32
     llvm.store %3, %4 : f32, !llvm.ptr
     omp.yield
   }) {inclusive, operandSegmentSizes = array<i32: 1, 1, 1, 0, 0, 0, 0>} : (i64, i64, i64) -> ()
+  omp.terminator
+  }
   llvm.return
 }
 
@@ -379,12 +388,14 @@ llvm.func @body(i32)
 
 // CHECK-LABEL: @test_omp_wsloop_static_defchunk
 llvm.func @test_omp_wsloop_static_defchunk(%lb : i32, %ub : i32, %step : i32) -> () {
- omp.wsloop schedule(static)
- for (%iv) : i32 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(static) {
+ omp.loopnest (%iv) : i32 = (%lb) to (%ub) step (%step) {
    // CHECK: call void @__kmpc_for_static_init_4u(ptr @{{.*}}, i32 %{{.*}}, i32 34, ptr %{{.*}}, ptr %{{.*}}, ptr %{{.*}}, ptr %{{.*}}, i32 1, i32 0)
    // CHECK: call void @__kmpc_for_static_fini
    llvm.call @body(%iv) : (i32) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -396,12 +407,14 @@ llvm.func @body(i32)
 // CHECK-LABEL: @test_omp_wsloop_static_1
 llvm.func @test_omp_wsloop_static_1(%lb : i32, %ub : i32, %step : i32) -> () {
  %static_chunk_size = llvm.mlir.constant(1 : i32) : i32
- omp.wsloop schedule(static = %static_chunk_size : i32)
- for (%iv) : i32 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(static = %static_chunk_size : i32) {
+ omp.loopnest (%iv) : i32 = (%lb) to (%ub) step (%step) {
    // CHECK: call void @__kmpc_for_static_init_4u(ptr @{{.*}}, i32 %{{.*}}, i32 33, ptr %{{.*}}, ptr %{{.*}}, ptr %{{.*}}, ptr %{{.*}}, i32 1, i32 1)
    // CHECK: call void @__kmpc_for_static_fini
    llvm.call @body(%iv) : (i32) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -413,12 +426,14 @@ llvm.func @body(i32)
 // CHECK-LABEL: @test_omp_wsloop_static_2
 llvm.func @test_omp_wsloop_static_2(%lb : i32, %ub : i32, %step : i32) -> () {
  %static_chunk_size = llvm.mlir.constant(2 : i32) : i32
- omp.wsloop schedule(static = %static_chunk_size : i32)
- for (%iv) : i32 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(static = %static_chunk_size : i32) {
+ omp.loopnest (%iv) : i32 = (%lb) to (%ub) step (%step) {
    // CHECK: call void @__kmpc_for_static_init_4u(ptr @{{.*}}, i32 %{{.*}}, i32 33, ptr %{{.*}}, ptr %{{.*}}, ptr %{{.*}}, ptr %{{.*}}, i32 1, i32 2)
    // CHECK: call void @__kmpc_for_static_fini
    llvm.call @body(%iv) : (i32) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -428,14 +443,16 @@ llvm.func @test_omp_wsloop_static_2(%lb : i32, %ub : i32, %step : i32) -> () {
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_dynamic(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(dynamic)
- for (%iv) : i64 = (%lb) to (%ub) step (%step)  {
+ omp.wsloop schedule(dynamic) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step)  {
   // CHECK: call void @__kmpc_dispatch_init_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
   // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
   // CHECK: br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -446,14 +463,16 @@ llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_dynamic_chunk_const(%lb : i64, %ub : i64, %step : i64) -> () {
  %chunk_size_const = llvm.mlir.constant(2 : i16) : i16
- omp.wsloop schedule(dynamic = %chunk_size_const : i16)
- for (%iv) : i64 = (%lb) to (%ub) step (%step)  {
+ omp.wsloop schedule(dynamic = %chunk_size_const : i16) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step)  {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741859, i64 {{.*}}, i64 %{{.*}}, i64 {{.*}}, i64 2)
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
   // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
   // CHECK: br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -466,8 +485,8 @@ llvm.func @test_omp_wsloop_dynamic_chunk_var(%lb : i32, %ub : i32, %step : i32) 
  %1 = llvm.mlir.constant(1 : i64) : i64
  %chunk_size_alloca = llvm.alloca %1 x i16 {bindc_name = "chunk_size", in_type = i16, uniq_name = "_QFsub1Echunk_size"} : (i64) -> !llvm.ptr
  %chunk_size_var = llvm.load %chunk_size_alloca : !llvm.ptr -> i16
- omp.wsloop schedule(dynamic = %chunk_size_var : i16)
- for (%iv) : i32 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(dynamic = %chunk_size_var : i16) {
+ omp.loopnest (%iv) : i32 = (%lb) to (%ub) step (%step) {
   // CHECK: %[[CHUNK_SIZE:.*]] = sext i16 %{{.*}} to i32
   // CHECK: call void @__kmpc_dispatch_init_4u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741859, i32 {{.*}}, i32 %{{.*}}, i32 {{.*}}, i32 %[[CHUNK_SIZE]])
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_4u
@@ -475,6 +494,8 @@ llvm.func @test_omp_wsloop_dynamic_chunk_var(%lb : i32, %ub : i32, %step : i32) 
   // CHECK: br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i32) -> ()
    omp.yield
+ }
+   omp.terminator
  }
  llvm.return
 }
@@ -487,8 +508,8 @@ llvm.func @test_omp_wsloop_dynamic_chunk_var2(%lb : i32, %ub : i32, %step : i32)
  %1 = llvm.mlir.constant(1 : i64) : i64
  %chunk_size_alloca = llvm.alloca %1 x i64 {bindc_name = "chunk_size", in_type = i64, uniq_name = "_QFsub1Echunk_size"} : (i64) -> !llvm.ptr
  %chunk_size_var = llvm.load %chunk_size_alloca : !llvm.ptr -> i64
- omp.wsloop schedule(dynamic = %chunk_size_var : i64)
- for (%iv) : i32 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(dynamic = %chunk_size_var : i64) {
+ omp.loopnest (%iv) : i32 = (%lb) to (%ub) step (%step) {
   // CHECK: %[[CHUNK_SIZE:.*]] = trunc i64 %{{.*}} to i32
   // CHECK: call void @__kmpc_dispatch_init_4u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741859, i32 {{.*}}, i32 %{{.*}}, i32 {{.*}}, i32 %[[CHUNK_SIZE]])
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_4u
@@ -496,6 +517,8 @@ llvm.func @test_omp_wsloop_dynamic_chunk_var2(%lb : i32, %ub : i32, %step : i32)
   // CHECK: br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i32) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -505,14 +528,16 @@ llvm.func @test_omp_wsloop_dynamic_chunk_var2(%lb : i32, %ub : i32, %step : i32)
 llvm.func @body(i32)
 
 llvm.func @test_omp_wsloop_dynamic_chunk_var3(%lb : i32, %ub : i32, %step : i32, %chunk_size : i32) -> () {
- omp.wsloop schedule(dynamic = %chunk_size : i32)
- for (%iv) : i32 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(dynamic = %chunk_size : i32) {
+ omp.loopnest (%iv) : i32 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_4u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741859, i32 {{.*}}, i32 %{{.*}}, i32 {{.*}}, i32 %{{.*}})
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_4u
   // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
   // CHECK: br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i32) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -522,14 +547,16 @@ llvm.func @test_omp_wsloop_dynamic_chunk_var3(%lb : i32, %ub : i32, %step : i32,
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_auto(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(auto)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(auto) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
   // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -539,14 +566,16 @@ llvm.func @test_omp_wsloop_auto(%lb : i64, %ub : i64, %step : i64) -> () {
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_runtime(%lb : i64, %ub : i64, %step : i64) -> () {
-  omp.wsloop schedule(runtime)
-  for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+  omp.wsloop schedule(runtime) {
+  omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
     // CHECK: call void @__kmpc_dispatch_init_8u
     // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
     // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
     // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
     llvm.call @body(%iv) : (i64) -> ()
     omp.yield
+  }
+  omp.terminator
   }
   llvm.return
 }
@@ -556,14 +585,16 @@ llvm.func @test_omp_wsloop_runtime(%lb : i64, %ub : i64, %step : i64) -> () {
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_guided(%lb : i64, %ub : i64, %step : i64) -> () {
-  omp.wsloop schedule(guided)
-  for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+  omp.wsloop schedule(guided) {
+  omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
     // CHECK: call void @__kmpc_dispatch_init_8u
     // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
     // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
     // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
     llvm.call @body(%iv) : (i64) -> ()
     omp.yield
+  }
+  omp.terminator
   }
   llvm.return
 }
@@ -573,14 +604,16 @@ llvm.func @test_omp_wsloop_guided(%lb : i64, %ub : i64, %step : i64) -> () {
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_dynamic_nonmonotonic(%lb : i64, %ub : i64, %step : i64) -> () {
-  omp.wsloop schedule(dynamic, nonmonotonic)
-  for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+  omp.wsloop schedule(dynamic, nonmonotonic) {
+  omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
     // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741859
     // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
     // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
     // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
     llvm.call @body(%iv) : (i64) -> ()
     omp.yield
+  }
+  omp.terminator
   }
   llvm.return
 }
@@ -590,14 +623,16 @@ llvm.func @test_omp_wsloop_dynamic_nonmonotonic(%lb : i64, %ub : i64, %step : i6
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_dynamic_monotonic(%lb : i64, %ub : i64, %step : i64) -> () {
-  omp.wsloop schedule(dynamic, monotonic)
-  for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+  omp.wsloop schedule(dynamic, monotonic) {
+  omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
     // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 536870947
     // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
     // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
     // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
     llvm.call @body(%iv) : (i64) -> ()
     omp.yield
+  }
+  omp.terminator
   }
   llvm.return
 }
@@ -607,14 +642,16 @@ llvm.func @test_omp_wsloop_dynamic_monotonic(%lb : i64, %ub : i64, %step : i64) 
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_runtime_simd(%lb : i64, %ub : i64, %step : i64) -> () {
-  omp.wsloop schedule(runtime, simd)
-  for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+  omp.wsloop schedule(runtime, simd) {
+  omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
     // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741871
     // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
     // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
     // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
     llvm.call @body(%iv) : (i64) -> ()
     omp.yield
+  }
+  omp.terminator
   }
   llvm.return
 }
@@ -624,14 +661,16 @@ llvm.func @test_omp_wsloop_runtime_simd(%lb : i64, %ub : i64, %step : i64) -> ()
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_guided_simd(%lb : i64, %ub : i64, %step : i64) -> () {
-  omp.wsloop schedule(guided, simd)
-  for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+  omp.wsloop schedule(guided, simd) {
+  omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
     // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741870
     // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
     // CHECK: %[[cond:.*]] = icmp ne i32 %[[continue]], 0
     // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
     llvm.call @body(%iv) : (i64) -> ()
     omp.yield
+  }
+  omp.terminator
   }
   llvm.return
 }
@@ -782,8 +821,8 @@ llvm.func @simdloop_if(%arg0: !llvm.ptr {fir.bindc_name = "n"}, %arg1: !llvm.ptr
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 66, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -791,6 +830,8 @@ llvm.func @test_omp_wsloop_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -800,8 +841,8 @@ llvm.func @test_omp_wsloop_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_static_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(static) ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(static) ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 66, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -809,6 +850,8 @@ llvm.func @test_omp_wsloop_static_ordered(%lb : i64, %ub : i64, %step : i64) -> 
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -819,8 +862,8 @@ llvm.func @body(i32)
 
 llvm.func @test_omp_wsloop_static_chunk_ordered(%lb : i32, %ub : i32, %step : i32) -> () {
  %static_chunk_size = llvm.mlir.constant(1 : i32) : i32
- omp.wsloop schedule(static = %static_chunk_size : i32) ordered(0)
- for (%iv) : i32 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(static = %static_chunk_size : i32) ordered(0) {
+ omp.loopnest (%iv) : i32 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_4u(ptr @{{.*}}, i32 %{{.*}}, i32 65, i32 1, i32 %{{.*}}, i32 1, i32 1)
   // CHECK: call void @__kmpc_dispatch_fini_4u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_4u
@@ -828,6 +871,8 @@ llvm.func @test_omp_wsloop_static_chunk_ordered(%lb : i32, %ub : i32, %step : i3
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i32) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -837,8 +882,8 @@ llvm.func @test_omp_wsloop_static_chunk_ordered(%lb : i32, %ub : i32, %step : i3
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_dynamic_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(dynamic) ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(dynamic) ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 67, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -846,6 +891,8 @@ llvm.func @test_omp_wsloop_dynamic_ordered(%lb : i64, %ub : i64, %step : i64) ->
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -855,8 +902,8 @@ llvm.func @test_omp_wsloop_dynamic_ordered(%lb : i64, %ub : i64, %step : i64) ->
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_auto_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(auto) ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(auto) ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 70, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -864,6 +911,8 @@ llvm.func @test_omp_wsloop_auto_ordered(%lb : i64, %ub : i64, %step : i64) -> ()
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -873,8 +922,8 @@ llvm.func @test_omp_wsloop_auto_ordered(%lb : i64, %ub : i64, %step : i64) -> ()
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_runtime_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(runtime) ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(runtime) ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 69, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -882,6 +931,8 @@ llvm.func @test_omp_wsloop_runtime_ordered(%lb : i64, %ub : i64, %step : i64) ->
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -891,8 +942,8 @@ llvm.func @test_omp_wsloop_runtime_ordered(%lb : i64, %ub : i64, %step : i64) ->
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_guided_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(guided) ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(guided) ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 68, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -900,6 +951,8 @@ llvm.func @test_omp_wsloop_guided_ordered(%lb : i64, %ub : i64, %step : i64) -> 
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -909,8 +962,8 @@ llvm.func @test_omp_wsloop_guided_ordered(%lb : i64, %ub : i64, %step : i64) -> 
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_dynamic_nonmonotonic_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(dynamic, nonmonotonic) ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(dynamic, nonmonotonic) ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 1073741891, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -918,6 +971,8 @@ llvm.func @test_omp_wsloop_dynamic_nonmonotonic_ordered(%lb : i64, %ub : i64, %s
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -927,8 +982,8 @@ llvm.func @test_omp_wsloop_dynamic_nonmonotonic_ordered(%lb : i64, %ub : i64, %s
 llvm.func @body(i64)
 
 llvm.func @test_omp_wsloop_dynamic_monotonic_ordered(%lb : i64, %ub : i64, %step : i64) -> () {
- omp.wsloop schedule(dynamic, monotonic) ordered(0)
- for (%iv) : i64 = (%lb) to (%ub) step (%step) {
+ omp.wsloop schedule(dynamic, monotonic) ordered(0) {
+ omp.loopnest (%iv) : i64 = (%lb) to (%ub) step (%step) {
   // CHECK: call void @__kmpc_dispatch_init_8u(ptr @{{.*}}, i32 %{{.*}}, i32 536870979, i64 1, i64 %{{.*}}, i64 1, i64 1)
   // CHECK: call void @__kmpc_dispatch_fini_8u
   // CHECK: %[[continue:.*]] = call i32 @__kmpc_dispatch_next_8u
@@ -936,6 +991,8 @@ llvm.func @test_omp_wsloop_dynamic_monotonic_ordered(%lb : i64, %ub : i64, %step
   // CHECK  br i1 %[[cond]], label %omp_loop.header{{.*}}, label %omp_loop.exit{{.*}}
    llvm.call @body(%iv) : (i64) -> ()
    omp.yield
+ }
+ omp.terminator
  }
  llvm.return
 }
@@ -1103,14 +1160,16 @@ llvm.func @collapse_wsloop(
     // CHECK: %[[TOTAL_SUB_1:.*]] = sub i32 %[[TOTAL]], 1
     // CHECK: store i32 %[[TOTAL_SUB_1]], ptr
     // CHECK: call void @__kmpc_for_static_init_4u
-    omp.wsloop
-    for (%arg0, %arg1, %arg2) : i32 = (%0, %1, %2) to (%3, %4, %5) step (%6, %7, %8) {
+    omp.wsloop {
+    omp.loopnest (%arg0, %arg1, %arg2) : i32 = (%0, %1, %2) to (%3, %4, %5) step (%6, %7, %8) {
       %31 = llvm.load %20 : !llvm.ptr -> i32
       %32 = llvm.add %31, %arg0 : i32
       %33 = llvm.add %32, %arg1 : i32
       %34 = llvm.add %33, %arg2 : i32
       llvm.store %34, %20 : i32, !llvm.ptr
       omp.yield
+    }
+    omp.terminator
     }
     omp.terminator
   }
@@ -1164,14 +1223,16 @@ llvm.func @collapse_wsloop_dynamic(
     // CHECK: store i32 1, ptr
     // CHECK: store i32 %[[TOTAL]], ptr
     // CHECK: call void @__kmpc_dispatch_init_4u
-    omp.wsloop schedule(dynamic)
-    for (%arg0, %arg1, %arg2) : i32 = (%0, %1, %2) to (%3, %4, %5) step (%6, %7, %8) {
+    omp.wsloop schedule(dynamic) {
+    omp.loopnest (%arg0, %arg1, %arg2) : i32 = (%0, %1, %2) to (%3, %4, %5) step (%6, %7, %8) {
       %31 = llvm.load %20 : !llvm.ptr -> i32
       %32 = llvm.add %31, %arg0 : i32
       %33 = llvm.add %32, %arg1 : i32
       %34 = llvm.add %33, %arg2 : i32
       llvm.store %34, %20 : i32, !llvm.ptr
       omp.yield
+    }
+    omp.terminator
     }
     omp.terminator
   }
@@ -1196,8 +1257,8 @@ llvm.func @omp_ordered(%arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i64,
   // CHECK: call void @__kmpc_end_ordered(ptr @[[GLOB1]], i32 [[OMP_THREAD]])
   }
 
-  omp.wsloop ordered(0)
-  for (%arg7) : i32 = (%arg0) to (%arg1) step (%arg2) {
+  omp.wsloop ordered(0) {
+  omp.loopnest (%arg7) : i32 = (%arg0) to (%arg1) step (%arg2) {
     // CHECK:  call void @__kmpc_ordered(ptr @[[GLOB3:[0-9]+]], i32 [[OMP_THREAD2:%.*]])
     omp.ordered_region  {
       omp.terminator
@@ -1205,9 +1266,11 @@ llvm.func @omp_ordered(%arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i64,
     }
     omp.yield
   }
+  omp.terminator
+  }
 
-  omp.wsloop ordered(1)
-  for (%arg7) : i32 = (%arg0) to (%arg1) step (%arg2) {
+  omp.wsloop ordered(1) {
+  omp.loopnest (%arg7) : i32 = (%arg0) to (%arg1) step (%arg2) {
     // CHECK: [[TMP:%.*]] = getelementptr inbounds [1 x i64], ptr [[ADDR]], i64 0, i64 0
     // CHECK: store i64 [[ARG0:%.*]], ptr [[TMP]], align 8
     // CHECK: [[TMP2:%.*]] = getelementptr inbounds [1 x i64], ptr [[ADDR]], i64 0, i64 0
@@ -1224,9 +1287,11 @@ llvm.func @omp_ordered(%arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i64,
 
     omp.yield
   }
+  omp.terminator
+  }
 
-  omp.wsloop ordered(2)
-  for (%arg7) : i32 = (%arg0) to (%arg1) step (%arg2) {
+  omp.wsloop ordered(2) {
+  omp.loopnest (%arg7) : i32 = (%arg0) to (%arg1) step (%arg2) {
     // CHECK: [[TMP5:%.*]] = getelementptr inbounds [2 x i64], ptr [[ADDR5]], i64 0, i64 0
     // CHECK: store i64 [[ARG0]], ptr [[TMP5]], align 8
     // CHECK: [[TMP6:%.*]] = getelementptr inbounds [2 x i64], ptr [[ADDR5]], i64 0, i64 1
@@ -1253,6 +1318,8 @@ llvm.func @omp_ordered(%arg0 : i32, %arg1 : i32, %arg2 : i32, %arg3 : i64,
     omp.ordered depend_type(dependsource) depend_vec(%arg3, %arg4 : i64, i64) {num_loops_val = 2 : i64}
 
     omp.yield
+  }
+  omp.terminator
   }
 
   llvm.return
@@ -2122,10 +2189,13 @@ llvm.func @omp_sections_with_clauses() -> () {
 // introduction mechanism itself is tested elsewhere.
 // CHECK-LABEL: @repeated_successor
 llvm.func @repeated_successor(%arg0: i64, %arg1: i64, %arg2: i64, %arg3: i1) {
-  omp.wsloop for (%arg4) : i64 = (%arg0) to (%arg1) step (%arg2)  {
+  omp.wsloop {
+  omp.loopnest (%arg4) : i64 = (%arg0) to (%arg1) step (%arg2)  {
     llvm.cond_br %arg3, ^bb1(%arg0 : i64), ^bb1(%arg1 : i64)
   ^bb1(%0: i64):  // 2 preds: ^bb0, ^bb0
     omp.yield
+  }
+  omp.terminator
   }
   llvm.return
 }
@@ -2549,8 +2619,8 @@ llvm.func @omp_opaque_pointers(%arg0 : !llvm.ptr, %arg1: !llvm.ptr, %expr: i32) 
 // CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 1
 // CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 1
 // CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 1
-module attributes {omp.flags = #omp.flags<debug_kind = 1, assume_teams_oversubscription = true, 
-                                          assume_threads_oversubscription = true, assume_no_thread_state = true, 
+module attributes {omp.flags = #omp.flags<debug_kind = 1, assume_teams_oversubscription = true,
+                                          assume_threads_oversubscription = true, assume_no_thread_state = true,
                                           assume_no_nested_parallelism = true>} {}
 // -----
 
@@ -2595,8 +2665,8 @@ module attributes {omp.version = #omp.version<version = 51>} {}
 // CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 0
 // CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 0
 // CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 0
-module attributes {omp.flags = #omp.flags<debug_kind = 0, assume_teams_oversubscription = false, 
-                                          assume_threads_oversubscription = false, assume_no_thread_state = false, 
+module attributes {omp.flags = #omp.flags<debug_kind = 0, assume_teams_oversubscription = false,
+                                          assume_threads_oversubscription = false, assume_no_thread_state = false,
                                           assume_no_nested_parallelism = false>} {}
 
 // -----

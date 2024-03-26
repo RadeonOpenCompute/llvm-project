@@ -21,7 +21,8 @@
 !CHECK-SAME: %[[Y_BOX:.*]]: !fir.box<!fir.array<?xi32>>
 !CHECK:   %[[X_REF:.*]] = fir.alloca i32 {bindc_name = "x", uniq_name = "_QFreduction_min_intEx"}
 !CHECK:   omp.parallel
-!CHECK:     omp.wsloop reduction(@[[MIN_DECLARE_I]] %[[X_REF]] -> %[[PRV:.+]] : !fir.ref<i32>) for
+!CHECK:     omp.wsloop reduction(@[[MIN_DECLARE_I]] %[[X_REF]] -> %[[PRV:.+]] : !fir.ref<i32>) {
+!CHECK:     omp.loopnest
 !CHECK:       %[[LPRV:.+]] = fir.load %[[PRV]] : !fir.ref<i32>
 !CHECK:       %[[Y_I_REF:.*]] = fir.coordinate_of %[[Y_BOX]]
 !CHECK:       %[[Y_I:.*]] = fir.load %[[Y_I_REF]] : !fir.ref<i32>
@@ -35,7 +36,8 @@
 !CHECK-SAME: %[[Y_BOX:.*]]: !fir.box<!fir.array<?xf32>>
 !CHECK:   %[[X_REF:.*]] = fir.alloca f32 {bindc_name = "x", uniq_name = "_QFreduction_min_realEx"}
 !CHECK:   omp.parallel
-!CHECK:     omp.wsloop reduction(@[[MIN_DECLARE_F]] %[[X_REF]] -> %[[PRV:.+]] : !fir.ref<f32>) for
+!CHECK:     omp.wsloop reduction(@[[MIN_DECLARE_F]] %[[X_REF]] -> %[[PRV:.+]] : !fir.ref<f32>) {
+!CHECK:     omp.loopnest
 !CHECK:       %[[LPRV:.+]] = fir.load %[[PRV]] : !fir.ref<f32>
 !CHECK:       %[[Y_I_REF:.*]] = fir.coordinate_of %[[Y_BOX]]
 !CHECK:       %[[Y_I:.*]] = fir.load %[[Y_I_REF]] : !fir.ref<f32>

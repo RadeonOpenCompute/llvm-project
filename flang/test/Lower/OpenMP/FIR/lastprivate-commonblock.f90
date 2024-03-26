@@ -1,4 +1,4 @@
-! RUN: %flang_fc1 -emit-fir -flang-deprecated-no-hlfir -fopenmp -o - %s 2>&1 | FileCheck %s 
+! RUN: %flang_fc1 -emit-fir -flang-deprecated-no-hlfir -fopenmp -o - %s 2>&1 | FileCheck %s
 
 !CHECK: func.func @_QPlastprivate_common() {
 !CHECK: %[[val_0:.*]] = fir.alloca i32 {adapt.valuebyref, pinned}
@@ -17,7 +17,8 @@
 !CHECK: %[[val_c1_i32:.*]] = arith.constant 1 : i32
 !CHECK: %[[val_c100_i32:.*]] = arith.constant 100 : i32
 !CHECK: %[[val_c1_i32_0:.*]] = arith.constant 1 : i32
-!CHECK: omp.wsloop   for (%[[arg:.*]]) : i32 = (%[[val_c1_i32]]) to (%[[val_c100_i32]]) inclusive step (%[[val_c1_i32_0]]) {
+!CHECK: omp.wsloop   {
+!CHECK: omp.loopnest (%[[arg:.*]]) : i32 = (%[[val_c1_i32]]) to (%[[val_c100_i32]]) inclusive step (%[[val_c1_i32_0]]) {
 !CHECK: fir.store %[[arg]] to %[[val_0]] : !fir.ref<i32>
 !CHECK: %[[val_11:.*]] = arith.addi %[[arg]], %[[val_c1_i32_0]] : i32
 !CHECK: %[[val_c0_i32:.*]] = arith.constant 0 : i32

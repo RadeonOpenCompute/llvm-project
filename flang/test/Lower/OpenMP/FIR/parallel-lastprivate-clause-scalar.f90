@@ -9,16 +9,17 @@
 !CHECK-DAG: %[[ARG1_REF:.*]] = fir.convert %[[ARG1_UNBOX]]#0 : (!fir.ref<!fir.char<1,?>>) -> !fir.ref<!fir.char<1,5>>
 
 !CHECK: omp.parallel {
-!CHECK-DAG: %[[ARG1_PVT:.*]] = fir.alloca !fir.char<1,5> {bindc_name = "arg1", 
+!CHECK-DAG: %[[ARG1_PVT:.*]] = fir.alloca !fir.char<1,5> {bindc_name = "arg1",
 
 ! Check that we are accessing the clone inside the loop
-!CHECK-DAG: omp.wsloop for (%[[INDX_WS:.*]]) : {{.*}} {
+!CHECK-DAG: omp.wsloop {
+!CHECK-DAG: omp.loopnest (%[[INDX_WS:.*]]) : {{.*}} {
 !CHECK-DAG: %[[UNIT:.*]] = arith.constant 6 : i32
 !CHECK-NEXT: %[[ADDR:.*]] = fir.address_of(@_QQclX
-!CHECK-NEXT: %[[CVT0:.*]] = fir.convert %[[ADDR]] 
+!CHECK-NEXT: %[[CVT0:.*]] = fir.convert %[[ADDR]]
 !CHECK-NEXT: %[[CNST:.*]] = arith.constant
 !CHECK-NEXT: %[[CALL_BEGIN_IO:.*]] = fir.call @_FortranAioBeginExternalListOutput(%[[UNIT]], %[[CVT0]], %[[CNST]]) {{.*}}: (i32, !fir.ref<i8>, i32) -> !fir.ref<i8>
-!CHECK-NEXT: %[[CVT_0_1:.*]] = fir.convert %[[ARG1_PVT]] 
+!CHECK-NEXT: %[[CVT_0_1:.*]] = fir.convert %[[ARG1_PVT]]
 !CHECK-NEXT: %[[CVT_0_2:.*]] = fir.convert %[[FIVE]]
 !CHECK-NEXT: %[[CALL_OP_ASCII:.*]] = fir.call @_FortranAioOutputAscii(%[[CALL_BEGIN_IO]], %[[CVT_0_1]], %[[CVT_0_2]])
 !CHECK-NEXT: %[[CALL_END_IO:.*]] = fir.call @_FortranAioEndIoStatement(%[[CALL_BEGIN_IO]])
@@ -37,12 +38,12 @@
 !CHECK-DAG: %[[CVT:.*]] = fir.convert %[[ARG1_REF]] : (!fir.ref<!fir.char<1,5>>) -> !fir.ref<i8>
 !CHECK-DAG: %[[CVT1:.*]] = fir.convert %[[ARG1_PVT]] : (!fir.ref<!fir.char<1,5>>) -> !fir.ref<i8>
 !CHECK-DAG: fir.call @llvm.memmove.p0.p0.i64(%[[CVT]], %[[CVT1]]{{.*}})
-!CHECK-DAG: } 
+!CHECK-DAG: }
 !CHECK-DAG: omp.yield
 
 subroutine lastprivate_character(arg1)
         character(5) :: arg1
-!$OMP PARALLEL 
+!$OMP PARALLEL
 !$OMP DO LASTPRIVATE(arg1)
 do n = 1, 5
         arg1(n:n) = 'c'
@@ -55,7 +56,8 @@ end subroutine
 !CHECK: func @_QPlastprivate_int(%[[ARG1:.*]]: !fir.ref<i32> {fir.bindc_name = "arg1"}) {
 !CHECK-DAG: omp.parallel  {
 !CHECK-DAG: %[[CLONE:.*]] = fir.alloca i32 {bindc_name = "arg1"
-!CHECK: omp.wsloop for (%[[INDX_WS:.*]]) : {{.*}} {
+!CHECK: omp.wsloop {
+!CHECK: omp.loopnest (%[[INDX_WS:.*]]) : {{.*}} {
 
 ! Testing last iteration check
 !CHECK: %[[V:.*]] = arith.addi %[[INDX_WS]], %{{.*}} : i32
@@ -75,7 +77,7 @@ end subroutine
 
 subroutine lastprivate_int(arg1)
         integer :: arg1
-!$OMP PARALLEL 
+!$OMP PARALLEL
 !$OMP DO LASTPRIVATE(arg1)
 do n = 1, 5
         arg1 = 2
@@ -90,7 +92,8 @@ end subroutine
 !CHECK: omp.parallel  {
 !CHECK-DAG: %[[CLONE1:.*]] = fir.alloca i32 {bindc_name = "arg1"
 !CHECK-DAG: %[[CLONE2:.*]] = fir.alloca i32 {bindc_name = "arg2"
-!CHECK: omp.wsloop for (%[[INDX_WS:.*]]) : {{.*}} {
+!CHECK: omp.wsloop {
+!CHECK: omp.loopnest (%[[INDX_WS:.*]]) : {{.*}} {
 
 ! Testing last iteration check
 !CHECK: %[[V:.*]] = arith.addi %[[INDX_WS]], %{{.*}} : i32
@@ -111,7 +114,7 @@ end subroutine
 
 subroutine mult_lastprivate_int(arg1, arg2)
         integer :: arg1, arg2
-!$OMP PARALLEL 
+!$OMP PARALLEL
 !$OMP DO LASTPRIVATE(arg1) LASTPRIVATE(arg2)
 do n = 1, 5
         arg1 = 2
@@ -127,7 +130,8 @@ end subroutine
 !CHECK: omp.parallel  {
 !CHECK-DAG: %[[CLONE1:.*]] = fir.alloca i32 {bindc_name = "arg1"
 !CHECK-DAG: %[[CLONE2:.*]] = fir.alloca i32 {bindc_name = "arg2"
-!CHECK: omp.wsloop for (%[[INDX_WS:.*]]) : {{.*}} {
+!CHECK: omp.wsloop {
+!CHECK: omp.loopnest (%[[INDX_WS:.*]]) : {{.*}} {
 
 !Testing last iteration check
 !CHECK: %[[V:.*]] = arith.addi %[[INDX_WS]], %{{.*}} : i32
@@ -148,7 +152,7 @@ end subroutine
 
 subroutine mult_lastprivate_int2(arg1, arg2)
         integer :: arg1, arg2
-!$OMP PARALLEL 
+!$OMP PARALLEL
 !$OMP DO LASTPRIVATE(arg1, arg2)
 do n = 1, 5
         arg1 = 2
@@ -169,7 +173,8 @@ end subroutine
 ! Lastprivate Allocation
 !CHECK-DAG: %[[CLONE2:.*]] = fir.alloca i32 {bindc_name = "arg2"
 !CHECK-NOT: omp.barrier
-!CHECK: omp.wsloop for (%[[INDX_WS:.*]]) : {{.*}} {
+!CHECK: omp.wsloop {
+!CHECK: omp.loopnest (%[[INDX_WS:.*]]) : {{.*}} {
 
 ! Testing last iteration check
 !CHECK: %[[V:.*]] = arith.addi %[[INDX_WS]], %{{.*}} : i32
@@ -188,7 +193,7 @@ end subroutine
 
 subroutine firstpriv_lastpriv_int(arg1, arg2)
         integer :: arg1, arg2
-!$OMP PARALLEL 
+!$OMP PARALLEL
 !$OMP DO FIRSTPRIVATE(arg1) LASTPRIVATE(arg2)
 do n = 1, 5
         arg1 = 2
@@ -207,7 +212,8 @@ end subroutine
 !CHECK-NEXT: %[[FPV_LD:.*]] = fir.load %[[ARG1]] : !fir.ref<i32>
 !CHECK-NEXT: fir.store %[[FPV_LD]] to %[[CLONE1]] : !fir.ref<i32>
 !CHECK-NEXT: omp.barrier
-!CHECK: omp.wsloop for (%[[INDX_WS:.*]]) : {{.*}} {
+!CHECK: omp.wsloop {
+!CHECK: omp.loopnest (%[[INDX_WS:.*]]) : {{.*}} {
 ! Testing last iteration check
 !CHECK: %[[V:.*]] = arith.addi %[[INDX_WS]], %{{.*}} : i32
 !CHECK: %[[C0:.*]] = arith.constant 0 : i32
@@ -225,7 +231,7 @@ end subroutine
 
 subroutine firstpriv_lastpriv_int2(arg1)
         integer :: arg1
-!$OMP PARALLEL 
+!$OMP PARALLEL
 !$OMP DO FIRSTPRIVATE(arg1) LASTPRIVATE(arg1)
 do n = 1, 5
         arg1 = 2

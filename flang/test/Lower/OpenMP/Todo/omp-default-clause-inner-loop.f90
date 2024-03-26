@@ -12,7 +12,8 @@
 ! CHECK: %[[const_1:.*]] = arith.constant 1 : i32
 ! CHECK: %[[const_2:.*]] = arith.constant 10 : i32
 ! CHECK: %[[const_3:.*]] = arith.constant 1 : i32
-! CHECK: omp.wsloop   for  (%[[ARG:.*]]) : i32 = (%[[const_1]]) to (%[[const_2]]) inclusive step (%[[const_3]]) {
+! CHECK: omp.wsloop   {
+! CHECK: omp.loopnest  (%[[ARG:.*]]) : i32 = (%[[const_1]]) to (%[[const_2]]) inclusive step (%[[const_3]]) {
 ! CHECK: fir.store %[[ARG]] to %[[TEMP]] : !fir.ref<i32>
 ! EXPECTED: %[[temp_1:.*]] = fir.load %[[PRIVATE_Z]] : !fir.ref<i32>
 ! CHECK: %[[temp_1:.*]] = fir.load %{{.*}} : !fir.ref<i32>

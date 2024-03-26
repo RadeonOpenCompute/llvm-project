@@ -9,7 +9,8 @@
 !CHECK:    %[[LB:.*]] = arith.constant 4 : i32
 !CHECK:    %[[UB:.*]] = arith.constant 10 : i32
 !CHECK:    %[[STEP:.*]]  = arith.constant 3 : i32
-!CHECK:    omp.wsloop for  (%[[IV:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
+!CHECK:    omp.wsloop {
+!CHECK:    omp.loopnest  (%[[IV:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
 !CHECK:      fir.store %[[IV]] to %[[I]]#1 : !fir.ref<i32>
 !CHECK:      %[[V:.*]] = arith.addi %[[IV]], %[[STEP]] : i32
 !CHECK:      %[[C0:.*]] = arith.constant 0 : i32
@@ -41,7 +42,8 @@ end subroutine
 !CHECK:    %[[LB:.*]] = arith.constant 10 : i32
 !CHECK:    %[[UB:.*]] = arith.constant 1 : i32
 !CHECK:    %[[STEP:.*]]  = arith.constant -3 : i32
-!CHECK:    omp.wsloop for  (%[[IV:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
+!CHECK:    omp.wsloop {
+!CHECK:    omp.loopnest  (%[[IV:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
 !CHECK:      fir.store %[[IV]] to %[[I]]#1 : !fir.ref<i32>
 !CHECK:      %[[V:.*]] = arith.addi %[[IV]], %[[STEP]] : i32
 !CHECK:      %[[C0:.*]] = arith.constant 0 : i32

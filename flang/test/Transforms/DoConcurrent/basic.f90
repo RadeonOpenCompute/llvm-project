@@ -23,7 +23,8 @@ program do_concurrent_basic
     ! CHECK: %[[UB:.*]] = fir.convert %[[C10]] : (i32) -> index
     ! CHECK: %[[STEP:.*]] = arith.constant 1 : index
 
-    ! CHECK: omp.wsloop for (%[[ARG0:.*]]) : index = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
+    ! CHECK: omp.wsloop {
+    ! CHECK: omp.loopnest (%[[ARG0:.*]]) : index = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
     ! CHECK-NEXT: %[[IV_IDX:.*]] = fir.convert %[[ARG0]] : (index) -> i32
     ! CHECK-NEXT: fir.store %[[IV_IDX]] to %[[BINDING]]#1 : !fir.ref<i32>
     ! CHECK-NEXT: %[[IV_VAL1:.*]] = fir.load %[[BINDING]]#0 : !fir.ref<i32>

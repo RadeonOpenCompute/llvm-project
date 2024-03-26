@@ -22,7 +22,8 @@ program wsloop_variable
 !CHECK:  %[[TMP5:.*]] = fir.convert %{{.*}} : (i128) -> i64
 !CHECK:  %[[TMP6:.*]] = fir.convert %[[TMP1]] : (i32) -> i64
 !CHECK:  %[[TMP7:.*]] = fir.convert %{{.*}} : (i32) -> i64
-!CHECK:  omp.wsloop for (%[[ARG0:.*]], %[[ARG1:.*]]) : i64 = (%[[TMP2]], %[[TMP5]]) to (%[[TMP3]], %[[TMP6]]) inclusive step (%[[TMP4]], %[[TMP7]]) {
+!CHECK:  omp.wsloop {
+!CHECK:  omp.loopnest (%[[ARG0:.*]], %[[ARG1:.*]]) : i64 = (%[[TMP2]], %[[TMP5]]) to (%[[TMP3]], %[[TMP6]]) inclusive step (%[[TMP4]], %[[TMP7]]) {
 !CHECK:    %[[ARG0_I16:.*]] = fir.convert %[[ARG0]] : (i64) -> i16
 !CHECK:    fir.store %[[ARG0_I16]] to %[[STORE_IV0:.*]]#1 : !fir.ref<i16>
 !CHECK:    fir.store %[[ARG1]] to %[[STORE_IV1:.*]]#1 : !fir.ref<i64>
@@ -46,7 +47,8 @@ program wsloop_variable
 !CHECK:  %[[TMP12:.*]] = arith.constant 1 : i32
 !CHECK:  %[[TMP13:.*]] = fir.convert %{{.*}} : (i8) -> i32
 !CHECK:  %[[TMP14:.*]] = fir.convert %{{.*}} : (i64) -> i32
-!CHECK:  omp.wsloop for (%[[ARG0:.*]]) : i32 = (%[[TMP12]]) to (%[[TMP13]]) inclusive step (%[[TMP14]])  {
+!CHECK:  omp.wsloop {
+!CHECK:  omp.loopnest (%[[ARG0:.*]]) : i32 = (%[[TMP12]]) to (%[[TMP13]]) inclusive step (%[[TMP14]])  {
 !CHECK:    %[[ARG0_I16:.*]] = fir.convert %[[ARG0]] : (i32) -> i16
 !CHECK:    fir.store %[[ARG0_I16]] to %[[STORE3:.*]]#1 : !fir.ref<i16>
 !CHECK:    %[[LOAD3:.*]] = fir.load %[[STORE3]]#0 : !fir.ref<i16>
@@ -64,7 +66,8 @@ program wsloop_variable
 !CHECK:  %[[TMP17:.*]] = fir.convert %{{.*}} : (i8) -> i64
 !CHECK:  %[[TMP18:.*]] = fir.convert %{{.*}} : (i16) -> i64
 !CHECK:  %[[TMP19:.*]] = fir.convert %{{.*}} : (i32) -> i64
-!CHECK:  omp.wsloop for (%[[ARG1:.*]]) : i64 = (%[[TMP17]]) to (%[[TMP18]]) inclusive step (%[[TMP19]])  {
+!CHECK:  omp.wsloop {
+!CHECK:  omp.loopnest (%[[ARG1:.*]]) : i64 = (%[[TMP17]]) to (%[[TMP18]]) inclusive step (%[[TMP19]])  {
 !CHECK:    %[[ARG1_I128:.*]] = fir.convert %[[ARG1]] : (i64) -> i128
 !CHECK:    fir.store %[[ARG1_I128]] to %[[STORE4:.*]]#1 : !fir.ref<i128>
 !CHECK:    %[[LOAD4:.*]] = fir.load %[[STORE4]]#0 : !fir.ref<i128>
@@ -118,7 +121,8 @@ subroutine wsloop_variable_sub
 !CHECK:           %[[VAL_24:.*]] = fir.load %[[VAL_13]]#0 : !fir.ref<i16>
 !CHECK:           %[[VAL_25:.*]] = fir.convert %[[VAL_23]] : (i8) -> i32
 !CHECK:           %[[VAL_26:.*]] = fir.convert %[[VAL_24]] : (i16) -> i32
-!CHECK:           omp.wsloop   for  (%[[VAL_27:.*]]) : i32 = (%[[VAL_22]]) to (%[[VAL_25]]) inclusive step (%[[VAL_26]]) {
+!CHECK:           omp.wsloop   {
+!CHECK:           omp.loopnest  (%[[VAL_27:.*]]) : i32 = (%[[VAL_22]]) to (%[[VAL_25]]) inclusive step (%[[VAL_26]]) {
 !CHECK:             %[[VAL_28:.*]] = fir.convert %[[VAL_27]] : (i32) -> i16
 !CHECK:             fir.store %[[VAL_28]] to %[[VAL_3]]#1 : !fir.ref<i16>
 !CHECK:             %[[VAL_29:.*]] = fir.load %[[VAL_7]]#0 : !fir.ref<i128>
@@ -160,7 +164,8 @@ subroutine wsloop_variable_sub
 !CHECK:           %[[VAL_50:.*]] = arith.constant 1 : i32
 !CHECK:           %[[VAL_51:.*]] = arith.constant 10 : i32
 !CHECK:           %[[VAL_52:.*]] = arith.constant 1 : i32
-!CHECK:           omp.wsloop   for  (%[[VAL_53:.*]]) : i32 = (%[[VAL_50]]) to (%[[VAL_51]]) inclusive step (%[[VAL_52]]) {
+!CHECK:           omp.wsloop   {
+!CHECK:           omp.loopnest  (%[[VAL_53:.*]]) : i32 = (%[[VAL_50]]) to (%[[VAL_51]]) inclusive step (%[[VAL_52]]) {
 !CHECK:             %[[VAL_54:.*]] = fir.convert %[[VAL_53]] : (i32) -> i8
 !CHECK:             fir.store %[[VAL_54]] to %[[VAL_1]]#1 : !fir.ref<i8>
 !CHECK:             %[[VAL_55:.*]] = fir.load %[[VAL_1]]#0 : !fir.ref<i8>

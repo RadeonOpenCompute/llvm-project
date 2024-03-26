@@ -10,10 +10,11 @@
 !CHECK: omp.yield(%[[IOR_VAL_I]] : i32)
 
 !CHECK-LABEL: @_QPreduction_ior
-!CHECK-SAME: %[[Y_BOX:.*]]: !fir.box<!fir.array<?xi32>> 
+!CHECK-SAME: %[[Y_BOX:.*]]: !fir.box<!fir.array<?xi32>>
 !CHECK: %[[X_REF:.*]] = fir.alloca i32 {bindc_name = "x", uniq_name = "_QFreduction_iorEx"}
 !CHECK: omp.parallel
-!CHECK: omp.wsloop reduction(@[[IOR_DECLARE_I]] %[[X_REF]] -> %[[PRV:.+]] : !fir.ref<i32>) for 
+!CHECK: omp.wsloop reduction(@[[IOR_DECLARE_I]] %[[X_REF]] -> %[[PRV:.+]] : !fir.ref<i32>) {
+!CHECK: omp.loopnest
 !CHECK: %[[LPRV:.+]] = fir.load %[[PRV]] : !fir.ref<i32>
 !CHECK: %[[Y_I_REF:.*]] = fir.coordinate_of %[[Y_BOX]]
 !CHECK: %[[Y_I:.*]] = fir.load %[[Y_I_REF]] : !fir.ref<i32>

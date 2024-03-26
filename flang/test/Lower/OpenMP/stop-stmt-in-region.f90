@@ -82,7 +82,8 @@ end
 ! CHECK:         %[[VAL_3:.*]] = arith.constant 1 : i32
 ! CHECK:         %[[VAL_4:.*]] = arith.constant 10 : i32
 ! CHECK:         %[[VAL_5:.*]] = arith.constant 1 : i32
-! CHECK:         omp.wsloop   for  (%[[VAL_6:.*]]) : i32 = (%[[VAL_3]]) to (%[[VAL_4]]) inclusive step (%[[VAL_5]]) {
+! CHECK:         omp.wsloop   {
+! CHECK:         omp.loopnest  (%[[VAL_6:.*]]) : i32 = (%[[VAL_3]]) to (%[[VAL_4]]) inclusive step (%[[VAL_5]]) {
 ! CHECK:           fir.store %[[VAL_6]] to %[[VAL_0_DECL]]#1 : !fir.ref<i32>
 ! CHECK:           cf.br ^bb1
 ! CHECK:         ^bb1:

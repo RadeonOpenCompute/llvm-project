@@ -259,7 +259,8 @@ subroutine simple_loop_1
   ! FIRDialect:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! FIRDialect:     %[[WS_STEP:.*]] = arith.constant 1 : i32
 
-  ! FIRDialect:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! FIRDialect:     omp.wsloop {
+  ! FIRDialect:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
   !$OMP DO
   do i=1, 9
   ! FIRDialect:     fir.store %[[I]] to %[[ALLOCA_IV:.*]] : !fir.ref<i32>
@@ -295,7 +296,8 @@ subroutine simple_loop_2
   ! FIRDialect:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! FIRDialect:     %[[WS_STEP:.*]] = arith.constant 1 : i32
 
-  ! FIRDialect:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! FIRDialect:     omp.wsloop {
+  ! FIRDialect:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
   !$OMP DO PRIVATE(r)
   do i=1, 9
   ! FIRDialect:     fir.store %[[I]] to %[[ALLOCA_IV:.*]] : !fir.ref<i32>
@@ -330,7 +332,8 @@ subroutine simple_loop_3
   ! FIRDialect:     %[[WS_UB:.*]] = arith.constant 9 : i32
   ! FIRDialect:     %[[WS_STEP:.*]] = arith.constant 1 : i32
 
-  ! FIRDialect:     omp.wsloop for (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
+  ! FIRDialect:     omp.wsloop {
+  ! FIRDialect:     omp.loopnest (%[[I:.*]]) : i32 = (%[[WS_LB]]) to (%[[WS_UB]]) inclusive step (%[[WS_STEP]])
   !$OMP PARALLEL DO PRIVATE(r)
   do i=1, 9
   ! FIRDialect:     fir.store %[[I]] to %[[ALLOCA_IV:.*]] : !fir.ref<i32>
