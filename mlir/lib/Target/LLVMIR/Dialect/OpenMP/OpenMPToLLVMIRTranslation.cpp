@@ -3622,16 +3622,24 @@ convertInternalTargetOp(Operation *op, llvm::IRBuilderBase &builder,
 
 static LogicalResult
 convertTopLevelTargetOp(Operation *op, llvm::IRBuilderBase &builder,
-                              LLVM::ModuleTranslation &moduleTranslation) {
+                        LLVM::ModuleTranslation &moduleTranslation) {
   if (isa<omp::TargetOp>(op))
     return convertOmpTarget(*op, builder, moduleTranslation);
   if (isa<omp::TargetDataOp>(op))
     return convertOmpTargetData(op, builder, moduleTranslation);
   bool interrupted =
-      op->walk<WalkOrder::PreOrder>([&](omp::TargetOp targetOp) {
-          if (failed(convertOmpTarget(*targetOp, builder, moduleTranslation)))
-            return WalkResult::interrupt();
-          return WalkResult::skip();
+      op->walk<WalkOrder::PreOrder>([&](Operation *oper) {
+          if (isa<omp::TargetOp>(oper)) {
+            if (failed(convertOmpTarget(*oper, builder, moduleTranslation)))
+              return WalkResult::interrupt();
+            return WalkResult::skip();
+          }
+          if (isa<omp::TargetDataOp>(oper)) {
+            if (failed(convertOmpTargetData(oper, builder, moduleTranslation)))
+              return WalkResult::interrupt();
+            return WalkResult::skip();
+          }
+          return WalkResult::advance();
         }).wasInterrupted();
   return failure(interrupted);
 }
