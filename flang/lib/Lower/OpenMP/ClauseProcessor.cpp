@@ -1001,7 +1001,8 @@ bool ClauseProcessor::processEnter(
 }
 
 bool ClauseProcessor::processUseDeviceAddr(
-    mlir::omp::UseDeviceClauseOps &result,
+    Fortran::lower::StatementContext &stmtCtx,
+    llvm::SmallVectorImpl<mlir::Value> &operands,
     llvm::SmallVectorImpl<mlir::Type> &useDeviceTypes,
     llvm::SmallVectorImpl<mlir::Location> &useDeviceLocs,
     llvm::SmallVectorImpl<const Fortran::semantics::Symbol *> &useDeviceSyms)
@@ -1009,8 +1010,46 @@ bool ClauseProcessor::processUseDeviceAddr(
   return findRepeatableClause<omp::clause::UseDeviceAddr>(
       [&](const omp::clause::UseDeviceAddr &clause,
           const Fortran::parser::CharBlock &) {
-        addUseDeviceClause(converter, clause.v, result.useDeviceAddrVars,
-                           useDeviceTypes, useDeviceLocs, useDeviceSyms);
+        // addUseDeviceClause(converter, clause.v, operands, useDeviceTypes,
+        //                   useDeviceLocs, useDeviceSymbols);
+        const Fortran::parser::CharBlock source;
+        mlir::Location clauseLocation = converter.genLocation(source);
+        fir::FirOpBuilder &firOpBuilder = converter.getFirOpBuilder();
+        llvm::omp::OpenMPOffloadMappingFlags mapTypeBits =
+                           llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TO |
+                           llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_FROM;
+        for (const omp::Object &object : clause.v) {
+          llvm::SmallVector<mlir::Value> bounds;
+          std::stringstream asFortran;
+
+          Fortran::lower::AddrAndBoundsInfo info =
+              Fortran::lower::gatherDataOperandAddrAndBounds<
+                  mlir::omp::MapBoundsOp, mlir::omp::MapBoundsType>(
+                  converter, firOpBuilder, semaCtx, stmtCtx, *object.id(),
+                  object.ref(), clauseLocation, asFortran, bounds,
+                  treatIndexAsSection);
+
+          auto origSymbol = converter.getSymbolAddress(*object.id());
+          mlir::Value symAddr = info.addr;
+          if (origSymbol && fir::isTypeWithDescriptor(origSymbol.getType()))
+            symAddr = origSymbol;
+
+          // Explicit map captures are captured ByRef by default,
+          // optimisation passes may alter this to ByCopy or other capture
+          // types to optimise
+          mlir::Value mapOp = createMapInfoOp(
+              firOpBuilder, clauseLocation, symAddr, mlir::Value{},
+              asFortran.str(), bounds, {},
+              static_cast<
+                  std::underlying_type_t<llvm::omp::OpenMPOffloadMappingFlags>>(
+                  mapTypeBits),
+              mlir::omp::VariableCaptureKind::ByRef, symAddr.getType());
+
+          useDeviceSyms.push_back(object.id());
+          useDeviceTypes.push_back(symAddr.getType());
+          useDeviceLocs.push_back(symAddr.getLoc());
+          operands.push_back(mapOp);
+        }
       });
 }
 

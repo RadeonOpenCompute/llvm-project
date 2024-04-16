@@ -2511,7 +2511,7 @@ static void genMapInfos(llvm::IRBuilderBase &builder,
                         llvm::OpenMPIRBuilder::MapInfosTy &combinedInfo,
                         MapInfoData &mapData,
                         const SmallVector<Value> &devPtrOperands = {},
-                        const SmallVector<Value> &devAddrOperands = {},
+                        MapInfoData useDeviceAddrData = {},
                         bool isTargetParams = false) {
   // We wish to modify some of the methods in which arguments are
   // passed based on their capture type by the target region, this can
@@ -2622,7 +2622,18 @@ static void genMapInfos(llvm::IRBuilderBase &builder,
   };
 
   addDevInfos(devPtrOperands, llvm::OpenMPIRBuilder::DeviceInfoTy::Pointer);
-  addDevInfos(devAddrOperands, llvm::OpenMPIRBuilder::DeviceInfoTy::Address);
+  // addDevInfos(devAddrOperands, llvm::OpenMPIRBuilder::DeviceInfoTy::Address);
+
+  for (size_t i = 0; i < useDeviceAddrData.MapClause.size(); ++i) {
+    auto mapFlag = useDeviceAddrData.Types[i];
+    combinedInfo.BasePointers.emplace_back(useDeviceAddrData.BasePointers[i]);
+    combinedInfo.Pointers.emplace_back(useDeviceAddrData.Pointers[i]);
+    combinedInfo.DevicePointers.emplace_back(llvm::OpenMPIRBuilder::DeviceInfoTy::Address);
+    combinedInfo.Names.emplace_back(useDeviceAddrData.Names[i]);
+    combinedInfo.Types.emplace_back(
+        mapFlag | llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_RETURN_PARAM);
+    combinedInfo.Sizes.emplace_back(builder.getInt64(0));
+  }
 }
 
 static LogicalResult
@@ -2719,7 +2730,10 @@ convertOmpTargetData(Operation *op, llvm::IRBuilderBase &builder,
   using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
 
   MapInfoData mapData;
+  MapInfoData useDeviceAddrData;
   collectMapDataFromMapOperands(mapData, mapOperands, moduleTranslation, DL,
+                                builder);
+  collectMapDataFromMapOperands(useDeviceAddrData, useDevAddrOperands, moduleTranslation, DL,
                                 builder);
 
   // Fill up the arrays with all the mapped variables.
@@ -2729,7 +2743,7 @@ convertOmpTargetData(Operation *op, llvm::IRBuilderBase &builder,
     builder.restoreIP(codeGenIP);
     if (auto dataOp = dyn_cast<omp::TargetDataOp>(op)) {
       genMapInfos(builder, moduleTranslation, DL, combinedInfo, mapData,
-                  useDevPtrOperands, useDevAddrOperands);
+                  useDevPtrOperands, useDeviceAddrData);
     } else {
       genMapInfos(builder, moduleTranslation, DL, combinedInfo, mapData);
     }
@@ -2758,12 +2772,10 @@ convertOmpTargetData(Operation *op, llvm::IRBuilderBase &builder,
                                      info.DevicePtrInfoMap[mapOpValue].second);
           argIndex++;
         }
-
-        for (auto &devAddrOp : useDevAddrOperands) {
-          llvm::Value *mapOpValue = moduleTranslation.lookupValue(devAddrOp);
+        for (size_t i = 0; i < useDeviceAddrData.MapClause.size(); ++i) {
           const auto &arg = region.front().getArgument(argIndex);
           auto *LI = builder.CreateLoad(
-              builder.getPtrTy(), info.DevicePtrInfoMap[mapOpValue].second);
+              builder.getPtrTy(), info.DevicePtrInfoMap[useDeviceAddrData.OriginalValue[i]].second);
           moduleTranslation.mapValue(arg, LI);
           argIndex++;
         }

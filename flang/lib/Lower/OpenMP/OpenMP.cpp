@@ -1210,15 +1210,14 @@ genTargetDataOp(Fortran::lower::AbstractConverter &converter,
   llvm::SmallVector<mlir::Type> useDeviceTypes;
   llvm::SmallVector<mlir::Location> useDeviceLocs;
   llvm::SmallVector<const Fortran::semantics::Symbol *> useDeviceSyms;
-
+  llvm::SmallVector<mlir::Value> deviceAddrOperands;
   ClauseProcessor cp(converter, semaCtx, clauseList);
   cp.processIf(llvm::omp::Directive::OMPD_target_data, clauseOps);
   cp.processDevice(stmtCtx, clauseOps);
   cp.processUseDevicePtr(clauseOps, useDeviceTypes, useDeviceLocs,
                          useDeviceSyms);
-  cp.processUseDeviceAddr(clauseOps, useDeviceTypes, useDeviceLocs,
+  cp.processUseDeviceAddr(stmtCtx, deviceAddrOperands, useDeviceTypes, useDeviceLocs,
                           useDeviceSyms);
-
   // This function implements the deprecated functionality of use_device_ptr
   // that allows users to provide non-CPTR arguments to it with the caveat
   // that the compiler will treat them as use_device_addr. A lot of legacy

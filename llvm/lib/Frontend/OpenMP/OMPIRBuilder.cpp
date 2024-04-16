@@ -6946,9 +6946,17 @@ void OpenMPIRBuilder::emitOffloadingArrays(
     Value *BP = Builder.CreateConstInBoundsGEP2_32(
         ArrayType::get(PtrTy, Info.NumberOfPtrs), Info.RTArgs.BasePointersArray,
         0, I);
+    // AMD SEGFAULT HERE
+    if(!BP){
+      printf("BP is NULL \n");
+    }
+    if(!BPVal){
+      // SEGFAULT is because of NULL here
+      printf("BPVal is NULL \n");
+    }
     Builder.CreateAlignedStore(BPVal, BP,
                                M.getDataLayout().getPrefTypeAlign(PtrTy));
-
+    // AMD END SEGFAULT HERE
     if (Info.requiresDevicePointerInfo()) {
       if (CombinedInfo.DevicePointers[I] == DeviceInfoTy::Pointer) {
         CodeGenIP = Builder.saveIP();
