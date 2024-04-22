@@ -68,8 +68,8 @@ end program
 ! CHECK:           omp.yield
 ! CHECK:         }
 
-! CHECK-LABEL:   func.func private @_QFPreduce(
-! CHECK-SAME:                                  %[[VAL_0:.*]]: !fir.box<!fir.array<?xf64>> {fir.bindc_name = "r"}) attributes {{.*}} {
+! CHECK-LABEL:   func.func @_QFPreduce(
+! CHECK-SAME:                                  %[[VAL_0:.*]]: !fir.box<!fir.array<?xf64>> {fir.bindc_name = "r"}) {
 ! CHECK:           %[[VAL_1:.*]] = fir.address_of(@_QFFreduceEi) : !fir.ref<i32>
 ! CHECK:           %[[VAL_2:.*]]:2 = hlfir.declare %[[VAL_1]] {uniq_name = "_QFFreduceEi"} : (!fir.ref<i32>) -> (!fir.ref<i32>, !fir.ref<i32>)
 ! CHECK:           %[[VAL_3:.*]]:2 = hlfir.declare %[[VAL_0]] {fortran_attrs = {{.*}}, uniq_name = "_QFFreduceEr"} : (!fir.box<!fir.array<?xf64>>) -> (!fir.box<!fir.array<?xf64>>, !fir.box<!fir.array<?xf64>>)

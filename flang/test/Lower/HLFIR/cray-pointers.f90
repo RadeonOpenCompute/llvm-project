@@ -401,7 +401,7 @@ end subroutine
 ! CHECK:           return
 ! CHECK:         }
 
-! CHECK-LABEL:   func.func private @_QFtest_craypointer_capturePinternal(
+! CHECK-LABEL:   func.func @_QFtest_craypointer_capturePinternal(
 ! CHECK-SAME:                                                            %[[VAL_0:.*]]: !fir.ref<tuple<!fir.ref<!fir.box<!fir.ptr<!fir.char<1,?>>>>, !fir.ref<i64>>> {fir.host_assoc})
 ! CHECK:           %[[VAL_1:.*]] = arith.constant 0 : i32
 ! CHECK:           %[[VAL_2:.*]] = fir.coordinate_of %[[VAL_0]], %[[VAL_1]] : (!fir.ref<tuple<!fir.ref<!fir.box<!fir.ptr<!fir.char<1,?>>>>, !fir.ref<i64>>>, i32) -> !fir.llvm_ptr<!fir.ref<!fir.box<!fir.ptr<!fir.char<1,?>>>>>
