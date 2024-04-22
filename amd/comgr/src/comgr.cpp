@@ -45,6 +45,7 @@
 #include "comgr-symbolizer.h"
 
 #include "clang/Basic/Version.h"
+#include "clang/Driver/OffloadBundler.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Demangle/Demangle.h"
 #include "llvm/Object/ELFObjectFile.h"
@@ -734,6 +735,14 @@ amd_comgr_status_t AMD_COMGR_API
     return AMD_COMGR_STATUS_ERROR_INVALID_ARGUMENT;
   }
 
+  if (DataP->DataKind == AMD_COMGR_DATA_KIND_COMPRESSED_FATBIN) {
+    auto CompressedBuffer = MemoryBuffer::getMemBuffer(StringRef(Bytes, Size), "", false);
+    auto ResultOrError = clang::CompressedOffloadBundle::decompress(*CompressedBuffer.get());
+    if (ResultOrError.takeError()) {
+      return AMD_COMGR_STATUS_ERROR;
+    }
+    return DataP->setData(std::move(*ResultOrError));
+  }
   return DataP->setData(StringRef(Bytes, Size));
 }
 
@@ -2307,6 +2316,7 @@ amd_comgr_status_t AMD_COMGR_API
 
   if (!DataP || !DataP->hasValidDataKind() ||
       !(DataP->DataKind == AMD_COMGR_DATA_KIND_FATBIN ||
+        DataP->DataKind == AMD_COMGR_DATA_KIND_COMPRESSED_FATBIN ||
         DataP->DataKind == AMD_COMGR_DATA_KIND_BYTES ||
         DataP->DataKind == AMD_COMGR_DATA_KIND_EXECUTABLE))
     return AMD_COMGR_STATUS_ERROR_INVALID_ARGUMENT;

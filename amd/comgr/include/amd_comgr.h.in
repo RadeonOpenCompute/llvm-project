@@ -391,9 +391,14 @@ typedef enum amd_comgr_data_kind_s {
    */
   AMD_COMGR_DATA_KIND_OBJ_BUNDLE = 0x14,
   /**
+   * The data is a compressed fat binary (clang-offload-bundler
+   * output with -compress flag).
+   */
+  AMD_COMGR_DATA_KIND_COMPRESSED_FATBIN = 0x15,
+  /**
    * Marker for last valid data kind.
    */
-  AMD_COMGR_DATA_KIND_LAST = AMD_COMGR_DATA_KIND_OBJ_BUNDLE
+  AMD_COMGR_DATA_KIND_LAST = AMD_COMGR_DATA_KIND_COMPRESSED_FATBIN
 } amd_comgr_data_kind_t;
 
 /**
