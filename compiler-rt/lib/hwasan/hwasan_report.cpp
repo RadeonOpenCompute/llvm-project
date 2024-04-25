@@ -22,6 +22,7 @@
 #include "hwasan_thread.h"
 #include "hwasan_thread_list.h"
 #include "sanitizer_common/sanitizer_allocator_internal.h"
+#include "sanitizer_common/sanitizer_array_ref.h"
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_flags.h"
 #include "sanitizer_common/sanitizer_mutex.h"
@@ -501,7 +502,8 @@ void PrintAddressDescription(
   }
 
   // Print the remaining threads, as an extra information, 1 line per thread.
-  hwasanThreadList().VisitAllLiveThreads([&](Thread *t) { t->Announce(); });
+  if (flags()->print_live_threads_info)
+    hwasanThreadList().VisitAllLiveThreads([&](Thread *t) { t->Announce(); });
 
   if (!num_descriptions_printed)
     // We exhausted our possibilities. Bail out.
@@ -706,7 +708,8 @@ void ReportTagMismatch(StackTrace *stack, uptr tagged_addr, uptr access_size,
 
   sptr offset =
       __hwasan_test_shadow(reinterpret_cast<void *>(tagged_addr), access_size);
-  CHECK(offset >= 0 && offset < static_cast<sptr>(access_size));
+  CHECK_GE(offset, 0);
+  CHECK_LT(offset, static_cast<sptr>(access_size));
   tag_t ptr_tag = GetTagFromPointer(tagged_addr);
   tag_t *tag_ptr =
       reinterpret_cast<tag_t *>(MemToShadow(untagged_addr + offset));

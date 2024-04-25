@@ -87,18 +87,18 @@ static cl::opt<unsigned> MaxDataFlowEdge(
 namespace {
 
 class TwoAddressInstructionPass : public MachineFunctionPass {
-  MachineFunction *MF;
-  const TargetInstrInfo *TII;
-  const TargetRegisterInfo *TRI;
-  const InstrItineraryData *InstrItins;
-  MachineRegisterInfo *MRI;
-  LiveVariables *LV;
-  LiveIntervals *LIS;
-  AliasAnalysis *AA;
-  CodeGenOpt::Level OptLevel;
+  MachineFunction *MF = nullptr;
+  const TargetInstrInfo *TII = nullptr;
+  const TargetRegisterInfo *TRI = nullptr;
+  const InstrItineraryData *InstrItins = nullptr;
+  MachineRegisterInfo *MRI = nullptr;
+  LiveVariables *LV = nullptr;
+  LiveIntervals *LIS = nullptr;
+  AliasAnalysis *AA = nullptr;
+  CodeGenOpt::Level OptLevel = CodeGenOpt::None;
 
   // The current basic block being processed.
-  MachineBasicBlock *MBB;
+  MachineBasicBlock *MBB = nullptr;
 
   // Keep track the distance of a MI from the start of the current basic block.
   DenseMap<MachineInstr*, unsigned> DistanceMap;
@@ -1493,9 +1493,8 @@ TwoAddressInstructionPass::processTiedPairs(MachineInstr *MI,
 #endif
 
     // Emit a copy.
-    MachineInstrBuilder MIB = MachineInstrBuilder(
-        *MI->getParent()->getParent(),
-        TII->buildCopy(*MI->getParent(), MI, MI->getDebugLoc(), RegA));
+    MachineInstrBuilder MIB = BuildMI(*MI->getParent(), MI, MI->getDebugLoc(),
+                                      TII->get(TargetOpcode::COPY), RegA);
     // If this operand is folding a truncation, the truncation now moves to the
     // copy so that the register classes remain valid for the operands.
     MIB.addReg(RegB, 0, SubRegB);
@@ -1533,8 +1532,8 @@ TwoAddressInstructionPass::processTiedPairs(MachineInstr *MI,
           S.addSegment(LiveRange::Segment(LastCopyIdx, endIdx, VNI));
         }
       } else {
-        for (MCRegUnitIterator Unit(RegA, TRI); Unit.isValid(); ++Unit) {
-          if (LiveRange *LR = LIS->getCachedRegUnit(*Unit)) {
+        for (MCRegUnit Unit : TRI->regunits(RegA)) {
+          if (LiveRange *LR = LIS->getCachedRegUnit(Unit)) {
             VNInfo *VNI =
                 LR->getNextValue(LastCopyIdx, LIS->getVNInfoAllocator());
             LR->addSegment(LiveRange::Segment(LastCopyIdx, endIdx, VNI));
@@ -1566,8 +1565,8 @@ TwoAddressInstructionPass::processTiedPairs(MachineInstr *MI,
   if (AllUsesCopied) {
     LaneBitmask RemainingUses = LaneBitmask::getNone();
     // Replace other (un-tied) uses of regB with LastCopiedReg.
-    for (MachineOperand &MO : MI->operands()) {
-      if (MO.isReg() && MO.getReg() == RegB && MO.isUse()) {
+    for (MachineOperand &MO : MI->all_uses()) {
+      if (MO.getReg() == RegB) {
         if (MO.getSubReg() == SubRegB && !IsEarlyClobber) {
           if (MO.isKill()) {
             MO.setIsKill(false);
@@ -1619,8 +1618,8 @@ TwoAddressInstructionPass::processTiedPairs(MachineInstr *MI,
     // regB is still used in this instruction, but a kill flag was
     // removed from a different tied use of regB, so now we need to add
     // a kill flag to one of the remaining uses of regB.
-    for (MachineOperand &MO : MI->operands()) {
-      if (MO.isReg() && MO.getReg() == RegB && MO.isUse()) {
+    for (MachineOperand &MO : MI->all_uses()) {
+      if (MO.getReg() == RegB) {
         MO.setIsKill(true);
         break;
       }
@@ -1838,7 +1837,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &Func) {
         mi->getOperand(0).setSubReg(SubIdx);
         mi->getOperand(0).setIsUndef(mi->getOperand(1).isUndef());
         mi->removeOperand(1);
-        mi->setDesc(TII->get(TII->getCopyOpcode()));
+        mi->setDesc(TII->get(TargetOpcode::COPY));
         LLVM_DEBUG(dbgs() << "\t\tconvert to:\t" << *mi);
 
         // Update LiveIntervals.
@@ -1926,7 +1925,7 @@ eliminateRegSequence(MachineBasicBlock::iterator &MBBI) {
 
     // Insert the sub-register copy.
     MachineInstr *CopyMI = BuildMI(*MI.getParent(), MI, MI.getDebugLoc(),
-                                   TII->get(TII->getCopyOpcode()))
+                                   TII->get(TargetOpcode::COPY))
                                .addReg(DstReg, RegState::Define, SubIdx)
                                .add(UseMO);
 

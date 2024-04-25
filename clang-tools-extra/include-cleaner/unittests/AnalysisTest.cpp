@@ -16,11 +16,11 @@
 #include "clang/Basic/IdentifierTable.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Format/Format.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Testing/TestAST.h"
 #include "clang/Tooling/Inclusions/StandardLibrary.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ScopedPrinter.h"
@@ -28,6 +28,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -90,7 +91,8 @@ TEST_F(WalkUsedTest, Basic) {
   #include "header.h"
   #include "private.h"
 
-  void $bar^bar($private^Private $p^p) {
+  // No reference reported for the Parameter "p".
+  void $bar^bar($private^Private p) {
     $foo^foo();
     std::$vector^vector $vconstructor^$v^v;
     $builtin^__builtin_popcount(1);
@@ -119,7 +121,6 @@ TEST_F(WalkUsedTest, Basic) {
       offsetToProviders(AST, SM),
       UnorderedElementsAre(
           Pair(Code.point("bar"), UnorderedElementsAre(MainFile)),
-          Pair(Code.point("p"), UnorderedElementsAre(MainFile)),
           Pair(Code.point("private"),
                UnorderedElementsAre(PublicFile, PrivateFile)),
           Pair(Code.point("foo"), UnorderedElementsAre(HeaderFile)),
@@ -181,19 +182,19 @@ TEST_F(WalkUsedTest, MacroRefs) {
   Symbol Answer2 =
       Macro{&Idents.get("ANSWER"), SM.getComposedLoc(HdrID, Hdr.point())};
   EXPECT_THAT(
-      offsetToProviders(AST, SM,
-                        {SymbolReference{SM.getComposedLoc(SM.getMainFileID(),
-                                                           Code.point("1")),
-                                         Answer1, RefType::Explicit},
-                         SymbolReference{SM.getComposedLoc(SM.getMainFileID(),
-                                                           Code.point("2")),
-                                         Answer2, RefType::Explicit}}),
+      offsetToProviders(
+          AST, SM,
+          {SymbolReference{
+               Answer1, SM.getComposedLoc(SM.getMainFileID(), Code.point("1")),
+               RefType::Explicit},
+           SymbolReference{
+               Answer2, SM.getComposedLoc(SM.getMainFileID(), Code.point("2")),
+               RefType::Explicit}}),
       UnorderedElementsAre(
           Pair(Code.point("1"), UnorderedElementsAre(HdrFile)),
           Pair(Code.point("2"), UnorderedElementsAre(HdrFile)),
           Pair(Code.point("3"), UnorderedElementsAre(MainFile)),
-          Pair(Code.point("4"), UnorderedElementsAre(MainFile))
-              ));
+          Pair(Code.point("4"), UnorderedElementsAre(MainFile))));
 }
 
 class AnalyzeTest : public testing::Test {
@@ -273,7 +274,7 @@ TEST_F(AnalyzeTest, NoCrashWhenUnresolved) {
 }
 
 TEST(FixIncludes, Basic) {
-  llvm::StringRef Code = R"cpp(
+  llvm::StringRef Code = R"cpp(#include "d.h"
 #include "a.h"
 #include "b.h"
 #include <c.h>
@@ -299,12 +300,20 @@ TEST(FixIncludes, Basic) {
   Results.Unused.push_back(Inc.atLine(3));
   Results.Unused.push_back(Inc.atLine(4));
 
-  EXPECT_EQ(fixIncludes(Results, Code, format::getLLVMStyle()), R"cpp(
+  EXPECT_EQ(fixIncludes(Results, "d.cc", Code, format::getLLVMStyle()),
+R"cpp(#include "d.h"
 #include "a.h"
 #include "aa.h"
 #include "ab.h"
 #include <e.h>
 )cpp");
+
+  Results = {};
+  Results.Missing.push_back("\"d.h\"");
+  Code = R"cpp(#include "a.h")cpp";
+  EXPECT_EQ(fixIncludes(Results, "d.cc", Code, format::getLLVMStyle()),
+R"cpp(#include "d.h"
+#include "a.h")cpp");
 }
 
 MATCHER_P3(expandedAt, FileID, Offset, SM, "") {
@@ -421,8 +430,12 @@ TEST(WalkUsed, FilterRefsNotSpelledInMainFile) {
   }
 }
 
+struct Tag {
+  friend llvm::raw_ostream &operator<<(llvm::raw_ostream &OS, const Tag &T) {
+    return OS << "Anon Tag";
+  }
+};
 TEST(Hints, Ordering) {
-  struct Tag {};
   auto Hinted = [](Hints Hints) {
     return clang::include_cleaner::Hinted<Tag>({}, Hints);
   };
@@ -431,6 +444,43 @@ TEST(Hints, Ordering) {
   EXPECT_LT(Hinted(Hints::PublicHeader), Hinted(Hints::PreferredHeader));
   EXPECT_LT(Hinted(Hints::CompleteSymbol | Hints::PublicHeader),
             Hinted(Hints::PreferredHeader));
+}
+
+// Test ast traversal & redecl selection end-to-end for templates, as explicit
+// instantiations/specializations are not redecls of the primary template. We
+// need to make sure we're selecting the right ones.
+TEST_F(WalkUsedTest, TemplateDecls) {
+  llvm::Annotations Code(R"cpp(
+    #include "fwd.h"
+    #include "def.h"
+    #include "partial.h"
+    template <> struct $exp_spec^Foo<char> {};
+    template struct $exp^Foo<int>;
+    $full^Foo<int> x;
+    $implicit^Foo<bool> y;
+    $partial^Foo<int*> z;
+  )cpp");
+  Inputs.Code = Code.code();
+  Inputs.ExtraFiles["fwd.h"] = guard("template<typename> struct Foo;");
+  Inputs.ExtraFiles["def.h"] = guard("template<typename> struct Foo {};");
+  Inputs.ExtraFiles["partial.h"] =
+      guard("template<typename T> struct Foo<T*> {};");
+  TestAST AST(Inputs);
+  auto &SM = AST.sourceManager();
+  const auto *Fwd = SM.getFileManager().getFile("fwd.h").get();
+  const auto *Def = SM.getFileManager().getFile("def.h").get();
+  const auto *Partial = SM.getFileManager().getFile("partial.h").get();
+
+  EXPECT_THAT(
+      offsetToProviders(AST, SM),
+      AllOf(Contains(
+                Pair(Code.point("exp_spec"), UnorderedElementsAre(Fwd, Def))),
+            Contains(Pair(Code.point("exp"), UnorderedElementsAre(Fwd, Def))),
+            Contains(Pair(Code.point("full"), UnorderedElementsAre(Fwd, Def))),
+            Contains(
+                Pair(Code.point("implicit"), UnorderedElementsAre(Fwd, Def))),
+            Contains(
+                Pair(Code.point("partial"), UnorderedElementsAre(Partial)))));
 }
 
 } // namespace

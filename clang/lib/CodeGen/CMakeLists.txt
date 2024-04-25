@@ -1,7 +1,9 @@
 set(LLVM_LINK_COMPONENTS
+  AggressiveInstCombine
   Analysis
   BitReader
   BitWriter
+  CodeGenTypes
   Core
   Coroutines
   Coverage
@@ -9,10 +11,10 @@ set(LLVM_LINK_COMPONENTS
   Extensions
   FrontendHLSL
   FrontendOpenMP
+  HIPStdPar
   IPO
   IRPrinter
   IRReader
-  AggressiveInstCombine
   InstCombine
   Instrumentation
   LTO
@@ -22,7 +24,6 @@ set(LLVM_LINK_COMPONENTS
   Object
   Passes
   ProfileData
-  Remarks
   ScalarOpts
   Support
   Target
@@ -31,6 +32,8 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_clang_library(clangCodeGen
+  ABIInfo.cpp
+  ABIInfoImpl.cpp
   BackendUtil.cpp
   CGAtomic.cpp
   CGBlocks.cpp
@@ -79,6 +82,7 @@ add_clang_library(clangCodeGen
   ConstantInitBuilder.cpp
   CoverageMappingGen.cpp
   ItaniumCXXABI.cpp
+  LinkInModulesPass.cpp
   MacroPPCallbacks.cpp
   MicrosoftCXXABI.cpp
   ModuleBuilder.cpp
@@ -87,14 +91,40 @@ add_clang_library(clangCodeGen
   SanitizerMetadata.cpp
   SwiftCallingConv.cpp
   TargetInfo.cpp
+  Targets/AArch64.cpp
+  Targets/AMDGPU.cpp
+  Targets/ARC.cpp
+  Targets/ARM.cpp
+  Targets/AVR.cpp
+  Targets/BPF.cpp
+  Targets/CSKY.cpp
+  Targets/Hexagon.cpp
+  Targets/Lanai.cpp
+  Targets/LoongArch.cpp
+  Targets/M68k.cpp
+  Targets/MSP430.cpp
+  Targets/Mips.cpp
+  Targets/NVPTX.cpp
+  Targets/PNaCl.cpp
+  Targets/PPC.cpp
+  Targets/RISCV.cpp
+  Targets/SPIR.cpp
+  Targets/Sparc.cpp
+  Targets/SystemZ.cpp
+  Targets/TCE.cpp
+  Targets/VE.cpp
+  Targets/WebAssembly.cpp
+  Targets/X86.cpp
+  Targets/XCore.cpp
   VarBypassDetector.cpp
 
   DEPENDS
   intrinsics_gen
+  ClangDriverOptions
 
   LINK_LIBS
-  clangAnalysis
   clangAST
+  clangAnalysis
   clangBasic
   clangFrontend
   clangLex

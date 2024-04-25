@@ -89,11 +89,11 @@ Getting the Source Code and Building LLVM
        you run into memory issues building LLVM, try setting this to limit the
        maximum number of compile/link jobs running at the same time.
 
-   * ``cmake --build . [--target <target>]`` or the build system specified
+   * ``cmake --build build [--target <target>]`` or the build system specified
      above directly.
 
-     * The default target (i.e. ``cmake --build .`` or ``make``) will build all of
-       LLVM.
+     * The default target (i.e. ``cmake --build build`` or ``make -C build``)
+       will build all of LLVM.
 
      * The ``check-all`` target (i.e. ``ninja check-all``) will run the
        regression tests to ensure everything is in working order.
@@ -280,7 +280,7 @@ uses the package and provides other details.
 =========================================================== ============ ==========================================
 Package                                                     Version      Notes
 =========================================================== ============ ==========================================
-`CMake <http://cmake.org/>`__                               >=3.13.4     Makefile/workspace generator
+`CMake <http://cmake.org/>`__                               >=3.20.0     Makefile/workspace generator
 `GCC <http://gcc.gnu.org/>`_                                >=7.1.0      C/C++ compiler\ :sup:`1`
 `python <http://www.python.org/>`_                          >=3.6        Automated test suite\ :sup:`2`
 `zlib <http://zlib.net>`_                                   >=1.2.3.4    Compression library\ :sup:`3`
@@ -583,7 +583,7 @@ Local LLVM Configuration
 Once checked out repository, the LLVM suite source code must be configured
 before being built. This process uses CMake.  Unlinke the normal ``configure``
 script, CMake generates the build files in whatever format you request as well
-as various ``*.inc`` files, and ``llvm/include/Config/config.h``.
+as various ``*.inc`` files, and ``llvm/include/llvm/Config/config.h.cmake``.
 
 Variables are passed to ``cmake`` on the command line using the format
 ``-D<variable name>=<value>``. The following variables are some common options
@@ -683,7 +683,7 @@ invocation:
 
    .. code-block:: console
 
-     % cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=<type> -DCMAKE_BUILD_TYPE=type SRC_ROOT
+     % cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=<type> SRC_ROOT
 
 Between runs, CMake preserves the values set for all options. CMake has the
 following build types defined:

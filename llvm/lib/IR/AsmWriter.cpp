@@ -342,6 +342,12 @@ static void PrintCallingConv(unsigned cc, raw_ostream &Out) {
   case CallingConv::AMDGPU_GS:     Out << "amdgpu_gs"; break;
   case CallingConv::AMDGPU_PS:     Out << "amdgpu_ps"; break;
   case CallingConv::AMDGPU_CS:     Out << "amdgpu_cs"; break;
+  case CallingConv::AMDGPU_CS_Chain:
+    Out << "amdgpu_cs_chain";
+    break;
+  case CallingConv::AMDGPU_CS_ChainPreserve:
+    Out << "amdgpu_cs_chain_preserve";
+    break;
   case CallingConv::AMDGPU_KERNEL: Out << "amdgpu_kernel"; break;
   case CallingConv::AMDGPU_Gfx:    Out << "amdgpu_gfx"; break;
   }
@@ -425,8 +431,8 @@ static void PrintShuffleMask(raw_ostream &Out, Type *Ty, ArrayRef<int> Mask) {
   bool FirstElt = true;
   if (all_of(Mask, [](int Elt) { return Elt == 0; })) {
     Out << "zeroinitializer";
-  } else if (all_of(Mask, [](int Elt) { return Elt == UndefMaskElem; })) {
-    Out << "undef";
+  } else if (all_of(Mask, [](int Elt) { return Elt == PoisonMaskElem; })) {
+    Out << "poison";
   } else {
     Out << "<";
     for (int Elt : Mask) {
@@ -435,8 +441,8 @@ static void PrintShuffleMask(raw_ostream &Out, Type *Ty, ArrayRef<int> Mask) {
       else
         Out << ", ";
       Out << "i32 ";
-      if (Elt == UndefMaskElem)
-        Out << "undef";
+      if (Elt == PoisonMaskElem)
+        Out << "poison";
       else
         Out << Elt;
     }
@@ -589,16 +595,9 @@ void TypePrinting::print(Type *Ty, raw_ostream &OS) {
   }
   case Type::PointerTyID: {
     PointerType *PTy = cast<PointerType>(Ty);
-    if (PTy->isOpaque()) {
-      OS << "ptr";
-      if (unsigned AddressSpace = PTy->getAddressSpace())
-        OS << " addrspace(" << AddressSpace << ')';
-      return;
-    }
-    print(PTy->getNonOpaquePointerElementType(), OS);
+    OS << "ptr";
     if (unsigned AddressSpace = PTy->getAddressSpace())
       OS << " addrspace(" << AddressSpace << ')';
-    OS << '*';
     return;
   }
   case Type::ArrayTyID: {
@@ -2390,7 +2389,7 @@ static void writeDIExpr(raw_ostream &Out, const DIExpr *N,
   Out << "!DIExpr(";
   for (auto &&Op : N->builder()) {
     Out << FS << DIOp::getAsmName(Op) << '(';
-    visit(makeVisitor(
+    std::visit(makeVisitor(
 #define HANDLE_OP0(NAME) [](DIOp::NAME) {},
 #include "llvm/IR/DIExprOps.def"
 #undef HANDLE_OP0
@@ -3311,10 +3310,7 @@ void AssemblyWriter::printFunctionSummary(const FunctionSummary *FS) {
     printTypeIdInfo(*TIdInfo);
 
   // The AllocationType identifiers capture the profiled context behavior
-  // reaching a specific static allocation site (possibly cloned). Thus
-  // "notcoldandcold" implies there are multiple contexts which reach this site,
-  // some of which are cold and some of which are not, and that need to
-  // disambiguate via cloning or other context identification.
+  // reaching a specific static allocation site (possibly cloned).
   auto AllocTypeName = [](uint8_t Type) -> const char * {
     switch (Type) {
     case (uint8_t)AllocationType::None:
@@ -3323,8 +3319,8 @@ void AssemblyWriter::printFunctionSummary(const FunctionSummary *FS) {
       return "notcold";
     case (uint8_t)AllocationType::Cold:
       return "cold";
-    case (uint8_t)AllocationType::NotCold | (uint8_t)AllocationType::Cold:
-      return "notcoldandcold";
+    case (uint8_t)AllocationType::Hot:
+      return "hot";
     }
     llvm_unreachable("Unexpected alloc type");
   };

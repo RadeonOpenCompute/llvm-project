@@ -34,13 +34,11 @@ using namespace llvm::omp::target;
 
 // List of all plugins that can support offloading.
 static const char *RTLNames[] = {
-    /* PowerPC target       */ "libomptarget.rtl.ppc64",
-    /* x86_64 target        */ "libomptarget.rtl.x86_64",
-    /* CUDA target          */ "libomptarget.rtl.cuda",
-    /* AArch64 target       */ "libomptarget.rtl.aarch64",
-    /* SX-Aurora VE target  */ "libomptarget.rtl.ve",
     /* AMDGPU target        */ "libomptarget.rtl.amdgpu",
-    /* Remote target        */ "libomptarget.rtl.rpc",
+    /* CUDA target          */ "libomptarget.rtl.cuda",
+    /* x86_64 target        */ "libomptarget.rtl.x86_64",
+    /* PowerPC target       */ "libomptarget.rtl.ppc64",
+    /* AArch64 target       */ "libomptarget.rtl.aarch64",
 };
 
 PluginManager *PM;
@@ -116,22 +114,9 @@ void RTLsTy::loadRTLs() {
   }
 
   DP("Loading RTLs...\n");
-
-  // Parse environment variable OMPX_DISABLE_MAPS (if set)
-  if (const char *NoMapChecksStr = getenv("OMPX_DISABLE_MAPS"))
-    if (NoMapChecksStr)
-      NoUSMMapChecks = std::stoi(NoMapChecksStr);
-
-  // Parse environement variable OMPX_DISABLE_USM_MAPS (if set)
-  if (auto *disable_usm_maps{std::getenv("OMPX_DISABLE_USM_MAPS")}) {
-    auto Value{std::stoi(disable_usm_maps)};
-    if (Value > 0) {
-      EnableFineGrainedMemory = true;
-    }
-  }
-
-  DP("Loading RTLs...\n");
   BoolEnvar NextGenPlugins("LIBOMPTARGET_NEXTGEN_PLUGINS", true);
+
+  BoolEnvar UseFirstGoodRTL("LIBOMPTARGET_USE_FIRST_GOOD_RTL", false);
 
   // Attempt to open all the plugins and, if they exist, check if the interface
   // is correct and if they are supporting any devices.
@@ -142,9 +127,11 @@ void RTLsTy::loadRTLs() {
 
     const std::string BaseRTLName(Name);
     if (NextGenPlugins) {
-      if (attemptLoadRTL(BaseRTLName + ".nextgen.so", RTL))
+      if (attemptLoadRTL(BaseRTLName + ".nextgen.so", RTL)) {
+        if (UseFirstGoodRTL)
+          break;
         continue;
-
+      }
       DP("Falling back to original plugin...\n");
     }
 
@@ -153,43 +140,6 @@ void RTLsTy::loadRTLs() {
   }
 
   DP("RTLs loaded!\n");
-
-  // On APU systems (e.g., gfx940), running with
-  // OMPX_APU_MAPS=1, in default mode and HSA_XNACK=1 triggers
-  // disabling of most map clauses
-  // (except for declare target variables).
-  // Disabling means no device memory allocation
-  // and h2d or d2h memory copies are performed,
-  // but host thread allocated memory is used on
-  // devices. This behavior is reset if user app
-  // calls register requires later with unified_shared_memory flag
-
-  for (auto &RTL : PM->RTLs.AllRTLs) {
-    PM->RTLs.IsAPUDevice |= RTL.has_apu_device();
-    PM->RTLs.IsGfx90aDevice |= RTL.has_gfx90a_device();
-  }
-
-  if (PM->RTLs.IsAPUDevice || PM->RTLs.IsGfx90aDevice) {
-    auto *ApuMaps = getenv("OMPX_APU_MAPS");
-    auto *hsaXnack =
-        getenv("HSA_XNACK"); // TODO: Use ROCt API to query
-                             // xnack status. (requires merge of SWDEV-405757)
-    if (ApuMaps && hsaXnack) {
-      auto ApuMapsVal = std::stoi(ApuMaps);
-      auto hsaXnackVal = std::stoi(hsaXnack);
-
-      // OMPX_APU_MAPS is a temporary env variable
-      // that should always be used with HSA_XNACK=1:
-      // error if it is not. Once this is made default behavior
-      // for USM=OFF, HSA_XNACK=1, then we can remove the error
-      // as the behavior is only triggered by HSA_XNACK value
-      if (ApuMapsVal > 0 && hsaXnackVal == 0) {
-        FATAL_MESSAGE0(1, "OMPX_APU_MAPS behavior requires HSA_XNACK=1");
-      }
-      if (ApuMapsVal > 0 && hsaXnackVal > 0)
-        DisableAllocationsForMapsOnApus = true;
-    }
-  }
 }
 
 bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
@@ -231,12 +181,6 @@ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
   if (!(*((void **)&RTL.number_of_team_procs) =
             DynLibrary->getAddressOfSymbol("__tgt_rtl_number_of_team_procs")))
     ValidPlugin = false;
-  if (!(*((void **)&RTL.has_apu_device) =
-            DynLibrary->getAddressOfSymbol("__tgt_rtl_has_apu_device")))
-    ValidPlugin = false;
-  if (!(*((void **)&RTL.has_gfx90a_device) =
-            DynLibrary->getAddressOfSymbol("__tgt_rtl_has_gfx90a_device")))
-    ValidPlugin = false;
   if (!(*((void **)&RTL.init_device) =
             DynLibrary->getAddressOfSymbol("__tgt_rtl_init_device")))
     ValidPlugin = false;
@@ -261,6 +205,9 @@ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
   if (!(*((void **)&RTL.launch_kernel_sync) =
             DynLibrary->getAddressOfSymbol("__tgt_rtl_launch_kernel_sync")))
     ValidPlugin = false;
+  if (!(*((void **)&RTL.set_up_env) =
+            DynLibrary->getAddressOfSymbol("__tgt_rtl_set_up_env")))
+    ValidPlugin = false;
 
   // Invalid plugin
   if (!ValidPlugin) {
@@ -275,7 +222,7 @@ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
     return false;
   }
 
-#ifdef LIBOMPTARGET_DEBUG
+#ifdef OMPTARGET_DEBUG
   RTL.RTLName = Name;
 #endif
 
@@ -294,8 +241,6 @@ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
       DynLibrary->getAddressOfSymbol("__tgt_rtl_data_submit_async");
   *((void **)&RTL.data_retrieve_async) =
       DynLibrary->getAddressOfSymbol("__tgt_rtl_data_retrieve_async");
-  *((void **)&RTL.launch_kernel_sync) =
-      DynLibrary->getAddressOfSymbol("__tgt_rtl_launch_kernel_sync");
   *((void **)&RTL.synchronize) =
       DynLibrary->getAddressOfSymbol("__tgt_rtl_synchronize");
   *((void **)&RTL.query_async) =
@@ -330,6 +275,8 @@ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
       DynLibrary->getAddressOfSymbol("__tgt_rtl_set_coarse_grain_mem_region");
   *((void **)&RTL.query_coarse_grain_mem_region) =
       DynLibrary->getAddressOfSymbol("__tgt_rtl_query_coarse_grain_mem_region");
+  *((void **)&RTL.prepopulate_page_table) =
+      DynLibrary->getAddressOfSymbol("__tgt_rtl_prepopulate_page_table");
   *((void **)&RTL.enable_access_to_all_agents) =
       DynLibrary->getAddressOfSymbol("__tgt_rtl_enable_access_to_all_agents");
   *((void **)&RTL.release_async_info) =
@@ -346,6 +293,21 @@ bool RTLsTy::attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL) {
       DynLibrary->getAddressOfSymbol("__tgt_rtl_data_notify_mapped");
   *((void **)&RTL.data_notify_unmapped) =
       DynLibrary->getAddressOfSymbol("__tgt_rtl_data_notify_unmapped");
+  *((void **)&RTL.has_apu_device) =
+      DynLibrary->getAddressOfSymbol("__tgt_rtl_has_apu_device");
+  *((void **)&RTL.has_USM_capable_dGPU) =
+      DynLibrary->getAddressOfSymbol("__tgt_rtl_has_USM_capable_dGPU");
+  *((void **)&RTL.are_allocations_for_maps_on_apus_disabled) =
+      DynLibrary->getAddressOfSymbol(
+          "__tgt_rtl_are_allocations_for_maps_on_apus_disabled");
+  *((void **)&RTL.requested_prepopulate_gpu_page_table) =
+      DynLibrary->getAddressOfSymbol(
+          "__tgt_rtl_requested_prepopulate_gpu_page_table");
+  *((void **)&RTL.is_no_maps_check) =
+      DynLibrary->getAddressOfSymbol("__tgt_rtl_is_no_maps_check");
+  *((void **)&RTL.is_fine_grained_memory_enabled) =
+      DynLibrary->getAddressOfSymbol(
+          "__tgt_rtl_is_fine_grained_memory_enabled");
 
   RTL.LibraryHandler = std::move(DynLibrary);
 
@@ -448,31 +410,6 @@ static __tgt_image_info getImageInfo(__tgt_device_image *Image) {
   return __tgt_image_info{(*BinaryOrErr)->getArch().data()};
 }
 
-// Temp workaround due to the presence of OMPX_APU_MAPS
-// to enable unified shared memory mode for default programs
-// run with HSA_XNACK=1. Remove once the OMPX_APU_MAPS mode is
-// made default
-void RTLsTy::disableAPUMapsForUSM(int64_t RequiresFlags) {
-  // TODO: insert any other missing checks
-  if (RequiresFlags & OMP_REQ_UNIFIED_SHARED_MEMORY)
-    DisableAllocationsForMapsOnApus = false;
-}
-
-bool RTLsTy::requiresAllocForGlobal(const void *HstPtr) {
-  auto It =
-      std::find_if(HostPtrsRequireAlloc.begin(), HostPtrsRequireAlloc.end(),
-                   [=](const void *Arg) { return Arg == HstPtr; });
-  return It != HostPtrsRequireAlloc.end();
-}
-void RTLsTy::markHostPtrForRequiresAlloc(const void *HstPtr) {
-  if (!requiresAllocForGlobal(HstPtr))
-    HostPtrsRequireAlloc.insert(HstPtr);
-}
-
-void RTLsTy::deMarkHostPtrForRequiresAlloc(const void *HstPtr) {
-  assert(false);
-}
-
 void RTLsTy::registerRequires(int64_t Flags) {
   // TODO: add more elaborate check.
   // Minimal check: only set requires flags if previous value
@@ -483,7 +420,6 @@ void RTLsTy::registerRequires(int64_t Flags) {
          "illegal undefined flag for requires directive!");
   if (RequiresFlags == OMP_REQ_UNDEFINED) {
     RequiresFlags = Flags;
-    disableAPUMapsForUSM(RequiresFlags);
     return;
   }
 
@@ -508,8 +444,6 @@ void RTLsTy::registerRequires(int64_t Flags) {
         1,
         "'#pragma omp requires unified_shared_memory' not used consistently!");
   }
-
-  disableAPUMapsForUSM(RequiresFlags);
 
   // TODO: insert any other missing checks
 
@@ -605,14 +539,6 @@ void RTLsTy::registerLib(__tgt_bin_desc *Desc) {
       PM->TrlTblMtx.lock();
       if (!PM->HostEntriesBeginToTransTable.count(Desc->HostEntriesBegin)) {
         PM->HostEntriesBeginRegistrationOrder.push_back(Desc->HostEntriesBegin);
-        // Add all globals to the list of globals in this image, so later
-        // look-ups for globals are faster.
-        for (auto *Entry : PM->HostEntriesBeginRegistrationOrder)
-          if (Entry->size > 0) // globals have a size larger 0
-            HostPtrsRequireAlloc.insert(Entry->addr);
-        DP("USM_SPECIAL: Marked %i pointers for alloc handling\n",
-           HostPtrsRequireAlloc.size());
-
         TranslationTable &TransTable =
             (PM->HostEntriesBeginToTransTable)[Desc->HostEntriesBegin];
         TransTable.HostTable.EntriesBegin = Desc->HostEntriesBegin;

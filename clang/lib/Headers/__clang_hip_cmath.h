@@ -38,6 +38,11 @@
 
 // Start with functions that cannot be defined by DEF macros below.
 #if defined(__cplusplus)
+#if defined __OPENMP_AMDGCN__
+__DEVICE__ __CONSTEXPR__ float fabs(float __x) { return ::fabsf(__x); }
+__DEVICE__ __CONSTEXPR__ float sin(float __x) { return ::sinf(__x); }
+__DEVICE__ __CONSTEXPR__ float cos(float __x) { return ::cosf(__x); }
+#endif
 __DEVICE__ __CONSTEXPR__ double abs(double __x) { return ::fabs(__x); }
 __DEVICE__ __CONSTEXPR__ float abs(float __x) { return ::fabsf(__x); }
 __DEVICE__ __CONSTEXPR__ long long abs(long long __n) { return ::llabs(__n); }
@@ -168,7 +173,7 @@ __DEVICE__ __CONSTEXPR__ bool signbit(double __x) { return ::__signbit(__x); }
 // Other functions.
 __DEVICE__ __CONSTEXPR__ _Float16 fma(_Float16 __x, _Float16 __y,
                                       _Float16 __z) {
-  return __ocml_fma_f16(__x, __y, __z);
+  return __builtin_fmaf16(__x, __y, __z);
 }
 __DEVICE__ __CONSTEXPR__ _Float16 pow(_Float16 __base, int __iexp) {
   return __ocml_pown_f16(__base, __iexp);

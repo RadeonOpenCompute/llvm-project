@@ -38,6 +38,9 @@ def riscv_orc_b  : SDNode<"RISCVISD::ORC_B",  SDTIntUnaryOp>;
 def riscv_zip    : SDNode<"RISCVISD::ZIP",    SDTIntUnaryOp>;
 def riscv_unzip  : SDNode<"RISCVISD::UNZIP",  SDTIntUnaryOp>;
 def riscv_absw   : SDNode<"RISCVISD::ABSW",   SDTIntUnaryOp>;
+def riscv_clmul  : SDNode<"RISCVISD::CLMUL",  SDTIntBinOp>;
+def riscv_clmulh : SDNode<"RISCVISD::CLMULH", SDTIntBinOp>;
+def riscv_clmulr : SDNode<"RISCVISD::CLMULR", SDTIntBinOp>;
 
 def UImmLog2XLenHalfAsmOperand : AsmOperandClass {
   let Name = "UImmLog2XLenHalf";
@@ -348,7 +351,7 @@ def BINV : ALU_rr<0b0110100, 0b001, "binv">,
            Sched<[WriteSingleBit, ReadSingleBit, ReadSingleBit]>;
 let IsSignExtendingOpW = 1 in
 def BEXT : ALU_rr<0b0100100, 0b101, "bext">,
-           Sched<[WriteSingleBit, ReadSingleBit, ReadSingleBit]>;
+           Sched<[WriteBEXT, ReadSingleBit, ReadSingleBit]>;
 
 def BCLRI : RVBShift_ri<0b01001, 0b001, OPC_OP_IMM, "bclri">,
             Sched<[WriteSingleBitImm, ReadSingleBitImm]>;
@@ -358,7 +361,7 @@ def BINVI : RVBShift_ri<0b01101, 0b001, OPC_OP_IMM, "binvi">,
             Sched<[WriteSingleBitImm, ReadSingleBitImm]>;
 let IsSignExtendingOpW = 1 in
 def BEXTI : RVBShift_ri<0b01001, 0b101, OPC_OP_IMM, "bexti">,
-            Sched<[WriteSingleBitImm, ReadSingleBitImm]>;
+            Sched<[WriteBEXTI, ReadSingleBitImm]>;
 } // Predicates = [HasStdExtZbs]
 
 // These instructions were named xperm.n and xperm.b in the last version of
@@ -502,9 +505,9 @@ def : InstAlias<"bext $rd, $rs1, $shamt",
 //===----------------------------------------------------------------------===//
 
 let Predicates = [HasStdExtZbbOrZbkb] in {
-def : Pat<(and GPR:$rs1, (not GPR:$rs2)), (ANDN GPR:$rs1, GPR:$rs2)>;
-def : Pat<(or  GPR:$rs1, (not GPR:$rs2)), (ORN  GPR:$rs1, GPR:$rs2)>;
-def : Pat<(xor GPR:$rs1, (not GPR:$rs2)), (XNOR GPR:$rs1, GPR:$rs2)>;
+def : Pat<(XLenVT (and GPR:$rs1, (not GPR:$rs2))), (ANDN GPR:$rs1, GPR:$rs2)>;
+def : Pat<(XLenVT (or  GPR:$rs1, (not GPR:$rs2))), (ORN  GPR:$rs1, GPR:$rs2)>;
+def : Pat<(XLenVT (xor GPR:$rs1, (not GPR:$rs2))), (XNOR GPR:$rs1, GPR:$rs2)>;
 } // Predicates = [HasStdExtZbbOrZbkb]
 
 let Predicates = [HasStdExtZbbOrZbkb] in {
@@ -514,7 +517,7 @@ def : PatGprGpr<shiftop<rotr>, ROR>;
 def : PatGprImm<rotr, RORI, uimmlog2xlen>;
 // There's no encoding for roli in the the 'B' extension as it can be
 // implemented with rori by negating the immediate.
-def : Pat<(rotl GPR:$rs1, uimmlog2xlen:$shamt),
+def : Pat<(XLenVT (rotl GPR:$rs1, uimmlog2xlen:$shamt)),
           (RORI GPR:$rs1, (ImmSubFromXLen uimmlog2xlen:$shamt))>;
 } // Predicates = [HasStdExtZbbOrZbkb]
 
@@ -527,64 +530,63 @@ def : Pat<(riscv_rolw GPR:$rs1, uimm5:$rs2),
 } // Predicates = [HasStdExtZbbOrZbkb, IsRV64]
 
 let Predicates = [HasStdExtZbs] in {
-def : Pat<(and (not (shiftop<shl> 1, GPR:$rs2)), GPR:$rs1),
+def : Pat<(XLenVT (and (not (shiftop<shl> 1, (XLenVT GPR:$rs2))), GPR:$rs1)),
           (BCLR GPR:$rs1, GPR:$rs2)>;
-def : Pat<(and (rotl -2, GPR:$rs2), GPR:$rs1), (BCLR GPR:$rs1, GPR:$rs2)>;
-def : Pat<(or (shiftop<shl> 1, GPR:$rs2), GPR:$rs1),
+def : Pat<(XLenVT (and (rotl -2, (XLenVT GPR:$rs2)), GPR:$rs1)),
+          (BCLR GPR:$rs1, GPR:$rs2)>;
+def : Pat<(XLenVT (or (shiftop<shl> 1, (XLenVT GPR:$rs2)), GPR:$rs1)),
           (BSET GPR:$rs1, GPR:$rs2)>;
-def : Pat<(xor (shiftop<shl> 1, GPR:$rs2), GPR:$rs1),
+def : Pat<(XLenVT (xor (shiftop<shl> 1, (XLenVT GPR:$rs2)), GPR:$rs1)),
           (BINV GPR:$rs1, GPR:$rs2)>;
-def : Pat<(and (shiftop<srl> GPR:$rs1, GPR:$rs2), 1),
+def : Pat<(XLenVT (and (shiftop<srl> GPR:$rs1, (XLenVT GPR:$rs2)), 1)),
           (BEXT GPR:$rs1, GPR:$rs2)>;
 
-def : Pat<(shiftop<shl> 1, GPR:$rs2),
-          (BSET X0, GPR:$rs2)>;
+def : Pat<(XLenVT (shiftop<shl> 1, (XLenVT GPR:$rs2))),
+          (BSET (XLenVT X0), GPR:$rs2)>;
 
-def : Pat<(and GPR:$rs1, BCLRMask:$mask),
+def : Pat<(XLenVT (and GPR:$rs1, BCLRMask:$mask)),
           (BCLRI GPR:$rs1, BCLRMask:$mask)>;
-def : Pat<(or GPR:$rs1, SingleBitSetMask:$mask),
+def : Pat<(XLenVT (or GPR:$rs1, SingleBitSetMask:$mask)),
           (BSETI GPR:$rs1, SingleBitSetMask:$mask)>;
-def : Pat<(xor GPR:$rs1, SingleBitSetMask:$mask),
+def : Pat<(XLenVT (xor GPR:$rs1, SingleBitSetMask:$mask)),
           (BINVI GPR:$rs1, SingleBitSetMask:$mask)>;
 
-def : Pat<(and (srl GPR:$rs1, uimmlog2xlen:$shamt), (XLenVT 1)),
+def : Pat<(XLenVT (and (srl GPR:$rs1, uimmlog2xlen:$shamt), (XLenVT 1))),
           (BEXTI GPR:$rs1, uimmlog2xlen:$shamt)>;
 
-def : Pat<(seteq (and GPR:$rs1, SingleBitSetMask:$mask), 0),
+def : Pat<(XLenVT (seteq (XLenVT (and GPR:$rs1, SingleBitSetMask:$mask)), 0)),
           (BEXTI (XORI GPR:$rs1, -1), SingleBitSetMask:$mask)>;
 
-def : Pat<(or GPR:$r, BSETINVTwoBitsMask:$i),
+def : Pat<(XLenVT (or GPR:$r, BSETINVTwoBitsMask:$i)),
           (BSETI (BSETI GPR:$r, (TrailingZeros BSETINVTwoBitsMask:$i)),
                  (BSETINVTwoBitsMaskHigh BSETINVTwoBitsMask:$i))>;
-def : Pat<(xor GPR:$r, BSETINVTwoBitsMask:$i),
+def : Pat<(XLenVT (xor GPR:$r, BSETINVTwoBitsMask:$i)),
           (BINVI (BINVI GPR:$r, (TrailingZeros BSETINVTwoBitsMask:$i)),
                  (BSETINVTwoBitsMaskHigh BSETINVTwoBitsMask:$i))>;
-def : Pat<(or GPR:$r, BSETINVORIMask:$i),
+def : Pat<(XLenVT (or GPR:$r, BSETINVORIMask:$i)),
           (BSETI (ORI GPR:$r, (BSETINVORIMaskLow BSETINVORIMask:$i)),
                  (BSETINVTwoBitsMaskHigh BSETINVORIMask:$i))>;
-def : Pat<(xor GPR:$r, BSETINVORIMask:$i),
+def : Pat<(XLenVT (xor GPR:$r, BSETINVORIMask:$i)),
           (BINVI (XORI GPR:$r, (BSETINVORIMaskLow BSETINVORIMask:$i)),
                  (BSETINVTwoBitsMaskHigh BSETINVORIMask:$i))>;
-def : Pat<(and GPR:$r, BCLRITwoBitsMask:$i),
+def : Pat<(XLenVT (and GPR:$r, BCLRITwoBitsMask:$i)),
           (BCLRI (BCLRI GPR:$r, (BCLRITwoBitsMaskLow BCLRITwoBitsMask:$i)),
                  (BCLRITwoBitsMaskHigh BCLRITwoBitsMask:$i))>;
-def : Pat<(and GPR:$r, BCLRIANDIMask:$i),
+def : Pat<(XLenVT (and GPR:$r, BCLRIANDIMask:$i)),
           (BCLRI (ANDI GPR:$r, (BCLRIANDIMaskLow BCLRIANDIMask:$i)),
                  (BCLRITwoBitsMaskHigh BCLRIANDIMask:$i))>;
 } // Predicates = [HasStdExtZbs]
 
-let Predicates = [HasStdExtZbb] in {
-def : Pat<(riscv_orc_b GPR:$rs1), (ORC_B GPR:$rs1)>;
-} // Predicates = [HasStdExtZbb]
+let Predicates = [HasStdExtZbb] in
+def : PatGpr<riscv_orc_b, ORC_B>;
 
-let Predicates = [HasStdExtZbkb] in {
-def : Pat<(riscv_brev8 GPR:$rs1), (BREV8 GPR:$rs1)>;
-} // Predicates = [HasStdExtZbkb]
+let Predicates = [HasStdExtZbkb] in
+def : PatGpr<riscv_brev8, BREV8>;
 
 let Predicates = [HasStdExtZbkb, IsRV32] in {
 // We treat zip and unzip as separate instructions, so match it directly.
-def : Pat<(i32 (riscv_zip GPR:$rs1)), (ZIP_RV32 GPR:$rs1)>;
-def : Pat<(i32 (riscv_unzip GPR:$rs1)), (UNZIP_RV32 GPR:$rs1)>;
+def : PatGpr<riscv_zip, ZIP_RV32, i32>;
+def : PatGpr<riscv_unzip, UNZIP_RV32, i32>;
 } // Predicates = [HasStdExtZbkb, IsRV32]
 
 let Predicates = [HasStdExtZbb] in {
@@ -599,12 +601,12 @@ def : PatGpr<riscv_ctzw, CTZW>;
 def : Pat<(i64 (ctpop (i64 (zexti32 (i64 GPR:$rs1))))), (CPOPW GPR:$rs1)>;
 
 def : Pat<(i64 (riscv_absw GPR:$rs1)),
-          (MAX GPR:$rs1, (SUBW X0, GPR:$rs1))>;
+          (MAX GPR:$rs1, (SUBW (XLenVT X0), GPR:$rs1))>;
 } // Predicates = [HasStdExtZbb, IsRV64]
 
 let Predicates = [HasStdExtZbb] in {
-def : Pat<(sext_inreg GPR:$rs1, i8), (SEXT_B GPR:$rs1)>;
-def : Pat<(sext_inreg GPR:$rs1, i16), (SEXT_H GPR:$rs1)>;
+def : Pat<(XLenVT (sext_inreg GPR:$rs1, i8)), (SEXT_B GPR:$rs1)>;
+def : Pat<(XLenVT (sext_inreg GPR:$rs1, i16)), (SEXT_H GPR:$rs1)>;
 } // Predicates = [HasStdExtZbb]
 
 let Predicates = [HasStdExtZbb] in {
@@ -614,39 +616,37 @@ def : PatGprGpr<umin, MINU>;
 def : PatGprGpr<umax, MAXU>;
 } // Predicates = [HasStdExtZbb]
 
-let Predicates = [HasStdExtZbbOrZbkb, IsRV32] in {
-def : Pat<(i32 (bswap GPR:$rs1)), (REV8_RV32 GPR:$rs1)>;
-} // Predicates = [HasStdExtZbbOrZbkb, IsRV32]
+let Predicates = [HasStdExtZbbOrZbkb, IsRV32] in
+def : PatGpr<bswap, REV8_RV32, i32>;
 
-let Predicates = [HasStdExtZbbOrZbkb, IsRV64] in {
-def : Pat<(i64 (bswap GPR:$rs1)), (REV8_RV64 GPR:$rs1)>;
-} // Predicates = [HasStdExtZbbOrZbkb, IsRV64]
+let Predicates = [HasStdExtZbbOrZbkb, IsRV64] in
+def : PatGpr<bswap, REV8_RV64, i64>;
 
 let Predicates = [HasStdExtZbkb] in {
 def : Pat<(or (and (shl GPR:$rs2, (XLenVT 8)), 0xFFFF),
-              (zexti8 GPR:$rs1)),
+              (zexti8 (XLenVT GPR:$rs1))),
           (PACKH GPR:$rs1, GPR:$rs2)>;
-def : Pat<(or (shl (zexti8 GPR:$rs2), (XLenVT 8)),
-              (zexti8 GPR:$rs1)),
+def : Pat<(or (shl (zexti8 (XLenVT GPR:$rs2)), (XLenVT 8)),
+              (zexti8 (XLenVT GPR:$rs1))),
           (PACKH GPR:$rs1, GPR:$rs2)>;
 def : Pat<(and (or (shl GPR:$rs2, (XLenVT 8)),
-                   (zexti8 GPR:$rs1)), 0xFFFF),
+                   (zexti8 (XLenVT GPR:$rs1))), 0xFFFF),
           (PACKH GPR:$rs1, GPR:$rs2)>;
 } // Predicates = [HasStdExtZbkb]
 
 let Predicates = [HasStdExtZbkb, IsRV32] in
-def : Pat<(i32 (or (zexti16 GPR:$rs1), (shl GPR:$rs2, (i32 16)))),
+def : Pat<(i32 (or (zexti16 (i32 GPR:$rs1)), (shl GPR:$rs2, (i32 16)))),
           (PACK GPR:$rs1, GPR:$rs2)>;
 
 let Predicates = [HasStdExtZbkb, IsRV64] in {
-def : Pat<(i64 (or (zexti32 GPR:$rs1), (shl GPR:$rs2, (i64 32)))),
+def : Pat<(i64 (or (zexti32 (i64 GPR:$rs1)), (shl GPR:$rs2, (i64 32)))),
           (PACK GPR:$rs1, GPR:$rs2)>;
 
 def : Pat<(binop_allwusers<or> (shl GPR:$rs2, (i64 16)),
-                               (zexti16 GPR:$rs1)),
+                               (zexti16 (i64 GPR:$rs1))),
           (PACKW GPR:$rs1, GPR:$rs2)>;
 def : Pat<(i64 (or (sext_inreg (shl GPR:$rs2, (i64 16)), i32),
-                   (zexti16 GPR:$rs1))),
+                   (zexti16 (i64 GPR:$rs1)))),
           (PACKW GPR:$rs1, GPR:$rs2)>;
 } // Predicates = [HasStdExtZbkb, IsRV64]
 
@@ -690,20 +690,20 @@ def : Pat<(add (mul_oneuse GPR:$rs1, (XLenVT 40)), GPR:$rs2),
 def : Pat<(add (mul_oneuse GPR:$rs1, (XLenVT 72)), GPR:$rs2),
           (SH3ADD (SH3ADD GPR:$rs1, GPR:$rs1), GPR:$rs2)>;
 
-def : Pat<(add GPR:$r, CSImm12MulBy4:$i),
-          (SH2ADD (ADDI X0, (SimmShiftRightBy2XForm CSImm12MulBy4:$i)),
+def : Pat<(add (XLenVT GPR:$r), CSImm12MulBy4:$i),
+          (SH2ADD (ADDI (XLenVT X0), (SimmShiftRightBy2XForm CSImm12MulBy4:$i)),
                   GPR:$r)>;
-def : Pat<(add GPR:$r, CSImm12MulBy8:$i),
-          (SH3ADD (ADDI X0, (SimmShiftRightBy3XForm CSImm12MulBy8:$i)),
+def : Pat<(add (XLenVT GPR:$r), CSImm12MulBy8:$i),
+          (SH3ADD (ADDI (XLenVT X0), (SimmShiftRightBy3XForm CSImm12MulBy8:$i)),
                   GPR:$r)>;
 
-def : Pat<(mul GPR:$r, C3LeftShift:$i),
+def : Pat<(mul (XLenVT GPR:$r), C3LeftShift:$i),
           (SLLI (SH1ADD GPR:$r, GPR:$r),
                 (TrailingZeros C3LeftShift:$i))>;
-def : Pat<(mul GPR:$r, C5LeftShift:$i),
+def : Pat<(mul (XLenVT GPR:$r), C5LeftShift:$i),
           (SLLI (SH2ADD GPR:$r, GPR:$r),
                 (TrailingZeros C5LeftShift:$i))>;
-def : Pat<(mul GPR:$r, C9LeftShift:$i),
+def : Pat<(mul (XLenVT GPR:$r), C9LeftShift:$i),
           (SLLI (SH3ADD GPR:$r, GPR:$r),
                 (TrailingZeros C9LeftShift:$i))>;
 
@@ -742,7 +742,7 @@ def : Pat<(i64 (and GPR:$rs1, Shifted32OnesMask:$mask)),
 
 def : Pat<(i64 (add (and GPR:$rs1, 0xFFFFFFFF), non_imm12:$rs2)),
           (ADD_UW GPR:$rs1, GPR:$rs2)>;
-def : Pat<(i64 (and GPR:$rs, 0xFFFFFFFF)), (ADD_UW GPR:$rs, X0)>;
+def : Pat<(i64 (and GPR:$rs, 0xFFFFFFFF)), (ADD_UW GPR:$rs, (XLenVT X0))>;
 
 def : Pat<(i64 (add (shl (and GPR:$rs1, 0xFFFFFFFF), (i64 1)), non_imm12:$rs2)),
           (SH1ADD_UW GPR:$rs1, GPR:$rs2)>;
@@ -781,24 +781,24 @@ def : Pat<(i64 (add (and GPR:$rs1, 0x3FFFFFFFC), non_imm12:$rs2)),
 def : Pat<(i64 (add (and GPR:$rs1, 0x7FFFFFFF8), non_imm12:$rs2)),
           (SH3ADD_UW (SRLI GPR:$rs1, 3), GPR:$rs2)>;
 
-def : Pat<(i64 (mul (binop_oneuse<and> GPR:$r, 0xFFFFFFFF), C3LeftShiftUW:$i)),
+def : Pat<(i64 (mul (and_oneuse GPR:$r, 0xFFFFFFFF), C3LeftShiftUW:$i)),
           (SH1ADD (SLLI_UW GPR:$r, (TrailingZeros C3LeftShiftUW:$i)),
                   (SLLI_UW GPR:$r, (TrailingZeros C3LeftShiftUW:$i)))>;
-def : Pat<(i64 (mul (binop_oneuse<and> GPR:$r, 0xFFFFFFFF), C5LeftShiftUW:$i)),
+def : Pat<(i64 (mul (and_oneuse GPR:$r, 0xFFFFFFFF), C5LeftShiftUW:$i)),
           (SH2ADD (SLLI_UW GPR:$r, (TrailingZeros C5LeftShiftUW:$i)),
                   (SLLI_UW GPR:$r, (TrailingZeros C5LeftShiftUW:$i)))>;
-def : Pat<(i64 (mul (binop_oneuse<and> GPR:$r, 0xFFFFFFFF), C9LeftShiftUW:$i)),
+def : Pat<(i64 (mul (and_oneuse GPR:$r, 0xFFFFFFFF), C9LeftShiftUW:$i)),
           (SH3ADD (SLLI_UW GPR:$r, (TrailingZeros C9LeftShiftUW:$i)),
                   (SLLI_UW GPR:$r, (TrailingZeros C9LeftShiftUW:$i)))>;
 } // Predicates = [HasStdExtZba, IsRV64]
 
 let Predicates = [HasStdExtZbcOrZbkc] in {
-def : PatGprGpr<int_riscv_clmul, CLMUL>;
-def : PatGprGpr<int_riscv_clmulh, CLMULH>;
+def : PatGprGpr<riscv_clmul, CLMUL>;
+def : PatGprGpr<riscv_clmulh, CLMULH>;
 } // Predicates = [HasStdExtZbcOrZbkc]
 
 let Predicates = [HasStdExtZbc] in
-def : PatGprGpr<int_riscv_clmulr, CLMULR>;
+def : PatGprGpr<riscv_clmulr, CLMULR>;
 
 let Predicates = [HasStdExtZbkx] in {
 def : PatGprGpr<int_riscv_xperm4, XPERM4>;

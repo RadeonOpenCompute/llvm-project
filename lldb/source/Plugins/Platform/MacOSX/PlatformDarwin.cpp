@@ -63,7 +63,8 @@ static Status ExceptionMaskValidator(const char *string, void *unused) {
           || candidate == "EXC_BAD_INSTRUCTION"
           || candidate == "EXC_ARITHMETIC"
           || candidate == "EXC_RESOURCE"
-          || candidate == "EXC_GUARD")) {
+          || candidate == "EXC_GUARD"
+          || candidate == "EXC_SYSCALL")) {
       error.SetErrorStringWithFormat("invalid exception type: '%s'",
           candidate.str().c_str());
       return error;
@@ -136,8 +137,7 @@ public:
   const char *GetIgnoredExceptions() const {
     const uint32_t idx = ePropertyIgnoredExceptions;
     const OptionValueString *option_value =
-        m_collection_sp->GetPropertyAtIndexAsOptionValueString(nullptr, false,
-                                                               idx);
+        m_collection_sp->GetPropertyAtIndexAsOptionValueString(idx);
     assert(option_value);
     return option_value->GetCurrentValue();
   }
@@ -145,8 +145,7 @@ public:
   OptionValueString *GetIgnoredExceptionValue() {
     const uint32_t idx = ePropertyIgnoredExceptions;
     OptionValueString *option_value =
-        m_collection_sp->GetPropertyAtIndexAsOptionValueString(nullptr, false,
-                                                               idx);
+        m_collection_sp->GetPropertyAtIndexAsOptionValueString(idx);
     assert(option_value);
     return option_value;
   }
@@ -164,8 +163,7 @@ void PlatformDarwin::DebuggerInitialize(
     const bool is_global_setting = false;
     PluginManager::CreateSettingForPlatformPlugin(
         debugger, GetGlobalProperties().GetValueProperties(),
-        ConstString("Properties for the Darwin platform plug-in."),
-        is_global_setting);
+        "Properties for the Darwin platform plug-in.", is_global_setting);
     OptionValueString *value = GetGlobalProperties().GetIgnoredExceptionValue();
     value->SetValidator(ExceptionMaskValidator);
   }
@@ -196,7 +194,7 @@ PlatformDarwin::PutFile(const lldb_private::FileSpec &source,
 }
 
 FileSpecList PlatformDarwin::LocateExecutableScriptingResources(
-    Target *target, Module &module, Stream *feedback_stream) {
+    Target *target, Module &module, Stream &feedback_stream) {
   FileSpecList file_list;
   if (target &&
       target->GetDebugger().GetScriptLanguage() == eScriptLanguagePython) {
@@ -268,33 +266,31 @@ FileSpecList PlatformDarwin::LocateExecutableScriptingResources(
               // if we did some replacements of reserved characters, and a
               // file with the untampered name exists, then warn the user
               // that the file as-is shall not be loaded
-              if (feedback_stream) {
-                if (module_basename != original_module_basename &&
-                    FileSystem::Instance().Exists(orig_script_fspec)) {
-                  const char *reason_for_complaint =
-                      was_keyword ? "conflicts with a keyword"
-                                  : "contains reserved characters";
-                  if (FileSystem::Instance().Exists(script_fspec))
-                    feedback_stream->Printf(
-                        "warning: the symbol file '%s' contains a debug "
-                        "script. However, its name"
-                        " '%s' %s and as such cannot be loaded. LLDB will"
-                        " load '%s' instead. Consider removing the file with "
-                        "the malformed name to"
-                        " eliminate this warning.\n",
-                        symfile_spec.GetPath().c_str(),
-                        original_path_string.GetData(), reason_for_complaint,
-                        path_string.GetData());
-                  else
-                    feedback_stream->Printf(
-                        "warning: the symbol file '%s' contains a debug "
-                        "script. However, its name"
-                        " %s and as such cannot be loaded. If you intend"
-                        " to have this script loaded, please rename '%s' to "
-                        "'%s' and retry.\n",
-                        symfile_spec.GetPath().c_str(), reason_for_complaint,
-                        original_path_string.GetData(), path_string.GetData());
-                }
+              if (module_basename != original_module_basename &&
+                  FileSystem::Instance().Exists(orig_script_fspec)) {
+                const char *reason_for_complaint =
+                    was_keyword ? "conflicts with a keyword"
+                                : "contains reserved characters";
+                if (FileSystem::Instance().Exists(script_fspec))
+                  feedback_stream.Printf(
+                      "warning: the symbol file '%s' contains a debug "
+                      "script. However, its name"
+                      " '%s' %s and as such cannot be loaded. LLDB will"
+                      " load '%s' instead. Consider removing the file with "
+                      "the malformed name to"
+                      " eliminate this warning.\n",
+                      symfile_spec.GetPath().c_str(),
+                      original_path_string.GetData(), reason_for_complaint,
+                      path_string.GetData());
+                else
+                  feedback_stream.Printf(
+                      "warning: the symbol file '%s' contains a debug "
+                      "script. However, its name"
+                      " %s and as such cannot be loaded. If you intend"
+                      " to have this script loaded, please rename '%s' to "
+                      "'%s' and retry.\n",
+                      symfile_spec.GetPath().c_str(), reason_for_complaint,
+                      original_path_string.GetData(), path_string.GetData());
               }
 
               if (FileSystem::Instance().Exists(script_fspec)) {
@@ -1239,14 +1235,9 @@ lldb_private::Status PlatformDarwin::FindBundleBinaryInExecSearchPaths(
     // "UIFoundation" and "UIFoundation.framework" -- most likely the latter
     // will be the one we find there.
 
-    FileSpec platform_pull_upart(platform_file);
-    std::vector<std::string> path_parts;
-    path_parts.push_back(
-        platform_pull_upart.GetLastPathComponent().AsCString());
-    while (platform_pull_upart.RemoveLastPathComponent()) {
-      ConstString part = platform_pull_upart.GetLastPathComponent();
-      path_parts.push_back(part.AsCString());
-    }
+    std::vector<llvm::StringRef> path_parts = platform_file.GetComponents();
+    // We want the components in reverse order.
+    std::reverse(path_parts.begin(), path_parts.end());
     const size_t path_parts_size = path_parts.size();
 
     size_t num_module_search_paths = module_search_paths_ptr->GetSize();

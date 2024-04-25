@@ -15,8 +15,8 @@
 ; GFX8-NEXT:  buffer_wbinvl1_vol{{$}}
 ; GFX10:      s_waitcnt vmcnt(0){{$}}
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel system_one_as_acquire
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -51,8 +51,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel system_one_as_acq_rel
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -71,8 +71,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel system_one_as_seq_cst
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -149,8 +149,8 @@ entry:
 ; GFX8-NEXT:  buffer_wbinvl1_vol{{$}}
 ; GFX10:      s_waitcnt vmcnt(0){{$}}
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel agent_one_as_acquire
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -185,8 +185,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel agent_one_as_acq_rel
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -205,8 +205,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel agent_one_as_seq_cst
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -366,8 +366,8 @@ entry:
 ; GFX8-NEXT:  buffer_wbinvl1_vol{{$}}
 ; GFX10:      s_waitcnt vmcnt(0) lgkmcnt(0){{$}}
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel system_acquire
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -406,8 +406,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel system_acq_rel
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -428,8 +428,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel system_seq_cst
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -506,8 +506,8 @@ entry:
 ; GFX8-NEXT:  buffer_wbinvl1_vol{{$}}
 ; GFX10:      s_waitcnt vmcnt(0) lgkmcnt(0){{$}}
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel agent_acquire
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -546,8 +546,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel agent_acq_rel
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0
@@ -568,8 +568,8 @@ entry:
 ; GFX10-NEXT: s_waitcnt_vscnt null, 0x0{{$}}
 ; GFX6:       buffer_wbinvl1{{$}}
 ; GFX8:       buffer_wbinvl1_vol{{$}}
-; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GFX10-NEXT: buffer_gl1_inv{{$}}
+; GFX10-NEXT: buffer_gl0_inv{{$}}
 ; GCN:        s_endpgm
 ; GFX10:         .amdhsa_kernel agent_seq_cst
 ; GFX10WGP-NOT:  .amdhsa_workgroup_processor_mode 0

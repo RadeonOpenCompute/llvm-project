@@ -9,11 +9,7 @@
 #ifndef LLVM_ADT_GENERICUNIFORMITYINFO_H
 #define LLVM_ADT_GENERICUNIFORMITYINFO_H
 
-// #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/GenericCycleInfo.h"
-// #include "llvm/ADT/SmallPtrSet.h"
-// #include "llvm/ADT/Uniformity.h"
-// #include "llvm/Analysis/LegacyDivergenceAnalysis.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace llvm {
@@ -50,6 +46,11 @@ public:
   GenericUniformityInfo() = default;
   GenericUniformityInfo(GenericUniformityInfo &&) = default;
   GenericUniformityInfo &operator=(GenericUniformityInfo &&) = default;
+
+  void compute() {
+    DA->initialize();
+    DA->compute();
+  }
 
   /// Whether any divergence was detected.
   bool hasDivergence() const;

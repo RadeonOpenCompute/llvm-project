@@ -50,6 +50,11 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind, StringRef Str,
       return OMPC_DEPEND_unknown;
     return Type;
   }
+  case OMPC_doacross:
+    return llvm::StringSwitch<OpenMPDoacrossClauseModifier>(Str)
+#define OPENMP_DOACROSS_MODIFIER(Name) .Case(#Name, OMPC_DOACROSS_##Name)
+#include "clang/Basic/OpenMPKinds.def"
+        .Default(OMPC_DOACROSS_unknown);
   case OMPC_linear:
     return llvm::StringSwitch<OpenMPLinearClauseKind>(Str)
 #define OPENMP_LINEAR_KIND(Name) .Case(#Name, OMPC_LINEAR_##Name)
@@ -282,6 +287,16 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
 #include "clang/Basic/OpenMPKinds.def"
     }
     llvm_unreachable("Invalid OpenMP 'depend' clause type");
+  case OMPC_doacross:
+    switch (Type) {
+    case OMPC_DOACROSS_unknown:
+      return "unknown";
+#define OPENMP_DOACROSS_MODIFIER(Name)                                         \
+  case OMPC_DOACROSS_##Name:                                                   \
+    return #Name;
+#include "clang/Basic/OpenMPKinds.def"
+    }
+    llvm_unreachable("Invalid OpenMP 'doacross' clause type");
   case OMPC_linear:
     switch (Type) {
     case OMPC_LINEAR_unknown:
@@ -589,10 +604,8 @@ bool clang::isOpenMPWorksharingDirective(OpenMPDirectiveKind DKind) {
          DKind == OMPD_teams_distribute_parallel_for ||
          DKind == OMPD_target_teams_distribute_parallel_for ||
          DKind == OMPD_target_teams_distribute_parallel_for_simd ||
-         DKind == OMPD_parallel_loop ||
-         DKind == OMPD_teams_loop ||
-         DKind == OMPD_target_parallel_loop ||
-         DKind == OMPD_target_teams_loop;
+         DKind == OMPD_parallel_loop || DKind == OMPD_teams_loop ||
+         DKind == OMPD_target_parallel_loop || DKind == OMPD_target_teams_loop;
 }
 
 bool clang::isOpenMPTaskLoopDirective(OpenMPDirectiveKind DKind) {
@@ -720,7 +733,7 @@ bool clang::isOpenMPLoopBoundSharingDirective(OpenMPDirectiveKind Kind) {
          Kind == OMPD_teams_distribute_parallel_for ||
          Kind == OMPD_target_teams_distribute_parallel_for ||
          Kind == OMPD_target_teams_distribute_parallel_for_simd ||
-         Kind == OMPD_teams_loop || Kind == OMPD_target_teams_loop;
+         Kind == OMPD_target_teams_loop;
 }
 
 bool clang::isOpenMPLoopTransformationDirective(OpenMPDirectiveKind DKind) {
@@ -762,6 +775,7 @@ void clang::getOpenMPCaptureRegions(
     CaptureRegions.push_back(OMPD_teams);
     break;
   case OMPD_teams:
+  case OMPD_teams_loop:
   case OMPD_teams_distribute:
   case OMPD_teams_distribute_simd:
     CaptureRegions.push_back(OMPD_teams);
@@ -771,7 +785,6 @@ void clang::getOpenMPCaptureRegions(
     CaptureRegions.push_back(OMPD_task);
     CaptureRegions.push_back(OMPD_target);
     break;
-  case OMPD_teams_loop:
   case OMPD_teams_distribute_parallel_for:
   case OMPD_teams_distribute_parallel_for_simd:
     CaptureRegions.push_back(OMPD_teams);

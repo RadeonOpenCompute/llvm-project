@@ -27,7 +27,7 @@
 ! HELP-NEXT: -fcolor-diagnostics    Enable colors in diagnostics
 ! HELP-NEXT: -fconvert=<value>      Set endian conversion of data for unformatted files
 ! HELP-NEXT: -fdefault-double-8     Set the default double precision kind to an 8 byte wide type
-! HELP-NEXT: -fdefault-integer-8    Set the default integer kind to an 8 byte wide type
+! HELP-NEXT: -fdefault-integer-8    Set the default integer and logical kind to an 8 byte wide type
 ! HELP-NEXT: -fdefault-real-8       Set the default real kind to an 8 byte wide type
 ! HELP-NEXT: -ffast-math            Allow aggressive, lossy floating-point optimizations
 ! HELP-NEXT: -ffixed-form           Process source files in fixed form
@@ -48,13 +48,19 @@
 ! HELP-NEXT: -fno-integrated-as      Disable the integrated assembler
 ! HELP-NEXT: -fno-signed-zeros      Allow optimizations that ignore the sign of floating point zeros
 ! HELP-NEXT: -fno-stack-arrays      Allocate array temporaries on the heap (default)
+! HELP-NEXT: -fno-version-loops-for-stride
+! HELP-NEXT:                        Do not create unit-strided loops (default)
 ! HELP-NEXT: -fopenacc              Enable OpenACC
+! HELP-NEXT: -fopenmp-version=<value>
+! HELP-NEXT:                        Set OpenMP version (e.g. 45 for OpenMP 4.5, 50 for OpenMP 5.0). Default value is 50 for Clang and 11 for Flang
 ! HELP-NEXT: -fopenmp               Parse OpenMP pragmas and generate parallel code.
 ! HELP-NEXT: -fpass-plugin=<dsopath> Load pass plugin from a dynamic shared object file (only with new pass manager).
 ! HELP-NEXT: -freciprocal-math      Allow division operations to be reassociated
 ! HELP-NEXT: -fstack-arrays         Attempt to allocate array temporaries on the stack, no matter their size
 ! HELP-NEXT: -fsyntax-only          Run the preprocessor, parser and semantic analysis stages
 ! HELP-NEXT: -funderscoring         Appends one trailing underscore to external names
+! HELP-NEXT: -fversion-loops-for-stride
+! HELP-NEXT:                        Create unit-strided versions of loops
 ! HELP-NEXT: -fxor-operator         Enable .XOR. as a synonym of .NEQV.
 ! HELP-NEXT: -gline-tables-only     Emit debug line number tables only
 ! HELP-NEXT: -g                     Generate source-level debug information
@@ -65,6 +71,9 @@
 ! HELP-NEXT: -mmlir <value>         Additional arguments to forward to MLIR's option processing
 ! HELP-NEXT: -module-dir <dir>      Put MODULE files in <dir>
 ! HELP-NEXT: -nocpp                 Disable predefined and command line preprocessor macros
+! HELP-NEXT: --offload-device-only   Only compile for the offloading device.
+! HELP-NEXT: --offload-host-device   Only compile for the offloading host.
+! HELP-NEXT: --offload-host-only     Only compile for the offloading host.
 ! HELP-NEXT: -o <file>              Write output to <file>
 ! HELP-NEXT: -pedantic              Warn on language extensions
 ! HELP-NEXT: -print-effective-triple Print the effective target triple
@@ -85,9 +94,10 @@
 ! HELP-FC1-NEXT:OPTIONS:
 ! HELP-FC1-NEXT: -cpp                   Enable predefined and command line preprocessor macros
 ! HELP-FC1-NEXT: -D <macro>=<value>     Define <macro> to <value> (or 1 if <value> omitted)
+! HELP-FC1-NEXT: -emit-fir              Build the parse tree, then lower it to FIR
+! HELP-FC1-NEXT: -emit-hlfir            Build the parse tree, then lower it to HLFIR
 ! HELP-FC1-NEXT: -emit-llvm-bc          Build ASTs then convert to LLVM, emit .bc file
 ! HELP-FC1-NEXT: -emit-llvm Use the LLVM representation for assembler and object files
-! HELP-FC1-NEXT: -emit-mlir Build the parse tree, then lower it to MLIR
 ! HELP-FC1-NEXT: -emit-obj Emit native object files
 ! HELP-FC1-NEXT: -E                     Only run the preprocessor
 ! HELP-FC1-NEXT: -falternative-parameter-statement
@@ -115,7 +125,7 @@
 ! HELP-FC1-NEXT:                        Unparse and stop.
 ! HELP-FC1-NEXT: -fdebug-unparse        Unparse and stop.
 ! HELP-FC1-NEXT: -fdefault-double-8  Set the default double precision kind to an 8 byte wide type
-! HELP-FC1-NEXT: -fdefault-integer-8 Set the default integer kind to an 8 byte wide type
+! HELP-FC1-NEXT: -fdefault-integer-8 Set the default integer and logical kind to an 8 byte wide type
 ! HELP-FC1-NEXT: -fdefault-real-8    Set the default real kind to an 8 byte wide type
 ! HELP-FC1-NEXT: -fembed-offload-object=<value>
 ! HELP-FC1-NEXT:                        Embed Offloading device-side binary into host object file as a section.
@@ -143,14 +153,24 @@
 ! HELP-FC1-NEXT: -fno-reformat          Dump the cooked character stream in -E mode
 ! HELP-FC1-NEXT: -fno-signed-zeros      Allow optimizations that ignore the sign of floating point zeros
 ! HELP-FC1-NEXT: -fno-stack-arrays      Allocate array temporaries on the heap (default)
+! HELP-FC1-NEXT: -fno-version-loops-for-stride
+! HELP-FC1-NEXT:                        Do not create unit-strided loops (default)
 ! HELP-FC1-NEXT: -fopenacc              Enable OpenACC
-! HELP-FC1-NEXT: -fopenmp-is-device     Generate code only for an OpenMP target device.
+! HELP-FC1-NEXT: -fopenmp-host-ir-file-path <value> 
+! HELP-FC1-NEXT:                        Path to the IR file produced by the frontend for the host.
+! HELP-FC1-NEXT: -fopenmp-is-target-device
+! HELP-FC1-NEXT:                        Generate code only for an OpenMP target device.
+! HELP-FC1-NEXT: -fopenmp-target-debug  Enable debugging in the OpenMP offloading device RTL
+! HELP-FC1-NEXT: -fopenmp-version=<value>
+! HELP-FC1-NEXT:                        Set OpenMP version (e.g. 45 for OpenMP 4.5, 50 for OpenMP 5.0). Default value is 50 for Clang and 11 for Flang
 ! HELP-FC1-NEXT: -fopenmp               Parse OpenMP pragmas and generate parallel code.
 ! HELP-FC1-NEXT: -fpass-plugin=<dsopath> Load pass plugin from a dynamic shared object file (only with new pass manager).
 ! HELP-FC1-NEXT: -freciprocal-math      Allow division operations to be reassociated
 ! HELP-FC1-NEXT: -fstack-arrays         Attempt to allocate array temporaries on the stack, no matter their size
 ! HELP-FC1-NEXT: -fsyntax-only          Run the preprocessor, parser and semantic analysis stages
 ! HELP-FC1-NEXT: -funderscoring         Appends one trailing underscore to external names
+! HELP-FC1-NEXT: -fversion-loops-for-stride
+! HELP-FC1-NEXT:                        Create unit-strided versions of loops
 ! HELP-FC1-NEXT: -fxor-operator         Enable .XOR. as a synonym of .NEQV.
 ! HELP-FC1-NEXT: -help                  Display available options
 ! HELP-FC1-NEXT: -init-only             Only execute frontend initialization

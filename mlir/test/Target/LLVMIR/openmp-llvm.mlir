@@ -18,16 +18,16 @@ llvm.func @test_stand_alone_directives() {
   llvm.return
 }
 
-// CHECK-LABEL: define void @test_flush_construct(i32 %0)
-llvm.func @test_flush_construct(%arg0: i32) {
+// CHECK-LABEL: define void @test_flush_construct(ptr %{{[0-9]+}})
+llvm.func @test_flush_construct(%arg0: !llvm.ptr<i32>) {
   // CHECK: call void @__kmpc_flush(ptr @{{[0-9]+}}
   omp.flush
 
   // CHECK: call void @__kmpc_flush(ptr @{{[0-9]+}}
-  omp.flush (%arg0 : i32)
+  omp.flush (%arg0 : !llvm.ptr<i32>)
 
   // CHECK: call void @__kmpc_flush(ptr @{{[0-9]+}}
-  omp.flush (%arg0, %arg0 : i32, i32)
+  omp.flush (%arg0, %arg0 : !llvm.ptr<i32>, !llvm.ptr<i32>)
 
   %0 = llvm.mlir.constant(1 : i64) : i64
   //  CHECK: alloca {{.*}} align 4
@@ -2340,6 +2340,29 @@ module attributes {llvm.target_triple = "x86_64-unknown-linux-gnu"} {
 
 // -----
 
+llvm.func @par_task_(%arg0: !llvm.ptr<i32> {fir.bindc_name = "a"}) {
+  %0 = llvm.mlir.constant(1 : i32) : i32
+  omp.task   {
+    omp.parallel   {
+      llvm.store %0, %arg0 : !llvm.ptr<i32>
+      omp.terminator
+    }
+    omp.terminator
+  }
+  llvm.return
+}
+
+// CHECK-LABEL: @par_task_
+// CHECK: %[[TASK_ALLOC:.*]] = call ptr @__kmpc_omp_task_alloc({{.*}}ptr @par_task_..omp_par.wrapper)
+// CHECK: call i32 @__kmpc_omp_task({{.*}}, ptr %[[TASK_ALLOC]])
+// CHECK-LABEL: define internal void @par_task_..omp_par
+// CHECK: %[[ARG_ALLOC:.*]] = alloca { ptr }, align 8
+// CHECK: call void ({{.*}}) @__kmpc_fork_call({{.*}}, ptr @par_task_..omp_par..omp_par, ptr %[[ARG_ALLOC]])
+// CHECK: define internal void @par_task_..omp_par..omp_par
+// CHECK: define i32 @par_task_..omp_par.wrapper
+// CHECK: call void @par_task_..omp_par
+// -----
+
 llvm.func @foo() -> ()
 
 llvm.func @omp_taskgroup(%x: i32, %y: i32, %zaddr: !llvm.ptr<i32>) {
@@ -2453,4 +2476,116 @@ llvm.func @omp_opaque_pointers(%arg0 : !llvm.ptr, %arg1: !llvm.ptr, %expr: i32) 
     }
   }
   llvm.return
+}
+
+// -----
+
+// CHECK: @__omp_rtl_debug_kind = weak_odr hidden constant i32 1
+// CHECK: @__omp_rtl_assume_teams_oversubscription = weak_odr hidden constant i32 1
+// CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 1
+// CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 1
+// CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 1
+module attributes {omp.flags = #omp.flags<debug_kind = 1, assume_teams_oversubscription = true, 
+                                          assume_threads_oversubscription = true, assume_no_thread_state = true, 
+                                          assume_no_nested_parallelism = true>} {}
+// -----
+
+// CHECK: @__omp_rtl_debug_kind = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_teams_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 0
+// CHECK: [[META0:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+module attributes {omp.flags = #omp.flags<>} {}
+
+// -----
+
+// CHECK: @__omp_rtl_debug_kind = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_teams_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 0
+// CHECK: [[META0:![0-9]+]] = !{i32 7, !"openmp-device", i32 51}
+module attributes {omp.flags = #omp.flags<openmp_device_version = 51>} {}
+
+// -----
+
+// CHECK: @__omp_rtl_debug_kind = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_teams_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 0
+// CHECK: [[META0:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+// CHECK: [[META0:![0-9]+]] = !{i32 7, !"openmp", i32 50}
+module attributes {omp.version = #omp.version<version = 50>, omp.flags = #omp.flags<>} {}
+
+// -----
+
+// CHECK: [[META0:![0-9]+]] = !{i32 7, !"openmp", i32 51}
+// CHECK-NOT: [[META0:![0-9]+]] = !{i32 7, !"openmp-device", i32 50}
+module attributes {omp.version = #omp.version<version = 51>} {}
+
+// -----
+// CHECK: @__omp_rtl_debug_kind = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_teams_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 0
+module attributes {omp.flags = #omp.flags<debug_kind = 0, assume_teams_oversubscription = false, 
+                                          assume_threads_oversubscription = false, assume_no_thread_state = false, 
+                                          assume_no_nested_parallelism = false>} {}
+
+// -----
+
+// CHECK: @__omp_rtl_debug_kind = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_teams_oversubscription = weak_odr hidden constant i32 1
+// CHECK: @__omp_rtl_assume_threads_oversubscription = weak_odr hidden constant i32 0
+// CHECK: @__omp_rtl_assume_no_thread_state = weak_odr hidden constant i32 1
+// CHECK: @__omp_rtl_assume_no_nested_parallelism = weak_odr hidden constant i32 0
+module attributes {omp.flags = #omp.flags<assume_teams_oversubscription = true, assume_no_thread_state = true>} {}
+
+// -----
+
+module attributes {omp.is_target_device = false} {
+  // DISABLED, this portion of the test is disabled via the removal of the colon for the time 
+  // being as filtering is enabled for device only for the time being while a fix is in progress. 
+  // CHECK-NOT @filter_host_nohost
+  llvm.func @filter_host_nohost() -> ()
+      attributes {
+        omp.declare_target =
+          #omp.declaretarget<device_type = (nohost), capture_clause = (to)>
+      } {
+    llvm.return
+  }
+
+  // CHECK: @filter_host_host
+  llvm.func @filter_host_host() -> ()
+      attributes {
+        omp.declare_target =
+          #omp.declaretarget<device_type = (host), capture_clause = (to)>
+      } {
+    llvm.return
+  }
+}
+
+// -----
+
+module attributes {omp.is_target_device = true} {
+  // CHECK: @filter_device_nohost
+  llvm.func @filter_device_nohost() -> ()
+      attributes {
+        omp.declare_target =
+          #omp.declaretarget<device_type = (nohost), capture_clause = (to)>
+      } {
+    llvm.return
+  }
+
+  // CHECK-NOT: @filter_device_host
+  llvm.func @filter_device_host() -> ()
+      attributes {
+        omp.declare_target =
+          #omp.declaretarget<device_type = (host), capture_clause = (to)>
+      } {
+    llvm.return
+  }
 }

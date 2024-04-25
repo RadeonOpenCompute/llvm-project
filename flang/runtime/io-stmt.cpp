@@ -335,8 +335,8 @@ void ExternalIoStatementState<DIR>::CompleteOperation() {
   } else { // output
     if (mutableModes().nonAdvancing) {
       // Make effects of positioning past the last Emit() visible with blanks.
-      std::int64_t n{unit().positionInRecord - unit().furthestPositionInRecord};
-      while (n-- > 0 && unit().Emit(" ", 1, 1, *this)) {
+      if (unit().positionInRecord > unit().furthestPositionInRecord) {
+        unit().Emit("", 0, 1, *this); // Emit() will pad
       }
       unit().leftTabLimit = unit().positionInRecord;
     } else {
@@ -589,7 +589,7 @@ std::optional<char32_t> IoStatementState::NextInField(
       GotChar(byteCount);
       return next;
     }
-    if (CheckForEndOfRecord()) { // do padding
+    if (CheckForEndOfRecord(0)) { // do padding
       --*remaining;
       return std::optional<char32_t>{' '};
     }
@@ -597,11 +597,13 @@ std::optional<char32_t> IoStatementState::NextInField(
   return std::nullopt;
 }
 
-bool IoStatementState::CheckForEndOfRecord() {
+bool IoStatementState::CheckForEndOfRecord(std::size_t afterReading) {
   const ConnectionState &connection{GetConnectionState()};
   if (!connection.IsAtEOF()) {
     if (auto length{connection.EffectiveRecordLength()}) {
-      if (connection.positionInRecord >= *length) {
+      if (connection.positionInRecord +
+              static_cast<std::int64_t>(afterReading) >=
+          *length) {
         IoErrorHandler &handler{GetIoErrorHandler()};
         const auto &modes{mutableModes()};
         if (modes.nonAdvancing) {

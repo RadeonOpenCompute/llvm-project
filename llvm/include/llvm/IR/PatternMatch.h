@@ -445,6 +445,14 @@ inline cst_pred_ty<is_any_apint> m_AnyIntegralConstant() {
   return cst_pred_ty<is_any_apint>();
 }
 
+struct is_shifted_mask {
+  bool isValue(const APInt &C) { return C.isShiftedMask(); }
+};
+
+inline cst_pred_ty<is_shifted_mask> m_ShiftedMask() {
+  return cst_pred_ty<is_shifted_mask>();
+}
+
 struct is_all_ones {
   bool isValue(const APInt &C) { return C.isAllOnes(); }
 };
@@ -1588,6 +1596,23 @@ template <typename Op_t, unsigned Opcode> struct CastClass_match {
   }
 };
 
+template <typename Op_t> struct PtrToIntSameSize_match {
+  const DataLayout &DL;
+  Op_t Op;
+
+  PtrToIntSameSize_match(const DataLayout &DL, const Op_t &OpMatch)
+      : DL(DL), Op(OpMatch) {}
+
+  template <typename OpTy> bool match(OpTy *V) {
+    if (auto *O = dyn_cast<Operator>(V))
+      return O->getOpcode() == Instruction::PtrToInt &&
+             DL.getTypeSizeInBits(O->getType()) ==
+                 DL.getTypeSizeInBits(O->getOperand(0)->getType()) &&
+             Op.match(O->getOperand(0));
+    return false;
+  }
+};
+
 /// Matches BitCast.
 template <typename OpTy>
 inline CastClass_match<OpTy, Instruction::BitCast> m_BitCast(const OpTy &Op) {
@@ -1598,6 +1623,12 @@ inline CastClass_match<OpTy, Instruction::BitCast> m_BitCast(const OpTy &Op) {
 template <typename OpTy>
 inline CastClass_match<OpTy, Instruction::PtrToInt> m_PtrToInt(const OpTy &Op) {
   return CastClass_match<OpTy, Instruction::PtrToInt>(Op);
+}
+
+template <typename OpTy>
+inline PtrToIntSameSize_match<OpTy> m_PtrToIntSameSize(const DataLayout &DL,
+                                                       const OpTy &Op) {
+  return PtrToIntSameSize_match<OpTy>(DL, Op);
 }
 
 /// Matches IntToPtr.
@@ -2362,6 +2393,14 @@ inline match_combine_or<
 m_c_MaxOrMin(const LHS &L, const RHS &R) {
   return m_CombineOr(m_CombineOr(m_c_SMax(L, R), m_c_SMin(L, R)),
                      m_CombineOr(m_c_UMax(L, R), m_c_UMin(L, R)));
+}
+
+template <Intrinsic::ID IntrID, typename T0, typename T1>
+inline match_combine_or<typename m_Intrinsic_Ty<T0, T1>::Ty,
+                        typename m_Intrinsic_Ty<T1, T0>::Ty>
+m_c_Intrinsic(const T0 &Op0, const T1 &Op1) {
+  return m_CombineOr(m_Intrinsic<IntrID>(Op0, Op1),
+                     m_Intrinsic<IntrID>(Op1, Op0));
 }
 
 /// Matches FAdd with LHS and RHS in either order.

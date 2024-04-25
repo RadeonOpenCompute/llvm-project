@@ -278,6 +278,10 @@ struct SIMachineFunctionInfo final : public yaml::MachineFunctionInfo {
   bool ReturnsVoid = true;
 
   std::optional<SIArgumentInfo> ArgInfo;
+
+  unsigned PSInputAddr = 0;
+  unsigned PSInputEnable = 0;
+
   SIMode Mode;
   std::optional<FrameIndex> ScavengeFI;
   StringValue VGPRForAGPRCopy;
@@ -316,6 +320,8 @@ template <> struct MappingTraits<SIMachineFunctionInfo> {
     YamlIO.mapOptional("bytesInStackArgArea", MFI.BytesInStackArgArea, 0u);
     YamlIO.mapOptional("returnsVoid", MFI.ReturnsVoid, true);
     YamlIO.mapOptional("argumentInfo", MFI.ArgInfo);
+    YamlIO.mapOptional("psInputAddr", MFI.PSInputAddr, 0u);
+    YamlIO.mapOptional("psInputEnable", MFI.PSInputEnable, 0u);
     YamlIO.mapOptional("mode", MFI.Mode, SIMode());
     YamlIO.mapOptional("highBitsOf32BitAddress",
                        MFI.HighBitsOf32BitAddress, 0u);
@@ -475,7 +481,7 @@ private:
 
   // MachineRegisterInfo callback functions to notify events.
   void MRI_NoteNewVirtualRegister(Register Reg) override;
-  void MRI_NotecloneVirtualRegister(Register NewReg, Register SrcReg) override;
+  void MRI_NoteCloneVirtualRegister(Register NewReg, Register SrcReg) override;
 
 public:
   struct VGPRSpillToAGPR {
@@ -660,15 +666,17 @@ public:
   void setFlag(Register Reg, uint8_t Flag) {
     assert(Reg.isVirtual());
     if (VRegFlags.inBounds(Reg))
-      VRegFlags[Reg] |= (uint8_t)1 << Flag;
+      VRegFlags[Reg] |= Flag;
   }
 
   bool checkFlag(Register Reg, uint8_t Flag) const {
     if (Reg.isPhysical())
       return false;
 
-    return VRegFlags.inBounds(Reg) && VRegFlags[Reg] & ((uint8_t)1 << Flag);
+    return VRegFlags.inBounds(Reg) && VRegFlags[Reg] & Flag;
   }
+
+  bool hasVRegFlags() { return VRegFlags.size(); }
 
   void allocateWWMSpill(MachineFunction &MF, Register VGPR, uint64_t Size = 4,
                         Align Alignment = Align(4));
@@ -745,7 +753,8 @@ public:
 
   // Add system SGPRs.
   Register addWorkGroupIDX(bool HasArchitectedSGPRs) {
-    Register Reg = HasArchitectedSGPRs ? AMDGPU::TTMP9 : getNextSystemSGPR();
+    Register Reg =
+        HasArchitectedSGPRs ? (MCPhysReg)AMDGPU::TTMP9 : getNextSystemSGPR();
     ArgInfo.WorkGroupIDX = ArgDescriptor::createRegister(Reg);
     if (!HasArchitectedSGPRs)
       NumSystemSGPRs += 1;
@@ -754,7 +763,8 @@ public:
   }
 
   Register addWorkGroupIDY(bool HasArchitectedSGPRs) {
-    Register Reg = HasArchitectedSGPRs ? AMDGPU::TTMP7 : getNextSystemSGPR();
+    Register Reg =
+        HasArchitectedSGPRs ? (MCPhysReg)AMDGPU::TTMP7 : getNextSystemSGPR();
     unsigned Mask = HasArchitectedSGPRs && hasWorkGroupIDZ() ? 0xffff : ~0u;
     ArgInfo.WorkGroupIDY = ArgDescriptor::createRegister(Reg, Mask);
     if (!HasArchitectedSGPRs)
@@ -764,7 +774,8 @@ public:
   }
 
   Register addWorkGroupIDZ(bool HasArchitectedSGPRs) {
-    Register Reg = HasArchitectedSGPRs ? AMDGPU::TTMP7 : getNextSystemSGPR();
+    Register Reg =
+        HasArchitectedSGPRs ? (MCPhysReg)AMDGPU::TTMP7 : getNextSystemSGPR();
     unsigned Mask = HasArchitectedSGPRs ? 0xffff << 16 : ~0u;
     ArgInfo.WorkGroupIDZ = ArgDescriptor::createRegister(Reg, Mask);
     if (!HasArchitectedSGPRs)

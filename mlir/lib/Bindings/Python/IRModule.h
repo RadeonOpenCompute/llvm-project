@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "Globals.h"
 #include "PybindUtils.h"
 
 #include "mlir-c/AffineExpr.h"
@@ -20,6 +21,7 @@
 #include "mlir-c/Diagnostics.h"
 #include "mlir-c/IR.h"
 #include "mlir-c/IntegerSet.h"
+#include "mlir/Bindings/Python/PybindAdaptors.h"
 #include "llvm/ADT/DenseMap.h"
 
 namespace mlir {
@@ -554,7 +556,8 @@ public:
                           bool assumeVerified);
 
   // Implement the bound 'writeBytecode' method.
-  void writeBytecode(const pybind11::object &fileObject);
+  void writeBytecode(const pybind11::object &fileObject,
+                     std::optional<int64_t> bytecodeVersion);
 
   /// Moves the operation before or after the other operation.
   void moveAfter(PyOperationBase &other);
@@ -760,6 +763,9 @@ public:
 
   void checkValid() { return parentOperation->checkValid(); }
 
+  /// Gets a capsule wrapping the void* within the MlirBlock.
+  pybind11::object getCapsule();
+
 private:
   PyOperationRef parentOperation;
   MlirBlock block;
@@ -825,6 +831,29 @@ private:
   MlirType type;
 };
 
+/// A TypeID provides an efficient and unique identifier for a specific C++
+/// type. This allows for a C++ type to be compared, hashed, and stored in an
+/// opaque context. This class wraps around the generic MlirTypeID.
+class PyTypeID {
+public:
+  PyTypeID(MlirTypeID typeID) : typeID(typeID) {}
+  // Note, this tests whether the underlying TypeIDs are the same,
+  // not whether the wrapper MlirTypeIDs are the same, nor whether
+  // the PyTypeID objects are the same (i.e., PyTypeID is a value type).
+  bool operator==(const PyTypeID &other) const;
+  operator MlirTypeID() const { return typeID; }
+  MlirTypeID get() { return typeID; }
+
+  /// Gets a capsule wrapping the void* within the MlirTypeID.
+  pybind11::object getCapsule();
+
+  /// Creates a PyTypeID from the MlirTypeID wrapped by a capsule.
+  static PyTypeID createFromCapsule(pybind11::object capsule);
+
+private:
+  MlirTypeID typeID;
+};
+
 /// CRTP base classes for Python types that subclass Type and should be
 /// castable from it (i.e. via something like IntegerType(t)).
 /// By default, type class hierarchies are one level deep (i.e. a
@@ -838,6 +867,8 @@ public:
   //   const char *pyClassName
   using ClassTy = pybind11::class_<DerivedTy, BaseTy>;
   using IsAFunctionTy = bool (*)(MlirType);
+  using GetTypeIDFunctionTy = MlirTypeID (*)();
+  static constexpr GetTypeIDFunctionTy getTypeIdFunction = nullptr;
 
   PyConcreteType() = default;
   PyConcreteType(PyMlirContextRef contextRef, MlirType t)
@@ -848,9 +879,10 @@ public:
   static MlirType castFrom(PyType &orig) {
     if (!DerivedTy::isaFunction(orig)) {
       auto origRepr = pybind11::repr(pybind11::cast(orig)).cast<std::string>();
-      throw SetPyError(PyExc_ValueError, llvm::Twine("Cannot cast type to ") +
-                                             DerivedTy::pyClassName +
-                                             " (from " + origRepr + ")");
+      throw py::value_error((llvm::Twine("Cannot cast type to ") +
+                             DerivedTy::pyClassName + " (from " + origRepr +
+                             ")")
+                                .str());
     }
     return orig;
   }
@@ -865,6 +897,32 @@ public:
           return DerivedTy::isaFunction(otherType);
         },
         pybind11::arg("other"));
+    cls.def_property_readonly_static(
+        "static_typeid", [](py::object & /*class*/) -> MlirTypeID {
+          if (DerivedTy::getTypeIdFunction)
+            return DerivedTy::getTypeIdFunction();
+          throw py::attribute_error(
+              (DerivedTy::pyClassName + llvm::Twine(" has no typeid.")).str());
+        });
+    cls.def_property_readonly("typeid", [](PyType &self) {
+      return py::cast(self).attr("typeid").cast<MlirTypeID>();
+    });
+    cls.def("__repr__", [](DerivedTy &self) {
+      PyPrintAccumulator printAccum;
+      printAccum.parts.append(DerivedTy::pyClassName);
+      printAccum.parts.append("(");
+      mlirTypePrint(self, printAccum.getCallback(), printAccum.getUserData());
+      printAccum.parts.append(")");
+      return printAccum.join();
+    });
+
+    if (DerivedTy::getTypeIdFunction) {
+      PyGlobals::get().registerTypeCaster(
+          DerivedTy::getTypeIdFunction(),
+          pybind11::cpp_function(
+              [](PyType pyType) -> DerivedTy { return pyType; }));
+    }
+
     DerivedTy::bindDerived(cls);
   }
 
@@ -931,6 +989,8 @@ public:
   //   const char *pyClassName
   using ClassTy = pybind11::class_<DerivedTy, BaseTy>;
   using IsAFunctionTy = bool (*)(MlirAttribute);
+  using GetTypeIDFunctionTy = MlirTypeID (*)();
+  static constexpr GetTypeIDFunctionTy getTypeIdFunction = nullptr;
 
   PyConcreteAttribute() = default;
   PyConcreteAttribute(PyMlirContextRef contextRef, MlirAttribute attr)
@@ -941,9 +1001,10 @@ public:
   static MlirAttribute castFrom(PyAttribute &orig) {
     if (!DerivedTy::isaFunction(orig)) {
       auto origRepr = pybind11::repr(pybind11::cast(orig)).cast<std::string>();
-      throw SetPyError(PyExc_ValueError,
-                       llvm::Twine("Cannot cast attribute to ") +
-                           DerivedTy::pyClassName + " (from " + origRepr + ")");
+      throw py::value_error((llvm::Twine("Cannot cast attribute to ") +
+                             DerivedTy::pyClassName + " (from " + origRepr +
+                             ")")
+                                .str());
     }
     return orig;
   }
@@ -959,9 +1020,36 @@ public:
           return DerivedTy::isaFunction(otherAttr);
         },
         pybind11::arg("other"));
-    cls.def_property_readonly("type", [](PyAttribute &attr) {
-      return PyType(attr.getContext(), mlirAttributeGetType(attr));
+    cls.def_property_readonly(
+        "type", [](PyAttribute &attr) { return mlirAttributeGetType(attr); });
+    cls.def_property_readonly_static(
+        "static_typeid", [](py::object & /*class*/) -> MlirTypeID {
+          if (DerivedTy::getTypeIdFunction)
+            return DerivedTy::getTypeIdFunction();
+          throw py::attribute_error(
+              (DerivedTy::pyClassName + llvm::Twine(" has no typeid.")).str());
+        });
+    cls.def_property_readonly("typeid", [](PyAttribute &self) {
+      return py::cast(self).attr("typeid").cast<MlirTypeID>();
     });
+    cls.def("__repr__", [](DerivedTy &self) {
+      PyPrintAccumulator printAccum;
+      printAccum.parts.append(DerivedTy::pyClassName);
+      printAccum.parts.append("(");
+      mlirAttributePrint(self, printAccum.getCallback(),
+                         printAccum.getUserData());
+      printAccum.parts.append(")");
+      return printAccum.join();
+    });
+
+    if (DerivedTy::getTypeIdFunction) {
+      PyGlobals::get().registerTypeCaster(
+          DerivedTy::getTypeIdFunction(),
+          pybind11::cpp_function([](PyAttribute pyAttribute) -> DerivedTy {
+            return pyAttribute;
+          }));
+    }
+
     DerivedTy::bindDerived(cls);
   }
 
@@ -1089,14 +1177,14 @@ public:
 
   /// Inserts the given operation into the symbol table. The operation must have
   /// the symbol trait.
-  PyAttribute insert(PyOperationBase &symbol);
+  MlirAttribute insert(PyOperationBase &symbol);
 
   /// Gets and sets the name of a symbol op.
-  static PyAttribute getSymbolName(PyOperationBase &symbol);
+  static MlirAttribute getSymbolName(PyOperationBase &symbol);
   static void setSymbolName(PyOperationBase &symbol, const std::string &name);
 
   /// Gets and sets the visibility of a symbol op.
-  static PyAttribute getVisibility(PyOperationBase &symbol);
+  static MlirAttribute getVisibility(PyOperationBase &symbol);
   static void setVisibility(PyOperationBase &symbol,
                             const std::string &visibility);
 

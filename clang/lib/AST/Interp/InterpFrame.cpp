@@ -23,8 +23,8 @@ using namespace clang::interp;
 
 InterpFrame::InterpFrame(InterpState &S, const Function *Func,
                          InterpFrame *Caller, CodePtr RetPC)
-    : Caller(Caller), S(S), Func(Func), RetPC(RetPC),
-      ArgSize(Func ? Func->getArgSize() : 0),
+    : Caller(Caller), S(S), Depth(Caller ? Caller->Depth + 1 : 0), Func(Func),
+      RetPC(RetPC), ArgSize(Func ? Func->getArgSize() : 0),
       Args(static_cast<char *>(S.Stk.top())), FrameOffset(S.Stk.size()) {
   if (!Func)
     return;
@@ -98,20 +98,19 @@ void print(llvm::raw_ostream &OS, const Pointer &P, ASTContext &Ctx,
     return;
   }
 
-  auto printDesc = [&OS, &Ctx](Descriptor *Desc) {
-    if (auto *D = Desc->asDecl()) {
+  auto printDesc = [&OS, &Ctx](const Descriptor *Desc) {
+    if (const auto *D = Desc->asDecl()) {
       // Subfields or named values.
-      if (auto *VD = dyn_cast<ValueDecl>(D)) {
+      if (const auto *VD = dyn_cast<ValueDecl>(D)) {
         OS << *VD;
         return;
       }
       // Base classes.
-      if (isa<RecordDecl>(D)) {
+      if (isa<RecordDecl>(D))
         return;
-      }
     }
     // Temporary expression.
-    if (auto *E = Desc->asExpr()) {
+    if (const auto *E = Desc->asExpr()) {
       E->printPretty(OS, nullptr, Ctx.getPrintingPolicy());
       return;
     }
@@ -127,7 +126,8 @@ void print(llvm::raw_ostream &OS, const Pointer &P, ASTContext &Ctx,
   }
 
   // Drop the first pointer since we print it unconditionally anyway.
-  Levels.erase(Levels.begin());
+  if (!Levels.empty())
+    Levels.erase(Levels.begin());
 
   printDesc(P.getDeclDesc());
   for (const auto &It : Levels) {
@@ -144,10 +144,10 @@ void print(llvm::raw_ostream &OS, const Pointer &P, ASTContext &Ctx,
   }
 }
 
-void InterpFrame::describe(llvm::raw_ostream &OS) {
+void InterpFrame::describe(llvm::raw_ostream &OS) const {
   const FunctionDecl *F = getCallee();
-  auto *M = dyn_cast<CXXMethodDecl>(F);
-  if (M && M->isInstance() && !isa<CXXConstructorDecl>(F)) {
+  if (const auto *M = dyn_cast<CXXMethodDecl>(F);
+      M && M->isInstance() && !isa<CXXConstructorDecl>(F)) {
     print(OS, This, S.getCtx(), S.getCtx().getRecordType(M->getParent()));
     OS << "->";
   }
@@ -213,6 +213,11 @@ Pointer InterpFrame::getParamPointer(unsigned Off) {
 }
 
 SourceInfo InterpFrame::getSource(CodePtr PC) const {
+  // Implicitly created functions don't have any code we could point at,
+  // so return the call site.
+  if (Func && Func->getDecl()->isImplicit() && Caller)
+    return Caller->getSource(RetPC);
+
   return S.getSource(Func, PC);
 }
 

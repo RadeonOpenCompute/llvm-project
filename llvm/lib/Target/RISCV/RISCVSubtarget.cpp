@@ -83,13 +83,10 @@ RISCVSubtarget::RISCVSubtarget(const Triple &TT, StringRef CPU,
       FrameLowering(
           initializeSubtargetDependencies(TT, CPU, TuneCPU, FS, ABIName)),
       InstrInfo(*this), RegInfo(getHwMode()), TLInfo(TM, *this) {
-  if (RISCV::isX18ReservedByDefault(TT))
-    UserReservedRegister.set(RISCV::X18);
-
   CallLoweringInfo.reset(new RISCVCallLowering(*getTargetLowering()));
   Legalizer.reset(new RISCVLegalizerInfo(*this));
 
-  auto *RBI = new RISCVRegisterBankInfo(*getRegisterInfo());
+  auto *RBI = new RISCVRegisterBankInfo(getHwMode());
   RegBankInfo.reset(RBI);
   InstSelector.reset(createRISCVInstructionSelector(
       *static_cast<const RISCVTargetMachine *>(&TM), *this, *RBI));

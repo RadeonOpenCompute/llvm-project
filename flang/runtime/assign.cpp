@@ -23,7 +23,8 @@ enum AssignFlags {
   CanBeDefinedAssignment = 1 << 2,
   ComponentCanBeDefinedAssignment = 1 << 3,
   ExplicitLengthCharacterLHS = 1 << 4,
-  PolymorphicLHS = 1 << 5
+  PolymorphicLHS = 1 << 5,
+  DeallocateLHS = 1 << 6
 };
 
 // Predicate: is the left-hand side of an assignment an allocated allocatable
@@ -129,9 +130,9 @@ static void MaximalByteOffsetRange(
     if (extent > 0) {
       auto sm{dim.ByteStride()};
       if (sm < 0) {
-        least += extent * sm;
+        least += (extent - 1) * sm;
       } else {
-        most += extent * sm;
+        most += (extent - 1) * sm;
       }
     }
   }
@@ -223,12 +224,13 @@ static void BlankPadCharacterAssignment(Descriptor &to, const Descriptor &from,
     SubscriptValue toAt[], SubscriptValue fromAt[], std::size_t elements,
     std::size_t toElementBytes, std::size_t fromElementBytes) {
   std::size_t padding{(toElementBytes - fromElementBytes) / sizeof(CHAR)};
+  std::size_t copiedCharacters{fromElementBytes / sizeof(CHAR)};
   for (; elements-- > 0;
        to.IncrementSubscripts(toAt), from.IncrementSubscripts(fromAt)) {
     CHAR *p{to.Element<CHAR>(toAt)};
     std::memmove(
         p, from.Element<std::add_const_t<CHAR>>(fromAt), fromElementBytes);
-    p += fromElementBytes;
+    p += copiedCharacters;
     for (auto n{padding}; n-- > 0;) {
       *p++ = CHAR{' '};
     }
@@ -248,30 +250,14 @@ static void BlankPadCharacterAssignment(Descriptor &to, const Descriptor &from,
 // dealing with array constructors.
 static void Assign(
     Descriptor &to, const Descriptor &from, Terminator &terminator, int flags) {
-  bool mustDeallocateLHS{MustDeallocateLHS(to, from, terminator, flags)};
+  bool mustDeallocateLHS{(flags & DeallocateLHS) ||
+      MustDeallocateLHS(to, from, terminator, flags)};
   DescriptorAddendum *toAddendum{to.Addendum()};
   const typeInfo::DerivedType *toDerived{
       toAddendum ? toAddendum->derivedType() : nullptr};
-  if (toDerived) {
-    if (flags & CanBeDefinedAssignment) {
-      // Check for a user-defined assignment type-bound procedure;
-      // see 10.2.1.4-5.  A user-defined assignment TBP defines all of
-      // the semantics, including allocatable (re)allocation and any
-      // finalization.
-      if (to.rank() == 0) {
-        if (const auto *special{toDerived->FindSpecialBinding(
-                typeInfo::SpecialBinding::Which::ScalarAssignment)}) {
-          return DoScalarDefinedAssignment(to, from, *special);
-        }
-      }
-      if (const auto *special{toDerived->FindSpecialBinding(
-              typeInfo::SpecialBinding::Which::ElementalAssignment)}) {
-        return DoElementalDefinedAssignment(to, from, *toDerived, *special);
-      }
-    }
-    if ((flags & NeedFinalization) && toDerived->noFinalizationNeeded()) {
-      flags &= ~NeedFinalization;
-    }
+  if (toDerived && (flags & NeedFinalization) &&
+      toDerived->noFinalizationNeeded()) {
+    flags &= ~NeedFinalization;
   }
   std::size_t toElementBytes{to.ElementBytes()};
   std::size_t fromElementBytes{from.ElementBytes()};
@@ -293,6 +279,10 @@ static void Assign(
       StaticDescriptor<maxRank, true, 16> staticDesc;
       Descriptor &newFrom{staticDesc.descriptor()};
       std::memcpy(&newFrom, &from, descBytes);
+      // Pretend the temporary descriptor is for an ALLOCATABLE
+      // entity, otherwise, the Deallocate() below will not
+      // free the descriptor memory.
+      newFrom.raw().attribute = CFI_attribute_allocatable;
       auto stat{ReturnError(terminator, newFrom.Allocate())};
       if (stat == StatOk) {
         char *toAt{newFrom.OffsetElement()};
@@ -310,7 +300,7 @@ static void Assign(
         Assign(to, newFrom, terminator,
             flags &
                 (NeedFinalization | ComponentCanBeDefinedAssignment |
-                    ExplicitLengthCharacterLHS));
+                    ExplicitLengthCharacterLHS | CanBeDefinedAssignment));
         newFrom.Deallocate();
       }
       return;
@@ -338,6 +328,27 @@ static void Assign(
       }
       flags &= ~NeedFinalization;
       toElementBytes = to.ElementBytes(); // may have changed
+    }
+  }
+  if (toDerived && (flags & CanBeDefinedAssignment)) {
+    // Check for a user-defined assignment type-bound procedure;
+    // see 10.2.1.4-5.  A user-defined assignment TBP defines all of
+    // the semantics, including allocatable (re)allocation and any
+    // finalization.
+    //
+    // Note that the aliasing and LHS (re)allocation handling above
+    // needs to run even with CanBeDefinedAssignment flag, when
+    // the Assign() is invoked recursively for component-per-component
+    // assignments.
+    if (to.rank() == 0) {
+      if (const auto *special{toDerived->FindSpecialBinding(
+              typeInfo::SpecialBinding::Which::ScalarAssignment)}) {
+        return DoScalarDefinedAssignment(to, from, *special);
+      }
+    }
+    if (const auto *special{toDerived->FindSpecialBinding(
+            typeInfo::SpecialBinding::Which::ElementalAssignment)}) {
+      return DoElementalDefinedAssignment(to, from, *toDerived, *special);
     }
   }
   SubscriptValue toAt[maxRank];
@@ -381,10 +392,7 @@ static void Assign(
       // when the components are polymorphic; when they're not, they're both
       // not, and their declared types will match.
       int nestedFlags{MaybeReallocate | PolymorphicLHS};
-      if (comp.genre() != typeInfo::Component::Genre::Allocatable &&
-          (flags & ComponentCanBeDefinedAssignment)) {
-        // Allocatable components are assigned via intrinsic assignment,
-        // not defined assignment (see F'2018 10.2.1.3 paragraph 13).
+      if (flags & ComponentCanBeDefinedAssignment) {
         nestedFlags |= CanBeDefinedAssignment | ComponentCanBeDefinedAssignment;
       }
       switch (comp.genre()) {
@@ -427,23 +435,31 @@ static void Assign(
               to.Element<char>(toAt) + comp.offset())};
           const auto *fromDesc{reinterpret_cast<const Descriptor *>(
               from.Element<char>(fromAt) + comp.offset())};
+          // Allocatable components of the LHS are unconditionally
+          // deallocated before assignment (F'2018 10.2.1.3(13)(1)),
+          // unlike a "top-level" assignment to a variable, where
+          // deallocation is optional.
+          //
+          // Be careful not to destroy/reallocate the LHS, if there is
+          // overlap between LHS and RHS (it seems that partial overlap
+          // is not possible, though).
+          // Invoke Assign() recursively to deal with potential aliasing.
           if (toDesc->IsAllocatable()) {
-            if (toDesc->IsAllocated()) {
-              // Allocatable components of the LHS are unconditionally
-              // deallocated before assignment (F'2018 10.2.1.3(13)(1)),
-              // unlike a "top-level" assignment to a variable, where
-              // deallocation is optional.
-              // TODO: Consider skipping this step and deferring the
-              // deallocation to the recursive activation of Assign(),
-              // which might be able to avoid deallocation/reallocation
-              // when the existing allocation can be reoccupied.
-              toDesc->Destroy(false /*already finalized*/);
-            }
             if (!fromDesc->IsAllocated()) {
+              // No aliasing.
+              //
+              // If to is not allocated, the Destroy() call is a no-op.
+              // This is just a shortcut, because the recursive Assign()
+              // below would initiate the destruction for to.
+              // No finalization is required.
+              toDesc->Destroy();
               continue; // F'2018 10.2.1.3(13)(2)
             }
           }
-          Assign(*toDesc, *fromDesc, terminator, nestedFlags);
+          // Force LHS deallocation with DeallocateLHS flag.
+          // The actual deallocation may be avoided, if the existing
+          // location can be reoccupied.
+          Assign(*toDesc, *fromDesc, terminator, nestedFlags | DeallocateLHS);
         }
         break;
       }
@@ -493,6 +509,8 @@ static void Assign(
     }
   }
   if (deferDeallocation) {
+    // deferDeallocation is used only when LHS is an allocatable.
+    // The finalization has already been run for it.
     deferDeallocation->Destroy();
   }
 }
@@ -539,7 +557,52 @@ void RTNAME(Assign)(Descriptor &to, const Descriptor &from,
 void RTNAME(AssignTemporary)(Descriptor &to, const Descriptor &from,
     const char *sourceFile, int sourceLine) {
   Terminator terminator{sourceFile, sourceLine};
+  // Initialize the "to" if it is of derived type that needs initialization.
+  if (const DescriptorAddendum * addendum{to.Addendum()}) {
+    if (const auto *derived{addendum->derivedType()}) {
+      // Do not invoke the initialization, if the descriptor is unallocated.
+      // AssignTemporary() is used for component-by-component assignments,
+      // for example, for structure constructors. This means that the LHS
+      // may be an allocatable component with unallocated status.
+      // The initialization will just fail in this case. By skipping
+      // the initialization we let Assign() automatically allocate
+      // and initialize the component according to the RHS.
+      // So we only need to initialize the LHS here if it is allocated.
+      // Note that initializing already initialized entity has no visible
+      // effect, though, it is assumed that the compiler does not initialize
+      // the temporary and leaves the initialization to this runtime code.
+      if (!derived->noInitializationNeeded() && to.IsAllocated()) {
+        if (ReturnError(terminator, Initialize(to, *derived, terminator)) !=
+            StatOk) {
+          return;
+        }
+      }
+    }
+  }
+
   Assign(to, from, terminator, PolymorphicLHS);
+}
+
+void RTNAME(CopyOutAssign)(Descriptor &to, const Descriptor &from,
+    bool skipToInit, const char *sourceFile, int sourceLine) {
+  Terminator terminator{sourceFile, sourceLine};
+  // Initialize the "to" if it is of derived type that needs initialization.
+  if (!skipToInit) {
+    if (const DescriptorAddendum * addendum{to.Addendum()}) {
+      if (const auto *derived{addendum->derivedType()}) {
+        if (!derived->noInitializationNeeded()) {
+          if (ReturnError(terminator, Initialize(to, *derived, terminator)) !=
+              StatOk) {
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  // Copyout from the temporary must not cause any finalizations
+  // for LHS.
+  Assign(to, from, terminator, NoAssignFlags);
 }
 
 void RTNAME(AssignExplicitLengthCharacter)(Descriptor &to,

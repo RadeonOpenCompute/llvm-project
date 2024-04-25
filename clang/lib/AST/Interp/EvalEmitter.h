@@ -71,11 +71,15 @@ protected:
 
   /// Returns the source location of the current opcode.
   SourceInfo getSource(const Function *F, CodePtr PC) const override {
-    return F ? F->getSource(PC) : CurrentSource;
+    return (F && F->hasBody()) ? F->getSource(PC) : CurrentSource;
   }
 
   /// Parameter indices.
   llvm::DenseMap<const ParmVarDecl *, unsigned> Params;
+  /// Lambda captures.
+  /// Map from Decl* to [Offset, IsReference] pair.
+  llvm::DenseMap<const ValueDecl *, std::pair<unsigned, bool>> LambdaCaptures;
+  unsigned LambdaThisCapture;
   /// Local descriptors.
   llvm::SmallVector<SmallVector<Local, 8>, 2> Descriptors;
 

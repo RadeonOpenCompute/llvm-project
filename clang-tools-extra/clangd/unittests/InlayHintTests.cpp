@@ -77,6 +77,7 @@ Config noHintsConfig() {
   C.InlayHints.Parameters = false;
   C.InlayHints.DeducedTypes = false;
   C.InlayHints.Designators = false;
+  C.InlayHints.BlockEnd = false;
   return C;
 }
 
@@ -120,6 +121,15 @@ void assertDesignatorHints(llvm::StringRef AnnotatedSource,
   Cfg.InlayHints.Designators = true;
   WithContextValue WithCfg(Config::Key, std::move(Cfg));
   assertHints(InlayHintKind::Designator, AnnotatedSource, Expected...);
+}
+
+template <typename... ExpectedHints>
+void assertBlockEndHints(llvm::StringRef AnnotatedSource,
+                         ExpectedHints... Expected) {
+  Config Cfg;
+  Cfg.InlayHints.BlockEnd = true;
+  WithContextValue WithCfg(Config::Key, std::move(Cfg));
+  assertHints(InlayHintKind::BlockEnd, AnnotatedSource, Expected...);
 }
 
 TEST(ParameterHints, Smoke) {
@@ -1324,6 +1334,21 @@ TEST(TypeHints, LongTypeName) {
     // Omit type hint past a certain length (currently 32)
     auto var = foo();
   )cpp");
+
+  Config Cfg;
+  Cfg.InlayHints.TypeNameLimit = 0;
+  WithContextValue WithCfg(Config::Key, std::move(Cfg));
+
+  assertTypeHints(
+      R"cpp(
+    template <typename, typename, typename>
+    struct A {};
+    struct MultipleWords {};
+    A<MultipleWords, MultipleWords, MultipleWords> foo();
+    // Should have type hint with TypeNameLimit = 0
+    auto $var[[var]] = foo();
+  )cpp",
+      ExpectedHint{": A<MultipleWords, MultipleWords, MultipleWords>", "var"});
 }
 
 TEST(TypeHints, DefaultTemplateArgs) {
@@ -1332,8 +1357,11 @@ TEST(TypeHints, DefaultTemplateArgs) {
     struct A {};
     A<float> foo();
     auto $var[[var]] = foo();
+    A<float> bar[1];
+    auto [$binding[[value]]] = bar;
   )cpp",
-                  ExpectedHint{": A<float>", "var"});
+                  ExpectedHint{": A<float>", "var"},
+                  ExpectedHint{": A<float>", "binding"});
 }
 
 TEST(TypeHints, Deduplication) {
@@ -1400,6 +1428,82 @@ TEST(TypeHints, Decltype) {
                   ExpectedHint{": int", "c"}, ExpectedHint{": int", "e"},
                   ExpectedHint{": int", "f"}, ExpectedHint{": int", "g"},
                   ExpectedHint{": int", "h"}, ExpectedHint{": int", "i"});
+}
+
+TEST(TypeHints, SubstTemplateParameterAliases) {
+  assertTypeHints(
+      R"cpp(
+  template <class T> struct allocator {};
+
+  template <class T, class A>
+  struct vector_base {
+    using pointer = T*;
+  };
+
+  template <class T, class A>
+  struct internal_iterator_type_template_we_dont_expect {};
+
+  struct my_iterator {};
+
+  template <class T, class A = allocator<T>>
+  struct vector : vector_base<T, A> {
+    using base = vector_base<T, A>;
+    typedef T value_type;
+    typedef base::pointer pointer;
+    using allocator_type = A;
+    using size_type = int;
+    using iterator = internal_iterator_type_template_we_dont_expect<T, A>;
+    using non_template_iterator = my_iterator;
+
+    value_type& operator[](int index) { return elements[index]; }
+    const value_type& at(int index) const { return elements[index]; }
+    pointer data() { return &elements[0]; }
+    allocator_type get_allocator() { return A(); }
+    size_type size() const { return 10; }
+    iterator begin() { return iterator(); }
+    non_template_iterator end() { return non_template_iterator(); }
+
+    T elements[10];
+  };
+
+  vector<int> array;
+
+  auto $no_modifier[[by_value]] = array[3];
+  auto* $ptr_modifier[[ptr]] = &array[3];
+  auto& $ref_modifier[[ref]] = array[3];
+  auto& $at[[immutable]] = array.at(3);
+
+  auto $data[[data]] = array.data();
+  auto $allocator[[alloc]] = array.get_allocator();
+  auto $size[[size]] = array.size();
+  auto $begin[[begin]] = array.begin();
+  auto $end[[end]] = array.end();
+
+
+  // If the type alias is not of substituted template parameter type,
+  // do not show desugared type.
+  using VeryLongLongTypeName = my_iterator;
+  using Short = VeryLongLongTypeName;
+
+  auto $short_name[[my_value]] = Short();
+
+  // Same applies with templates.
+  template <typename T, typename A>
+  using basic_static_vector = vector<T, A>;
+  template <typename T>
+  using static_vector = basic_static_vector<T, allocator<T>>;
+
+  auto $vector_name[[vec]] = static_vector<int>();
+  )cpp",
+      ExpectedHint{": int", "no_modifier"},
+      ExpectedHint{": int *", "ptr_modifier"},
+      ExpectedHint{": int &", "ref_modifier"},
+      ExpectedHint{": const int &", "at"}, ExpectedHint{": int *", "data"},
+      ExpectedHint{": allocator<int>", "allocator"},
+      ExpectedHint{": size_type", "size"}, ExpectedHint{": iterator", "begin"},
+      ExpectedHint{": non_template_iterator", "end"},
+      ExpectedHint{": Short", "short_name"},
+      ExpectedHint{": static_vector<int>", "vector_name"});
 }
 
 TEST(DesignatorHints, Basic) {
@@ -1535,6 +1639,194 @@ TEST(ParameterHints, DoesntExpandAllArgs) {
       ExpectedHint{"a: ", "param1"}, ExpectedHint{"b: ", "param2"},
       ExpectedHint{"c: ", "param3"});
 }
+
+TEST(BlockEndHints, Functions) {
+  assertBlockEndHints(R"cpp(
+    int foo() {
+      return 41;
+    $foo[[}]]
+
+    template<int X> 
+    int bar() { 
+      // No hint for lambda for now
+      auto f = []() { 
+        return X; 
+      };
+      return f(); 
+    $bar[[}]]
+
+    // No hint because this isn't a definition
+    int buz();
+
+    struct S{};
+    bool operator==(S, S) {
+      return true;
+    $opEqual[[}]]
+  )cpp",
+                      ExpectedHint{" // foo", "foo"},
+                      ExpectedHint{" // bar", "bar"},
+                      ExpectedHint{" // operator==", "opEqual"});
+}
+
+TEST(BlockEndHints, Methods) {
+  assertBlockEndHints(R"cpp(
+    struct Test {
+      // No hint because there's no function body
+      Test() = default;
+      
+      ~Test() {
+      $dtor[[}]]
+
+      void method1() {
+      $method1[[}]]
+
+      // No hint because this isn't a definition
+      void method2();
+
+      template <typename T>
+      void method3() {
+      $method3[[}]]
+
+      // No hint because this isn't a definition
+      template <typename T>
+      void method4();
+
+      Test operator+(int) const {
+        return *this;
+      $opIdentity[[}]]
+
+      operator bool() const {
+        return true;
+      $opBool[[}]]
+
+      // No hint because there's no function body
+      operator int() const = delete;
+    } x;
+
+    void Test::method2() {
+    $method2[[}]]
+
+    template <typename T>
+    void Test::method4() {
+    $method4[[}]]
+  )cpp",
+                      ExpectedHint{" // ~Test", "dtor"},
+                      ExpectedHint{" // method1", "method1"},
+                      ExpectedHint{" // method3", "method3"},
+                      ExpectedHint{" // operator+", "opIdentity"},
+                      ExpectedHint{" // operator bool", "opBool"},
+                      ExpectedHint{" // Test::method2", "method2"},
+                      ExpectedHint{" // Test::method4", "method4"});
+}
+
+TEST(BlockEndHints, Namespaces) {
+  assertBlockEndHints(
+      R"cpp(
+    namespace {
+      void foo();
+    $anon[[}]]
+
+    namespace ns {
+      void bar();
+    $ns[[}]]
+  )cpp",
+      ExpectedHint{" // namespace", "anon"},
+      ExpectedHint{" // namespace ns", "ns"});
+}
+
+TEST(BlockEndHints, Types) {
+  assertBlockEndHints(
+      R"cpp(
+    struct S {
+    $S[[};]]
+
+    class C {
+    $C[[};]]
+
+    union U {
+    $U[[};]]
+
+    enum E1 {
+    $E1[[};]]
+
+    enum class E2 {
+    $E2[[};]]
+  )cpp",
+      ExpectedHint{" // struct S", "S"}, ExpectedHint{" // class C", "C"},
+      ExpectedHint{" // union U", "U"}, ExpectedHint{" // enum E1", "E1"},
+      ExpectedHint{" // enum class E2", "E2"});
+}
+
+TEST(BlockEndHints, TrailingSemicolon) {
+  assertBlockEndHints(R"cpp(
+    // The hint is placed after the trailing ';'
+    struct S1 {
+    $S1[[}  ;]]   
+
+    // The hint is always placed in the same line with the closing '}'.
+    // So in this case where ';' is missing, it is attached to '}'.
+    struct S2 {
+    $S2[[}]]
+
+    ;
+
+    // No hint because only one trailing ';' is allowed
+    struct S3 {
+    };;
+
+    // No hint because trailing ';' is only allowed for class/struct/union/enum
+    void foo() {
+    };
+
+    // Rare case, but yes we'll have a hint here.
+    struct {
+      int x;
+    $anon[[}]]
+    
+    s2;
+  )cpp",
+                      ExpectedHint{" // struct S1", "S1"},
+                      ExpectedHint{" // struct S2", "S2"},
+                      ExpectedHint{" // struct", "anon"});
+}
+
+TEST(BlockEndHints, TrailingText) {
+  assertBlockEndHints(R"cpp(
+    struct S1 {
+    $S1[[}      ;]]
+
+    // No hint for S2 because of the trailing comment
+    struct S2 {
+    }; /* Put anything here */
+
+    struct S3 {
+      // No hint for S4 because of the trailing source code
+      struct S4 {
+      };$S3[[};]]
+
+    // No hint for ns because of the trailing comment
+    namespace ns {
+    } // namespace ns
+  )cpp",
+                      ExpectedHint{" // struct S1", "S1"},
+                      ExpectedHint{" // struct S3", "S3"});
+}
+
+TEST(BlockEndHints, Macro) {
+  assertBlockEndHints(R"cpp(
+    #define DECL_STRUCT(NAME) struct NAME {
+    #define RBRACE }
+
+    DECL_STRUCT(S1)
+    $S1[[};]]
+
+    // No hint because we require a '}'
+    DECL_STRUCT(S2)
+    RBRACE;
+  )cpp",
+                      ExpectedHint{" // struct S1", "S1"});
+}
+
 // FIXME: Low-hanging fruit where we could omit a type hint:
 //  - auto x = TypeName(...);
 //  - auto x = (TypeName) (...);

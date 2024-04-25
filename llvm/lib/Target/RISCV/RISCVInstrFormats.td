@@ -187,36 +187,44 @@ class RVInst<dag outs, dag ins, string opcodestr, string argstr,
   bits<3> VLMul = 0;
   let TSFlags{10-8} = VLMul;
 
-  bit HasDummyMask = 0;
-  let TSFlags{11} = HasDummyMask;
-
   bit ForceTailAgnostic = false;
-  let TSFlags{12} = ForceTailAgnostic;
+  let TSFlags{11} = ForceTailAgnostic;
 
-  bit HasMergeOp = 0;
-  let TSFlags{13} = HasMergeOp;
+  bit IsTiedPseudo = 0;
+  let TSFlags{12} = IsTiedPseudo;
 
   bit HasSEWOp = 0;
-  let TSFlags{14} = HasSEWOp;
+  let TSFlags{13} = HasSEWOp;
 
   bit HasVLOp = 0;
-  let TSFlags{15} = HasVLOp;
+  let TSFlags{14} = HasVLOp;
 
   bit HasVecPolicyOp = 0;
-  let TSFlags{16} = HasVecPolicyOp;
+  let TSFlags{15} = HasVecPolicyOp;
 
   bit IsRVVWideningReduction = 0;
-  let TSFlags{17} = IsRVVWideningReduction;
+  let TSFlags{16} = IsRVVWideningReduction;
 
   bit UsesMaskPolicy = 0;
-  let TSFlags{18} = UsesMaskPolicy;
+  let TSFlags{17} = UsesMaskPolicy;
 
   // Indicates that the result can be considered sign extended from bit 31. Some
   // instructions with this flag aren't W instructions, but are either sign
   // extended from a smaller size, always outputs a small integer, or put zeros
   // in bits 63:31. Used by the SExtWRemoval pass.
   bit IsSignExtendingOpW = 0;
-  let TSFlags{19} = IsSignExtendingOpW;
+  let TSFlags{18} = IsSignExtendingOpW;
+
+  bit HasRoundModeOp = 0;
+  let TSFlags{19} =  HasRoundModeOp;
+
+  // This is only valid when HasRoundModeOp is set to 1. HasRoundModeOp is set
+  // to 1 for vector fixed-point or floating-point intrinsics. This bit is
+  // processed under pass 'RISCVInsertReadWriteCSR' pass to distinguish between
+  // fixed-point / floating-point instructions and emit appropriate read/write
+  // to the correct CSR.
+  bit UsesVXRM = 0;
+  let TSFlags{20} =  UsesVXRM;
 }
 
 // Pseudo instructions
@@ -226,7 +234,7 @@ class Pseudo<dag outs, dag ins, list<dag> pattern, string opcodestr = "", string
   let isCodeGenOnly = 1;
 }
 
-class PseudoQuietFCMP<RegisterClass Ty>
+class PseudoQuietFCMP<DAGOperand Ty>
     : Pseudo<(outs GPR:$rd), (ins Ty:$rs1, Ty:$rs2), []> {
   let hasSideEffects = 1;
   let mayLoad = 0;

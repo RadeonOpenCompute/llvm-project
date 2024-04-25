@@ -12,6 +12,7 @@
 
 #include "llvm/IR/Instruction.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -743,14 +744,89 @@ bool Instruction::isVolatile() const {
   }
 }
 
-bool Instruction::mayThrow() const {
-  if (const CallInst *CI = dyn_cast<CallInst>(this))
-    return !CI->doesNotThrow();
-  if (const auto *CRI = dyn_cast<CleanupReturnInst>(this))
-    return CRI->unwindsToCaller();
-  if (const auto *CatchSwitch = dyn_cast<CatchSwitchInst>(this))
-    return CatchSwitch->unwindsToCaller();
-  return isa<ResumeInst>(this);
+Type *Instruction::getAccessType() const {
+  switch (getOpcode()) {
+  case Instruction::Store:
+    return cast<StoreInst>(this)->getValueOperand()->getType();
+  case Instruction::Load:
+  case Instruction::AtomicRMW:
+    return getType();
+  case Instruction::AtomicCmpXchg:
+    return cast<AtomicCmpXchgInst>(this)->getNewValOperand()->getType();
+  case Instruction::Call:
+  case Instruction::Invoke:
+    if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(this)) {
+      switch (II->getIntrinsicID()) {
+      case Intrinsic::masked_load:
+      case Intrinsic::masked_gather:
+      case Intrinsic::masked_expandload:
+      case Intrinsic::vp_load:
+      case Intrinsic::vp_gather:
+      case Intrinsic::experimental_vp_strided_load:
+        return II->getType();
+      case Intrinsic::masked_store:
+      case Intrinsic::masked_scatter:
+      case Intrinsic::masked_compressstore:
+      case Intrinsic::vp_store:
+      case Intrinsic::vp_scatter:
+      case Intrinsic::experimental_vp_strided_store:
+        return II->getOperand(0)->getType();
+      default:
+        break;
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+static bool canUnwindPastLandingPad(const LandingPadInst *LP,
+                                    bool IncludePhaseOneUnwind) {
+  // Because phase one unwinding skips cleanup landingpads, we effectively
+  // unwind past this frame, and callers need to have valid unwind info.
+  if (LP->isCleanup())
+    return IncludePhaseOneUnwind;
+
+  for (unsigned I = 0; I < LP->getNumClauses(); ++I) {
+    Constant *Clause = LP->getClause(I);
+    // catch ptr null catches all exceptions.
+    if (LP->isCatch(I) && isa<ConstantPointerNull>(Clause))
+      return false;
+    // filter [0 x ptr] catches all exceptions.
+    if (LP->isFilter(I) && Clause->getType()->getArrayNumElements() == 0)
+      return false;
+  }
+
+  // May catch only some subset of exceptions, in which case other exceptions
+  // will continue unwinding.
+  return true;
+}
+
+bool Instruction::mayThrow(bool IncludePhaseOneUnwind) const {
+  switch (getOpcode()) {
+  case Instruction::Call:
+    return !cast<CallInst>(this)->doesNotThrow();
+  case Instruction::CleanupRet:
+    return cast<CleanupReturnInst>(this)->unwindsToCaller();
+  case Instruction::CatchSwitch:
+    return cast<CatchSwitchInst>(this)->unwindsToCaller();
+  case Instruction::Resume:
+    return true;
+  case Instruction::Invoke: {
+    // Landingpads themselves don't unwind -- however, an invoke of a skipped
+    // landingpad may continue unwinding.
+    BasicBlock *UnwindDest = cast<InvokeInst>(this)->getUnwindDest();
+    Instruction *Pad = UnwindDest->getFirstNonPHI();
+    if (auto *LP = dyn_cast<LandingPadInst>(Pad))
+      return canUnwindPastLandingPad(LP, IncludePhaseOneUnwind);
+    return false;
+  }
+  case Instruction::CleanupPad:
+    // Treat the same as cleanup landingpad.
+    return IncludePhaseOneUnwind;
+  default:
+    return false;
+  }
 }
 
 bool Instruction::mayHaveSideEffects() const {

@@ -106,11 +106,11 @@ bool OffloadTargetInfo::isOffloadKindCompatible(
   if (OffloadKind == TargetOffloadKind)
     return true;
   if (BundlerConfig.HipOpenmpCompatible) {
-    bool HIPCompatibleWithOpenMP = OffloadKind.startswith_insensitive("hip") &&
+    bool HIPCompatibleWithOpenMP = OffloadKind.starts_with_insensitive("hip") &&
                                    TargetOffloadKind == "openmp";
     bool OpenMPCompatibleWithHIP =
         OffloadKind == "openmp" &&
-        TargetOffloadKind.startswith_insensitive("hip");
+        TargetOffloadKind.starts_with_insensitive("hip");
     return HIPCompatibleWithOpenMP || OpenMPCompatibleWithHIP;
   }
   return false;
@@ -1136,9 +1136,9 @@ bool isCodeObjectCompatible(OffloadTargetInfo &CodeObjectInfo,
 
   // Incompatible if Processors mismatch.
   llvm::StringMap<bool> CodeObjectFeatureMap, TargetFeatureMap;
-  llvm::Optional<StringRef> CodeObjectProc = clang::parseTargetID(
+  std::optional<StringRef> CodeObjectProc = clang::parseTargetID(
       CodeObjectInfo.Triple, CodeObjectInfo.TargetID, &CodeObjectFeatureMap);
-  llvm::Optional<StringRef> TargetProc = clang::parseTargetID(
+  std::optional<StringRef> TargetProc = clang::parseTargetID(
       TargetInfo.Triple, TargetInfo.TargetID, &TargetFeatureMap);
 
   // Both TargetProc and CodeObjectProc can't be empty here.

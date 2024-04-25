@@ -14,6 +14,13 @@
 #include "lldb/API/SBDefines.h"
 #include "lldb/API/SBPlatform.h"
 
+namespace lldb_private {
+class CommandPluginInterfaceImplementation;
+namespace python {
+class SWIGBridge;
+}
+} // namespace lldb_private
+
 namespace lldb {
 
 #ifndef SWIG
@@ -44,10 +51,6 @@ public:
   SBDebugger();
 
   SBDebugger(const lldb::SBDebugger &rhs);
-
-#ifndef SWIG
-  SBDebugger(const lldb::DebuggerSP &debugger_sp);
-#endif
 
   ~SBDebugger();
 
@@ -112,7 +115,7 @@ public:
 
   static void Terminate();
 
-  // Deprecated, use the one that takes a source_init_files bool.
+  LLDB_DEPRECATED_FIXME("Use one of the other Create variants", "Create(bool)")
   static lldb::SBDebugger Create();
 
   static lldb::SBDebugger Create(bool source_init_files);
@@ -205,9 +208,13 @@ public:
   lldb::SBListener GetListener();
 
 #ifndef SWIG
+  LLDB_DEPRECATED_FIXME(
+      "Use HandleProcessEvent(const SBProcess &, const SBEvent &, SBFile, "
+      "SBFile) or HandleProcessEvent(const SBProcess &, const SBEvent &, "
+      "FileSP, FileSP)",
+      "HandleProcessEvent(const SBProcess &, const SBEvent &, SBFile, SBFile)")
   void HandleProcessEvent(const lldb::SBProcess &process,
-                          const lldb::SBEvent &event, FILE *out,
-                          FILE *err); // DEPRECATED
+                          const lldb::SBEvent &event, FILE *out, FILE *err);
 #endif
 
   void HandleProcessEvent(const lldb::SBProcess &process,
@@ -242,7 +249,7 @@ public:
 
   uint32_t GetIndexOfTarget(lldb::SBTarget target);
 
-  lldb::SBTarget FindTargetWithProcessID(pid_t pid);
+  lldb::SBTarget FindTargetWithProcessID(lldb::pid_t pid);
 
   lldb::SBTarget FindTargetWithFileAndArch(const char *filename,
                                            const char *arch);
@@ -323,8 +330,9 @@ public:
   void SetDestroyCallback(lldb::SBDebuggerDestroyCallback destroy_callback,
                           void *baton);
 
-  // DEPRECATED
 #ifndef SWIG
+  LLDB_DEPRECATED_FIXME("Use DispatchInput(const void *, size_t)",
+                        "DispatchInput(const void *, size_t)")
   void DispatchInput(void *baton, const void *data, size_t data_len);
 #endif
 
@@ -463,6 +471,12 @@ public:
   ///   The file containing the necessary information to load the trace.
   SBTrace LoadTraceFromFile(SBError &error,
                             const SBFileSpec &trace_description_file);
+
+protected:
+  friend class lldb_private::CommandPluginInterfaceImplementation;
+  friend class lldb_private::python::SWIGBridge;
+
+  SBDebugger(const lldb::DebuggerSP &debugger_sp);
 
 private:
   friend class SBCommandInterpreter;

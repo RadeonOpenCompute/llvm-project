@@ -11,7 +11,7 @@
 #include "src/__support/threads/thread.h"
 #include "src/stdlib/atexit.h"
 #include "src/stdlib/exit.h"
-#include "src/string/memory_utils/memcpy_implementations.h"
+#include "src/string/memory_utils/inline_memcpy.h"
 
 #include <linux/auxvec.h>
 #include <linux/elf.h>
@@ -29,7 +29,7 @@ static constexpr long MMAP_SYSCALL_NUMBER = SYS_mmap2;
 #elif SYS_mmap
 static constexpr long MMAP_SYSCALL_NUMBER = SYS_mmap;
 #else
-#error "Target platform does not have SYS_mmap or SYS_mmap2 defined"
+#error "mmap and mmap2 syscalls not available."
 #endif
 
 AppProperties app;
@@ -123,6 +123,10 @@ struct AuxEntry {
 };
 
 __attribute__((noinline)) static void do_start() {
+  LIBC_INLINE_ASM(".option push\n\t"
+                  ".option norelax\n\t"
+                  "lla gp, __global_pointer$\n\t"
+                  ".option pop\n\t");
   auto tid = __llvm_libc::syscall_impl(SYS_gettid);
   if (tid <= 0)
     __llvm_libc::syscall_impl(SYS_exit, 1);

@@ -1,8 +1,10 @@
 // RUN: %clang_cc1 -fexperimental-new-constant-interpreter -verify %s
 // RUN: %clang_cc1 -fexperimental-new-constant-interpreter -std=c++14 -verify %s
+// RUN: %clang_cc1 -fexperimental-new-constant-interpreter -std=c++20 -verify %s
 // RUN: %clang_cc1 -fexperimental-new-constant-interpreter -triple i686 -verify %s
 // RUN: %clang_cc1 -verify=ref %s
 // RUN: %clang_cc1 -verify=ref -std=c++14 %s
+// RUN: %clang_cc1 -verify=ref -std=c++20 %s
 // RUN: %clang_cc1 -verify=ref -triple i686 %s
 
 struct BoolPair {
@@ -109,8 +111,8 @@ static_assert(c.a == 100, "");
 static_assert(c.b == 200, "");
 
 constexpr C c2 = C().get();
-static_assert(c.a == 100, "");
-static_assert(c.b == 200, "");
+static_assert(c2.a == 100, "");
+static_assert(c2.b == 200, "");
 
 constexpr int getB() {
   C c;
@@ -250,6 +252,78 @@ struct S {
 constexpr S s;
 static_assert(s.m() == 1, "");
 
+namespace InitializerTemporaries {
+  class Bar {
+  private:
+    int a;
+
+  public:
+    constexpr Bar() : a(10) {}
+    constexpr int getA() const { return a; }
+  };
+
+  class Foo {
+  public:
+    int a;
+
+    constexpr Foo() : a(Bar().getA()) {}
+  };
+  constexpr Foo F;
+  static_assert(F.a == 10, "");
+
+
+  /// Needs constexpr destructors.
+#if __cplusplus >= 202002L
+  /// Does
+  ///    Arr[Pos] = Value;
+  ///    ++Pos;
+  /// in its destructor.
+  class BitSetter {
+  private:
+    int *Arr;
+    int &Pos;
+    int Value;
+
+  public:
+    constexpr BitSetter(int *Arr, int &Pos, int Value) :
+      Arr(Arr), Pos(Pos), Value(Value) {}
+
+    constexpr int getValue() const { return 0; }
+    constexpr ~BitSetter() {
+      Arr[Pos] = Value;
+      ++Pos;
+    }
+  };
+
+  class Test {
+    int a, b, c;
+  public:
+    constexpr Test(int *Arr, int &Pos) :
+      a(BitSetter(Arr, Pos, 1).getValue()),
+      b(BitSetter(Arr, Pos, 2).getValue()),
+      c(BitSetter(Arr, Pos, 3).getValue())
+    {}
+  };
+
+
+  constexpr int T(int Index) {
+    int Arr[] = {0, 0, 0};
+    int Pos = 0;
+
+    {
+      auto T = Test(Arr, Pos);
+      // End of scope, should destroy Test.
+    }
+
+    return Arr[Index];
+  }
+
+  static_assert(T(0) == 1);
+  static_assert(T(1) == 2);
+  static_assert(T(2) == 3);
+#endif
+}
+
 #if __cplusplus >= 201703L
 namespace BaseInit {
   class _A {public: int a;};
@@ -308,6 +382,7 @@ namespace MI {
 };
 
 namespace DeriveFailures {
+#if __cplusplus < 202002L
   struct Base { // ref-note 2{{declared here}} expected-note {{declared here}}
     int Val;
   };
@@ -325,10 +400,12 @@ namespace DeriveFailures {
                            // ref-note {{declared here}} \
                            // expected-error {{must be initialized by a constant expression}} \
                            // expected-note {{in call to 'Derived(12)'}}
+
   static_assert(D.Val == 0, ""); // ref-error {{not an integral constant expression}} \
                                  // ref-note {{initializer of 'D' is not a constant expression}} \
                                  // expected-error {{not an integral constant expression}} \
-                                 // expected-note {{read of object outside its lifetime}}
+                                 // expected-note {{read of uninitialized object}}
+#endif
 
   struct AnotherBase {
     int Val;
@@ -368,3 +445,249 @@ namespace EmptyCtor {
   constexpr piecewise_construct_t piecewise_construct =
     piecewise_construct_t();
 };
+
+namespace ConditionalInit {
+  struct S { int a; };
+
+  constexpr S getS(bool b) {
+    return b ? S{12} : S{13};
+  }
+
+  static_assert(getS(true).a == 12, "");
+  static_assert(getS(false).a == 13, "");
+};
+/// FIXME: The following tests are broken.
+///   They are using CXXDefaultInitExprs which contain a CXXThisExpr. The This pointer
+///   in those refers to the declaration we are currently initializing, *not* the
+///   This pointer of the current stack frame. This is something we haven't
+///   implemented in the new interpreter yet.
+namespace DeclRefs {
+  struct A{ int m; const int &f = m; }; // expected-note {{implicit use of 'this'}}
+
+  constexpr A a{10}; // expected-error {{must be initialized by a constant expression}}
+  static_assert(a.m == 10, "");
+  static_assert(a.f == 10, ""); // expected-error {{not an integral constant expression}} \
+                                // expected-note {{read of uninitialized object}}
+
+  class Foo {
+  public:
+    int z = 1337;
+    constexpr int a() const {
+      A b{this->z};
+
+      return b.f;
+    }
+  };
+  constexpr Foo f;
+  static_assert(f.a() == 1337, "");
+
+
+  struct B {
+    A a = A{100};
+  };
+  constexpr B b;
+  /// FIXME: The following two lines don't work because we don't get the
+  ///   pointers on the LHS correct. They make us run into an assertion
+  ///   in CheckEvaluationResult. However, this may just be caused by the
+  ///   problems in the previous examples.
+  //static_assert(b.a.m == 100, "");
+  //static_assert(b.a.f == 100, "");
+}
+
+#if __cplusplus >= 202002L
+namespace VirtualCalls {
+namespace Obvious {
+
+  class A {
+  public:
+    constexpr A(){}
+    constexpr virtual int foo() {
+      return 3;
+    }
+  };
+  class B : public A {
+  public:
+    constexpr int foo() override {
+      return 6;
+    }
+  };
+
+  constexpr int getFooB(bool b) {
+    A *a;
+    A myA;
+    B myB;
+
+    if (b)
+      a = &myA;
+    else
+      a = &myB;
+
+    return a->foo();
+  }
+  static_assert(getFooB(true) == 3, "");
+  static_assert(getFooB(false) == 6, "");
+}
+
+namespace MultipleBases {
+  class A {
+  public:
+    constexpr virtual int getInt() const { return 10; }
+  };
+  class B {
+  public:
+  };
+  class C : public A, public B {
+  public:
+    constexpr int getInt() const override { return 20; }
+  };
+
+  constexpr int callGetInt(const A& a) { return a.getInt(); }
+  static_assert(callGetInt(C()) == 20, "");
+  static_assert(callGetInt(A()) == 10, "");
+}
+
+namespace Destructors {
+  class Base {
+  public:
+    int i;
+    constexpr Base(int &i) : i(i) {i++;}
+    constexpr virtual ~Base() {i--;}
+  };
+
+  class Derived : public Base {
+  public:
+    constexpr Derived(int &i) : Base(i) {}
+    constexpr virtual ~Derived() {i--;}
+  };
+
+  constexpr int test() {
+    int i = 0;
+    Derived d(i);
+    return i;
+  }
+  static_assert(test() == 1);
+}
+
+
+namespace VirtualDtors {
+  class A {
+  public:
+    unsigned &v;
+    constexpr A(unsigned &v) : v(v) {}
+    constexpr virtual ~A() {
+      v |= (1 << 0);
+    }
+  };
+  class B : public A {
+  public:
+    constexpr B(unsigned &v) : A(v) {}
+    constexpr virtual ~B() {
+      v |= (1 << 1);
+    }
+  };
+  class C : public B {
+  public:
+    constexpr C(unsigned &v) : B(v) {}
+    constexpr virtual ~C() {
+      v |= (1 << 2);
+    }
+  };
+
+  constexpr bool foo() {
+    unsigned a = 0;
+    {
+      C c(a);
+    }
+    return ((a & (1 << 0)) && (a & (1 << 1)) && (a & (1 << 2)));
+  }
+
+  static_assert(foo());
+
+
+};
+
+namespace QualifiedCalls {
+  class A {
+      public:
+      constexpr virtual int foo() const {
+          return 5;
+      }
+  };
+  class B : public A {};
+  class C : public B {
+      public:
+      constexpr int foo() const override {
+          return B::foo(); // B doesn't have a foo(), so this should call A::foo().
+      }
+      constexpr int foo2() const {
+        return this->A::foo();
+      }
+  };
+  constexpr C c;
+  static_assert(c.foo() == 5);
+  static_assert(c.foo2() == 5);
+
+
+  struct S {
+    int _c = 0;
+    virtual constexpr int foo() const { return 1; }
+  };
+
+  struct SS : S {
+    int a;
+    constexpr SS() {
+      a = S::foo();
+    }
+    constexpr int foo() const override {
+      return S::foo();
+    }
+  };
+
+  constexpr SS ss;
+  static_assert(ss.a == 1);
+}
+
+namespace CtorDtor {
+  struct Base {
+    int i = 0;
+    int j = 0;
+
+    constexpr Base() : i(func()) {
+      j = func();
+    }
+    constexpr Base(int i) : i(i), j(i) {}
+
+    constexpr virtual int func() const { return 1; }
+  };
+
+  struct Derived : Base {
+    constexpr Derived() {}
+    constexpr Derived(int i) : Base(i) {}
+    constexpr int func() const override { return 2; }
+  };
+
+  struct Derived2 : Derived {
+    constexpr Derived2() : Derived(func()) {} // ref-note {{subexpression not valid in a constant expression}}
+    constexpr int func() const override { return 3; }
+  };
+
+  constexpr Base B;
+  static_assert(B.i == 1 && B.j == 1, "");
+
+  constexpr Derived D;
+  static_assert(D.i == 1, ""); // expected-error {{static assertion failed}} \
+                               // expected-note {{2 == 1}}
+  static_assert(D.j == 1, ""); // expected-error {{static assertion failed}} \
+                               // expected-note {{2 == 1}}
+
+  constexpr Derived2 D2; // ref-error {{must be initialized by a constant expression}} \
+                         // ref-note {{in call to 'Derived2()'}} \
+                         // ref-note 2{{declared here}}
+  static_assert(D2.i == 3, ""); // ref-error {{not an integral constant expression}} \
+                                // ref-note {{initializer of 'D2' is not a constant expression}}
+  static_assert(D2.j == 3, ""); // ref-error {{not an integral constant expression}} \
+                                // ref-note {{initializer of 'D2' is not a constant expression}}
+
+}
+};
+#endif

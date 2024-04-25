@@ -194,8 +194,8 @@ class Dwarf5AccelTableWriter : public AccelTableWriter {
     uint32_t CompUnitCount;
     uint32_t LocalTypeUnitCount = 0;
     uint32_t ForeignTypeUnitCount = 0;
-    uint32_t BucketCount;
-    uint32_t NameCount;
+    uint32_t BucketCount = 0;
+    uint32_t NameCount = 0;
     uint32_t AbbrevTableSize = 0;
     uint32_t AugmentationStringSize = sizeof(AugmentationString);
     char AugmentationString[8] = {'L', 'L', 'V', 'M', '0', '7', '0', '0'};
@@ -549,9 +549,13 @@ void llvm::emitDWARF5AccelTable(
   SmallVector<unsigned, 1> CUIndex(CUs.size());
   int Count = 0;
   for (const auto &CU : enumerate(CUs)) {
-    if (CU.value()->getCUNode()->getNameTableKind() !=
-        DICompileUnit::DebugNameTableKind::Default)
+    switch (CU.value()->getCUNode()->getNameTableKind()) {
+    case DICompileUnit::DebugNameTableKind::Default:
+    case DICompileUnit::DebugNameTableKind::Apple:
+      break;
+    default:
       continue;
+    }
     CUIndex[CU.index()] = Count++;
     assert(CU.index() == CU.value()->getUniqueID());
     const DwarfCompileUnit *MainCU =

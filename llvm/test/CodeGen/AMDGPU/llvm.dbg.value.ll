@@ -3,7 +3,7 @@
 
 ; GCN-LABEL: {{^}}test_debug_value:
 ; NOOPT: .loc	1 1 42 prologue_end     ; /tmp/test_debug_value.cl:1:42
-; NOOPT-NEXT: s_load_dwordx2 s[4:5], s[4:5], 0x0
+; NOOPT-NEXT: s_load_dwordx2 s[4:5], s[6:7], 0x0
 ; NOOPT-NEXT: .Ltmp
 ; NOOPT-NEXT: ;DEBUG_VALUE: test_debug_value:globalptr_arg <- $sgpr4_sgpr5
 
@@ -20,7 +20,7 @@ entry:
 ; SIOptimizeExecMaskingPreRA (somehow related to undef argument).
 
 ; GCN-LABEL: {{^}}only_undef_dbg_value:
-; NOOPT: ;DEBUG_VALUE: test_debug_value:globalptr_arg <- [DW_OP_constu 1, DW_OP_swap, DW_OP_xderef] undef
+; NOOPT: ;DEBUG_VALUE: test_debug_value:globalptr_arg <- undef
 ; NOOPT-NEXT: .cfi_escape 0x0f, 0x03, 0x30, 0x36, 0xe1
 ; NOOPT-NEXT: .cfi_undefined 16
 ; NOOPT-NEXT: s_endpgm

@@ -141,8 +141,8 @@ def M3WriteAW : SchedWriteVariant<[SchedVar<IsZeroIdiomPred, [M3WriteZ0]>,
 def M3WriteAX : SchedWriteVariant<[SchedVar<ExynosArithPred, [M3WriteA1]>,
                                    SchedVar<ExynosLogicPred, [M3WriteA1]>,
                                    SchedVar<NoSchedPred,     [M3WriteAA]>]>;
-def M3WriteAY : SchedWriteVariant<[SchedVar<ExynosRotateRightImmPred, [M3WriteA1]>,
-                                   SchedVar<NoSchedPred,              [M3WriteAA]>]>;
+def M3WriteAY : SchedWriteVariant<[SchedVar<IsRORImmIdiomPred, [M3WriteA1]>,
+                                   SchedVar<NoSchedPred,       [M3WriteAA]>]>;
 
 def M3WriteB1 : SchedWriteRes<[M3UnitB]> { let Latency = 1; }
 def M3WriteBX : SchedWriteVariant<[SchedVar<ExynosBranchLinkLRPred, [M3WriteAC]>,
@@ -507,7 +507,6 @@ def : InstRW<[M3WriteAW], (instrs ORRWri, ORRXri)>;
 
 // Move instructions.
 def : InstRW<[M3WriteCOPY], (instrs COPY)>;
-def : InstRW<[M3WriteCOPY], (instrs PRED_COPY)>;
 def : InstRW<[M3WriteZ0],   (instrs ADR, ADRP)>;
 def : InstRW<[M3WriteZ0],   (instregex "^MOV[NZ][WX]i")>;
 

@@ -445,12 +445,24 @@ AlignTokenSequence(const FormatStyle &Style, unsigned Start, unsigned End,
       Changes[i + 1].PreviousEndOfTokenColumn += Shift;
 
     // If PointerAlignment is PAS_Right, keep *s or &s next to the token
-    if (Style.PointerAlignment == FormatStyle::PAS_Right &&
+    if ((Style.PointerAlignment == FormatStyle::PAS_Right ||
+         Style.ReferenceAlignment == FormatStyle::RAS_Right) &&
         Changes[i].Spaces != 0) {
+      const bool ReferenceNotRightAligned =
+          Style.ReferenceAlignment != FormatStyle::RAS_Right &&
+          Style.ReferenceAlignment != FormatStyle::RAS_Pointer;
       for (int Previous = i - 1;
            Previous >= 0 &&
            Changes[Previous].Tok->getType() == TT_PointerOrReference;
            --Previous) {
+        assert(
+            Changes[Previous].Tok->isOneOf(tok::star, tok::amp, tok::ampamp));
+        if (Changes[Previous].Tok->isNot(tok::star)) {
+          if (ReferenceNotRightAligned)
+            continue;
+        } else if (Style.PointerAlignment != FormatStyle::PAS_Right) {
+          continue;
+        }
         Changes[Previous + 1].Spaces -= Shift;
         Changes[Previous].Spaces += Shift;
         Changes[Previous].StartOfTokenColumn += Shift;
@@ -522,13 +534,6 @@ static unsigned AlignTokens(const FormatStyle &Style, F &&Matches,
                                    ? Changes[StartAt].indentAndNestingLevel()
                                    : std::tuple<unsigned, unsigned, unsigned>();
 
-  // Keep track if the first token has a non-zero indent and nesting level.
-  // This can happen when aligning the contents of "#else" preprocessor blocks,
-  // which is done separately.
-  bool HasInitialIndentAndNesting =
-      StartAt == 0 &&
-      IndentAndNestingLevel > std::tuple<unsigned, unsigned, unsigned>();
-
   // Keep track of the number of commas before the matching tokens, we will only
   // align a sequence of matching tokens if they are preceded by the same number
   // of commas.
@@ -563,19 +568,8 @@ static unsigned AlignTokens(const FormatStyle &Style, F &&Matches,
 
   unsigned i = StartAt;
   for (unsigned e = Changes.size(); i != e; ++i) {
-    if (Changes[i].indentAndNestingLevel() < IndentAndNestingLevel) {
-      if (!HasInitialIndentAndNesting)
-        break;
-      // The contents of preprocessor blocks are aligned separately.
-      // If the initial preprocessor block is indented or nested (e.g. it's in
-      // a function), do not align and exit after finishing this scope block.
-      // Instead, align, and then lower the baseline indent and nesting level
-      // in order to continue aligning subsequent blocks.
-      EndOfSequence = i;
-      AlignCurrentSequence();
-      IndentAndNestingLevel =
-          Changes[i].indentAndNestingLevel(); // new baseline
-    }
+    if (Changes[i].indentAndNestingLevel() < IndentAndNestingLevel)
+      break;
 
     if (Changes[i].NewlinesBefore != 0) {
       CommasBeforeMatch = 0;
@@ -876,7 +870,7 @@ void WhitespaceManager::alignConsecutiveDeclarations() {
   AlignTokens(
       Style,
       [](Change const &C) {
-        if (C.Tok->is(TT_FunctionDeclarationName))
+        if (C.Tok->isOneOf(TT_FunctionDeclarationName, TT_FunctionTypeLParen))
           return true;
         if (C.Tok->isNot(TT_StartOfName))
           return false;

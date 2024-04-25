@@ -22,6 +22,7 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/ExtractAPI/API.h"
 #include "clang/ExtractAPI/TypedefUnderlyingTypeResolver.h"
+#include "llvm/ADT/StringRef.h"
 #include <type_traits>
 
 namespace clang {
@@ -105,6 +106,25 @@ private:
   }
 };
 
+template <typename T>
+static void modifyRecords(const T &Records, const StringRef &Name) {
+  for (const auto &Record : Records) {
+    if (Name == Record.second.get()->Name) {
+      auto &DeclFragment = Record.second->Declaration;
+      DeclFragment.insert(DeclFragment.begin(), " ",
+                          DeclarationFragments::FragmentKind::Text);
+      DeclFragment.insert(DeclFragment.begin(), "typedef",
+                          DeclarationFragments::FragmentKind::Keyword, "",
+                          nullptr);
+      DeclFragment.insert(--DeclFragment.end(), " { ... } ",
+                          DeclarationFragments::FragmentKind::Text);
+      DeclFragment.insert(--DeclFragment.end(), Name,
+                          DeclarationFragments::FragmentKind::Identifier);
+      break;
+    }
+  }
+}
+
 template <typename Derived>
 bool ExtractAPIVisitorBase<Derived>::VisitVarDecl(const VarDecl *Decl) {
   // skip function parameters.
@@ -160,7 +180,7 @@ bool ExtractAPIVisitorBase<Derived>::VisitFunctionDecl(
       return true;
 
     // Skip methods in records.
-    for (auto P : Context.getParents(*Method)) {
+    for (const auto &P : Context.getParents(*Method)) {
       if (P.template get<CXXRecordDecl>())
         return true;
     }
@@ -400,6 +420,21 @@ bool ExtractAPIVisitorBase<Derived>::VisitTypedefNameDecl(
 
   if (!getDerivedExtractAPIVisitor().shouldDeclBeIncluded(Decl))
     return true;
+
+  // Add the notion of typedef for tag type (struct or enum) of the same name.
+  if (const ElaboratedType *ET =
+          dyn_cast<ElaboratedType>(Decl->getUnderlyingType())) {
+    if (const TagType *TagTy = dyn_cast<TagType>(ET->desugar())) {
+      if (Decl->getName() == TagTy->getDecl()->getName()) {
+        if (TagTy->getDecl()->isStruct()) {
+          modifyRecords(API.getStructs(), Decl->getName());
+        }
+        if (TagTy->getDecl()->isEnum()) {
+          modifyRecords(API.getEnums(), Decl->getName());
+        }
+      }
+    }
+  }
 
   PresumedLoc Loc =
       Context.getSourceManager().getPresumedLoc(Decl->getLocation());

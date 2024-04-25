@@ -238,13 +238,10 @@ void CommandMangler::operator()(tooling::CompileCommand &Command,
   ArgList = OptTable.ParseArgs(
       llvm::ArrayRef(OriginalArgs).drop_front(), IgnoredCount, IgnoredCount,
       /*FlagsToInclude=*/
-      IsCLMode ? (driver::options::CLOption | driver::options::CoreOption |
-                  driver::options::CLDXCOption)
+      IsCLMode ? (driver::options::CLOption | driver::options::CoreOption)
                : /*everything*/ 0,
       /*FlagsToExclude=*/driver::options::NoDriverOption |
-          (IsCLMode
-               ? 0
-               : (driver::options::CLOption | driver::options::CLDXCOption)));
+          (IsCLMode ? 0 : driver::options::CLOption));
 
   llvm::SmallVector<unsigned, 1> IndicesToDrop;
   // Having multiple architecture options (e.g. when building fat binaries)
@@ -422,9 +419,9 @@ enum DriverMode : unsigned char {
 DriverMode getDriverMode(const std::vector<std::string> &Args) {
   DriverMode Mode = DM_GCC;
   llvm::StringRef Argv0 = Args.front();
-  if (Argv0.endswith_insensitive(".exe"))
+  if (Argv0.ends_with_insensitive(".exe"))
     Argv0 = Argv0.drop_back(strlen(".exe"));
-  if (Argv0.endswith_insensitive("cl"))
+  if (Argv0.ends_with_insensitive("cl"))
     Mode = DM_CL;
   for (const llvm::StringRef Arg : Args) {
     if (Arg == "--driver-mode=cl") {
@@ -448,8 +445,6 @@ unsigned char getModes(const llvm::opt::Option &Opt) {
     Result |= DM_CC1;
   if (!Opt.hasFlag(driver::options::NoDriverOption)) {
     if (Opt.hasFlag(driver::options::CLOption)) {
-      Result |= DM_CL;
-    } else if (Opt.hasFlag(driver::options::CLDXCOption)) {
       Result |= DM_CL;
     } else {
       Result |= DM_GCC;

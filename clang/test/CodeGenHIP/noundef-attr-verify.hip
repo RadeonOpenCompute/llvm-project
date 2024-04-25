@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -no-opaque-pointers -triple amdgcn-amd-amdhsa -target-cpu gfx906 -x hip -fcuda-is-device -emit-llvm %s \
+// RUN: %clang_cc1 -triple amdgcn-amd-amdhsa -target-cpu gfx906 -x hip -fcuda-is-device -emit-llvm %s \
 // RUN:   -o - | FileCheck %s
 
 #define __global__ __attribute__((global))

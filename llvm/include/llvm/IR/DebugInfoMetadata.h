@@ -16,8 +16,6 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/Hashing.h"
-#include "llvm/ADT/IntrusiveVariant.h"
-#include "llvm/ADT/None.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -28,6 +26,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/Discriminator.h"
 #include <cassert>
 #include <climits>
@@ -36,6 +35,7 @@
 #include <iterator>
 #include <optional>
 #include <vector>
+#include <variant>
 
 // Helper macros for defining get() overrides.
 #define DEFINE_MDNODE_GET_UNPACK_IMPL(...) __VA_ARGS__
@@ -1408,7 +1408,8 @@ public:
     Default = 0,
     GNU = 1,
     None = 2,
-    LastDebugNameTableKind = None
+    Apple = 3,
+    LastDebugNameTableKind = Apple
   };
 
   static std::optional<DebugEmissionKind> getEmissionKind(StringRef Str);
@@ -1887,6 +1888,9 @@ public:
   void replaceRawLinkageName(MDString *LinkageName) {
     replaceOperandWith(3, LinkageName);
   }
+  void replaceRetainedNodes(DINodeArray N) {
+    replaceOperandWith(7, N.get());
+  }
 
   /// Check if this subprogram describes the given function.
   ///
@@ -1952,7 +1956,7 @@ public:
 
   /// Return the linkage name of Subprogram. If the linkage name is empty,
   /// return scope name (the demangled name).
-  const StringRef getSubprogramLinkageName() const {
+  StringRef getSubprogramLinkageName() const {
     DISubprogram *SP = getScope()->getSubprogram();
     if (!SP)
       return "";
@@ -2079,15 +2083,13 @@ public:
   /// use the scope of any location.
   ///
   /// \p LocA \p LocB: The locations to be merged.
-  static const DILocation *getMergedLocation(const DILocation *LocA,
-                                             const DILocation *LocB);
+  static DILocation *getMergedLocation(DILocation *LocA, DILocation *LocB);
 
   /// Try to combine the vector of locations passed as input in a single one.
   /// This function applies getMergedLocation() repeatedly left-to-right.
   ///
   /// \p Locs: The locations to be merged.
-  static const DILocation *
-  getMergedLocations(ArrayRef<const DILocation *> Locs);
+  static DILocation *getMergedLocations(ArrayRef<DILocation *> Locs);
 
   /// Return the masked discriminator value for an input discrimnator value D
   /// (i.e. zero out the (B+1)-th and above bits for D (B is 0-base).
@@ -2339,6 +2341,12 @@ DILocation::cloneWithBaseDiscriminator(unsigned D) const {
 std::optional<const DILocation *>
 DILocation::cloneByMultiplyingDuplicationFactor(unsigned DF) const {
   assert(!EnableFSDiscriminator && "FSDiscriminator should not call this.");
+  // Do no interfere with pseudo probes. Pseudo probe doesn't need duplication
+  // factor support as samples collected on cloned probes will be aggregated.
+  // Also pseudo probe at a callsite uses the dwarf discriminator to store
+  // pseudo probe related information, such as the probe id.
+  if (isPseudoProbeDiscriminator(getDiscriminator()))
+    return this;
 
   DF *= getDuplicationFactor();
   if (DF <= 1)
@@ -2884,6 +2892,16 @@ public:
     /// Return the index of the bit after the end of the fragment, e.g. for
     /// fragment offset=16 and size=32 return their sum, 48.
     uint64_t endInBits() const { return OffsetInBits + SizeInBits; }
+
+    /// Returns a zero-sized fragment if A and B don't intersect.
+    static DIExpression::FragmentInfo intersect(DIExpression::FragmentInfo A,
+                                                DIExpression::FragmentInfo B) {
+      uint64_t StartInBits = std::max(A.OffsetInBits, B.OffsetInBits);
+      uint64_t EndInBits = std::min(A.endInBits(), B.endInBits());
+      if (EndInBits <= StartInBits)
+        return {0, 0};
+      return DIExpression::FragmentInfo(EndInBits - StartInBits, StartInBits);
+    }
   };
 
   /// Retrieve the details of this fragment expression.
@@ -3128,9 +3146,8 @@ namespace DIOp {
 // These are the concrete alternatives that a DIOp::Variant encapsulates.
 #define HANDLE_OP0(NAME)                                                       \
   class NAME {                                                                 \
-    DECLARE_INTRUSIVE_ALTERNATIVE                                              \
   public:                                                                      \
-    explicit NAME() {}                                                         \
+    explicit constexpr NAME() {}                                               \
     bool operator==(const NAME &O) const { return true; }                      \
     friend hash_code hash_value(const NAME &O);                                \
     static constexpr StringRef getAsmName();                                   \
@@ -3138,11 +3155,10 @@ namespace DIOp {
   };
 #define HANDLE_OP1(NAME, TYPE1, NAME1)                                         \
   class NAME {                                                                 \
-    DECLARE_INTRUSIVE_ALTERNATIVE                                              \
     TYPE1 NAME1;                                                               \
                                                                                \
   public:                                                                      \
-    explicit NAME(TYPE1 NAME1) : NAME1(NAME1) {}                               \
+    explicit constexpr NAME(TYPE1 NAME1) : NAME1(NAME1) {}                     \
     bool operator==(const NAME &O) const { return NAME1 == O.NAME1; }          \
     friend hash_code hash_value(const NAME &O);                                \
     static constexpr StringRef getAsmName();                                   \
@@ -3152,12 +3168,12 @@ namespace DIOp {
   };
 #define HANDLE_OP2(NAME, TYPE1, NAME1, TYPE2, NAME2)                           \
   class NAME {                                                                 \
-    DECLARE_INTRUSIVE_ALTERNATIVE                                              \
     TYPE1 NAME1;                                                               \
     TYPE2 NAME2;                                                               \
                                                                                \
   public:                                                                      \
-    explicit NAME(TYPE1 NAME1, TYPE2 NAME2) : NAME1(NAME1), NAME2(NAME2) {}    \
+    explicit constexpr NAME(TYPE1 NAME1, TYPE2 NAME2)                          \
+        : NAME1(NAME1), NAME2(NAME2) {}                                        \
     bool operator==(const NAME &O) const {                                     \
       return NAME1 == O.NAME1 && NAME2 == O.NAME2;                             \
     }                                                                          \
@@ -3169,10 +3185,12 @@ namespace DIOp {
     TYPE2 get##NAME2() const { return NAME2; }                                 \
     void set##NAME2(TYPE2 NAME2) { this->NAME2 = NAME2; }                      \
   };
+LLVM_PACKED_START
 #include "llvm/IR/DIExprOps.def"
+LLVM_PACKED_END
 
 /// Container for a runtime-variant DIOp
-using Variant = IntrusiveVariant<
+using Variant = std::variant<
 #define HANDLE_OP_NAME(NAME) NAME
 #define SEPARATOR ,
 #include "llvm/IR/DIExprOps.def"
@@ -3212,20 +3230,25 @@ DEFINE_BC_ID(PushLane, 21u)
 unsigned getBitcodeID(const Variant &V);
 
 // The sizeof of `Op` is the size of the largest union variant, which
-// is essentially defined as:
+// should essentially be defined as a packed struct equivalent to:
 //
-//    uint8_t Kind;
+//    uint8_t Index; // Internal to std::variant, but we expect this to be
+//                   // the smallest available integral type which
+//                   // can represent our set of alternatives.
 //    uint32_t I;
 //    void* P;
 //
-// For 64-bit targets, try to catch issues where the struct is not packed
-// into two 64-bit words.
+// Note that there is no public interface which lets a pointer to the members
+// of the alternative types escape, and so we can safely pack them. This
+// means huge performance benefits (smaller memory footprint and more
+// cache-friendly traversal).
+//
+// This static_assert tries to catch issues where the struct is not packed into
+// at most two 64-bit words, as we would expect it to be.
 //
 // FIXME: If we can constrain `I` further to <= 16 bits we should also
 // fit in two 32-bit words on 32-bit targets.
-static_assert(sizeof(uintptr_t) != 64 ||
-                  sizeof(Variant) == 2 * sizeof(uintptr_t),
-              "oversized DIOp");
+static_assert(sizeof(DIOp::Variant) <= 16);
 
 } // namespace DIOp
 
@@ -3272,6 +3295,7 @@ public:
   public:
     Iterator() = delete;
     Iterator(const Iterator &) = default;
+    Iterator &operator=(const Iterator &) = default;
     bool operator==(const Iterator &R) const { return R.Op == Op; }
     DIOp::Variant &operator*() const { return *Op; }
     friend iterator_facade_base::difference_type operator-(Iterator LHS,
@@ -3298,7 +3322,7 @@ public:
   Iterator insert(Iterator I, ArgsT &&...Args) {
     // FIXME: SmallVector doesn't define an ::emplace(iterator, ...)
     return Elements.insert(
-        I.Op, DIOp::Variant{in_place_type<T>, std::forward<ArgsT>(Args)...});
+        I.Op, DIOp::Variant{std::in_place_type<T>, std::forward<ArgsT>(Args)...});
   }
 
   template <typename RangeTy> Iterator insert(Iterator I, RangeTy &&R) {
@@ -3321,7 +3345,7 @@ public:
   /// DIOp is constructed in-place by forwarding the provided arguments Args.
   template <typename T, typename... ArgsT>
   DIExprBuilder &append(ArgsT &&...Args) {
-    Elements.emplace_back(in_place_type<T>, std::forward<ArgsT>(Args)...);
+    Elements.emplace_back(std::in_place_type<T>, std::forward<ArgsT>(Args)...);
     return *this;
   }
 
@@ -3331,7 +3355,8 @@ public:
   /// Returns true if the expression being built contains DIOp of type T,
   /// false otherwise.
   template <typename T> bool contains() const {
-    return any_of(Elements, std::mem_fn(&DIOp::Variant::holdsAlternative<T>));
+    return any_of(Elements,
+                  [](auto &&E) { return std::holds_alternative<T>(E); });
   }
 
   /// Update the expression to reflect the removal of one level of indirection

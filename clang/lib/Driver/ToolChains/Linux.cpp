@@ -86,6 +86,39 @@ std::string Linux::getMultiarchTriple(const Driver &D,
   case llvm::Triple::aarch64_be:
     return "aarch64_be-linux-gnu";
 
+  case llvm::Triple::loongarch64: {
+    const char *Libc;
+    const char *FPFlavor;
+
+    if (TargetTriple.isGNUEnvironment()) {
+      Libc = "gnu";
+    } else if (TargetTriple.isMusl()) {
+      Libc = "musl";
+    } else {
+      return TargetTriple.str();
+    }
+
+    switch (TargetEnvironment) {
+    default:
+      return TargetTriple.str();
+    case llvm::Triple::GNUSF:
+      FPFlavor = "sf";
+      break;
+    case llvm::Triple::GNUF32:
+      FPFlavor = "f32";
+      break;
+    case llvm::Triple::GNU:
+    case llvm::Triple::GNUF64:
+      // This was going to be "f64" in an earlier Toolchain Conventions
+      // revision, but starting from Feb 2023 the F64 ABI variants are
+      // unmarked in their canonical forms.
+      FPFlavor = "";
+      break;
+    }
+
+    return (Twine("loongarch64-linux-") + Libc + FPFlavor).str();
+  }
+
   case llvm::Triple::m68k:
     return "m68k-linux-gnu";
 
@@ -180,7 +213,7 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
     : Generic_ELF(D, Triple, Args) {
   GCCInstallation.init(Triple, Args);
   Multilibs = GCCInstallation.getMultilibs();
-  SelectedMultilib = GCCInstallation.getMultilib();
+  SelectedMultilibs.assign({GCCInstallation.getMultilib()});
   llvm::Triple::ArchType Arch = Triple.getArch();
   std::string SysRoot = computeSysRoot();
   ToolChain::path_list &PPaths = getProgramPaths();
@@ -224,8 +257,8 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   const bool IsRISCV = Triple.isRISCV();
   const bool IsCSKY = Triple.isCSKY();
 
-  if (IsCSKY)
-    SysRoot = SysRoot + SelectedMultilib.osSuffix();
+  if (IsCSKY && !SelectedMultilibs.empty())
+    SysRoot = SysRoot + SelectedMultilibs.back().osSuffix();
 
   if ((IsMips || IsCSKY) && !SysRoot.empty())
     ExtraOpts.push_back("--sysroot=" + SysRoot);
@@ -298,13 +331,6 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   }
 
   Generic_GCC::AddMultiarchPaths(D, SysRoot, OSLibDir, Paths);
-
-  // The deprecated -DLLVM_ENABLE_PROJECTS=libcxx configuration installs
-  // libc++.so in D.Dir+"/../lib/". Detect this path.
-  // TODO Remove once LLVM_ENABLE_PROJECTS=libcxx is unsupported.
-  if (StringRef(D.Dir).startswith(SysRoot) &&
-      D.getVFS().exists(D.Dir + "/../lib/libc++.so"))
-    addPathIfExists(D, D.Dir + "/../lib", Paths);
 
   addPathIfExists(D, concat(SysRoot, "/lib"), Paths);
   addPathIfExists(D, concat(SysRoot, "/usr/lib"), Paths);
@@ -400,9 +426,17 @@ std::string Linux::getDynamicLinker(const ArgList &Args) const {
 
   const Distro Distro(getDriver().getVFS(), Triple);
 
-  if (Triple.isAndroid())
+  if (Triple.isAndroid()) {
+    if (getSanitizerArgs(Args).needsHwasanRt() &&
+        !Triple.isAndroidVersionLT(34) && Triple.isArch64Bit()) {
+      // On Android 14 and newer, there is a special linker_hwasan64 that
+      // allows to run HWASan binaries on non-HWASan system images. This
+      // is also available on HWASan system images, so we can just always
+      // use that instead.
+      return "/system/bin/linker_hwasan64";
+    }
     return Triple.isArch64Bit() ? "/system/bin/linker64" : "/system/bin/linker";
-
+  }
   if (Triple.isMusl()) {
     std::string ArchName;
     bool IsArm = false;
@@ -995,7 +1029,7 @@ SanitizerMask Linux::getSupportedSanitizers() const {
   Res |= SanitizerKind::Memory;
   Res |= SanitizerKind::Vptr;
   Res |= SanitizerKind::SafeStack;
-  if (IsX86_64 || IsMIPS64 || IsAArch64)
+  if (IsX86_64 || IsMIPS64 || IsAArch64 || IsLoongArch64)
     Res |= SanitizerKind::DataFlow;
   if (IsX86_64 || IsMIPS64 || IsAArch64 || IsX86 || IsArmArch || IsPowerPC64 ||
       IsRISCV64 || IsSystemZ || IsHexagon || IsLoongArch64)
@@ -1003,10 +1037,8 @@ SanitizerMask Linux::getSupportedSanitizers() const {
   if (IsX86_64 || IsMIPS64 || IsAArch64 || IsPowerPC64 || IsSystemZ ||
       IsLoongArch64)
     Res |= SanitizerKind::Thread;
-  if (IsX86_64)
+  if (IsX86_64 || IsSystemZ)
     Res |= SanitizerKind::KernelMemory;
-  if (IsX86 || IsX86_64)
-    Res |= SanitizerKind::Function;
   if (IsX86_64 || IsMIPS64 || IsAArch64 || IsX86 || IsMIPS || IsArmArch ||
       IsPowerPC64 || IsHexagon || IsLoongArch64 || IsRISCV64)
     Res |= SanitizerKind::Scudo;
@@ -1016,6 +1048,9 @@ SanitizerMask Linux::getSupportedSanitizers() const {
   if (IsX86_64 || IsAArch64) {
     Res |= SanitizerKind::KernelHWAddress;
   }
+  // Work around "Cannot represent a difference across sections".
+  if (getTriple().getArch() == llvm::Triple::ppc64)
+    Res &= ~SanitizerKind::Function;
   return Res;
 }
 

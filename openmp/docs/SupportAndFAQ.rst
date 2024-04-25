@@ -158,7 +158,6 @@ The libraries used by an executable compiled for target offloading are:
   - ``libomptarget.rtl.amdgpu.so``
   - ``libomptarget.rtl.cuda.so``
   - ``libomptarget.rtl.x86_64.so``
-  - ``libomptarget.rtl.ve.so``
   - and others
 
 - dependencies of those plugins, e.g. cuda/rocr for nvptx/amdgpu
@@ -168,11 +167,18 @@ The compiled executable is dynamically linked against a host runtime, e.g.
 are found like any other dynamic library, by setting rpath or runpath on the
 executable, by setting ``LD_LIBRARY_PATH``, or by adding them to the system search.
 
-``libomptarget.so`` has rpath or runpath (whichever the system default is) set to
-``$ORIGIN``, and the plugins are located next to it, so it will find the plugins
-without any environment variables set. If ``LD_LIBRARY_PATH`` is set, whether it
-overrides which plugin is found depends on whether your system treats ``-Wl,-rpath``
-as RPATH or RUNPATH.
+``libomptarget.so`` is only supported to work with the associated ``clang`` 
+compiler. On systems with globally installed ``libomptarget.so`` this can be 
+problematic. For this reason it is recommended to use a `Clang configuration 
+file <https://clang.llvm.org/docs/UsersManual.html#configuration-files>`__ to 
+automatically configure the environment. For example, store the following file 
+as ``openmp.cfg`` next to your ``clang`` executable.
+
+.. code-block:: text
+
+  # Library paths for OpenMP offloading.
+  -L '<CFGDIR>/../lib'
+  -Wl,-rpath='<CFGDIR>/../lib'
 
 The plugins will try to find their dependencies in plugin-dependent fashion.
 
@@ -238,15 +244,6 @@ through a similar mechanism. It is worth noting that this support requires
 <https://clang.llvm.org/docs/AttributeReference.html#pragma-omp-declare-variant>`__
 that are exposed through LLVM/Clang to the user as well.
 
-Q: What is a way to debug errors from mapping memory to a target device?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-An experimental way to debug these errors is to use :ref:`remote process
-offloading <remote_offloading_plugin>`.
-By using ``libomptarget.rtl.rpc.so`` and ``openmp-offloading-server``, it is
-possible to explicitly perform memory transfers between processes on the host
-CPU and run sanitizers while doing so in order to catch these errors.
-
 Q: Why does my application say "Named symbol not found" and abort when I run it?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -300,7 +297,7 @@ require a few additions.
 
 .. code-block:: cmake
 
-  cmake_minimum_required(VERSION 3.13.4)
+  cmake_minimum_required(VERSION 3.20.0)
   project(offloadTest VERSION 1.0 LANGUAGES CXX)
 
   list(APPEND CMAKE_MODULE_PATH "${PATH_TO_OPENMP_INSTALL}/lib/cmake/openmp")
@@ -311,7 +308,7 @@ require a few additions.
   target_link_libraries(offload PRIVATE OpenMPTarget::OpenMPTarget_NVPTX)
   target_sources(offload PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/Main.cpp)
 
-Using this module requires at least CMake version 3.13.4. Supported languages
+Using this module requires at least CMake version 3.20.0. Supported languages
 are C and C++ with Fortran support planned in the future. Compiler support is
 best for Clang but this module should work for other compiler vendors such as
 IBM, GNU.
@@ -426,3 +423,21 @@ Clang compiler and runtime libraries from the same build. Nevertheless, in order
 to better support third-party libraries and toolchains that depend on existing
 libomptarget entry points, contributors are discouraged from making
 modifications to them.
+
+Q: Can I use libc functions on the GPU?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+LLVM provides basic ``libc`` functionality through the LLVM C Library. For 
+building instructions, refer to the associated `LLVM libc documentation 
+<https://libc.llvm.org/gpu/using.html#building-the-gpu-library>`_. Once built, 
+this provides a static library called ``libcgpu.a``. See the documentation for a 
+list of `supported functions <https://libc.llvm.org/gpu/support.html>`_ as well. 
+To utilize these functions, simply link this library as any other when building 
+with OpenMP.
+
+.. code-block:: shell
+
+   clang++ openmp.cpp -fopenmp --offload-arch=gfx90a -lcgpu
+
+For more information on how this is implemented in LLVM/OpenMP's offloading 
+runtime, refer to the `runtime documentation <libomptarget_libc>`_.

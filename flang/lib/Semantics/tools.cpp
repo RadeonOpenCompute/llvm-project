@@ -515,7 +515,15 @@ const Symbol *FindOverriddenBinding(const Symbol &symbol) {
     if (const DeclTypeSpec * parentType{FindParentTypeSpec(symbol.owner())}) {
       if (const DerivedTypeSpec * parentDerived{parentType->AsDerived()}) {
         if (const Scope * parentScope{parentDerived->typeSymbol().scope()}) {
-          return parentScope->FindComponent(symbol.name());
+          if (const Symbol *
+              overridden{parentScope->FindComponent(symbol.name())}) {
+            // 7.5.7.3 p1: only accessible bindings are overridden
+            if (!overridden->attrs().test(Attr::PRIVATE) ||
+                (FindModuleContaining(overridden->owner()) ==
+                    FindModuleContaining(symbol.owner()))) {
+              return overridden;
+            }
+          }
         }
       }
     }
@@ -642,21 +650,23 @@ bool HasDeclarationInitializer(const Symbol &symbol) {
   }
 }
 
-bool IsInitialized(
-    const Symbol &symbol, bool ignoreDataStatements, bool ignoreAllocatable) {
+bool IsInitialized(const Symbol &symbol, bool ignoreDataStatements,
+    bool ignoreAllocatable, bool ignorePointer) {
   if (!ignoreAllocatable && IsAllocatable(symbol)) {
     return true;
   } else if (!ignoreDataStatements && symbol.test(Symbol::Flag::InDataStmt)) {
     return true;
   } else if (HasDeclarationInitializer(symbol)) {
     return true;
-  } else if (IsNamedConstant(symbol) || IsFunctionResult(symbol) ||
-      IsPointer(symbol)) {
+  } else if (IsPointer(symbol)) {
+    return !ignorePointer;
+  } else if (IsNamedConstant(symbol) || IsFunctionResult(symbol)) {
     return false;
   } else if (const auto *object{symbol.detailsIf<ObjectEntityDetails>()}) {
     if (!object->isDummy() && object->type()) {
       if (const auto *derived{object->type()->AsDerived()}) {
-        return derived->HasDefaultInitialization(ignoreAllocatable);
+        return derived->HasDefaultInitialization(
+            ignoreAllocatable, ignorePointer);
       }
     }
   }
@@ -923,11 +933,12 @@ public:
   }
   bool operator()(const parser::CallStmt &stmt) {
     const auto &procedureDesignator{
-        std::get<parser::ProcedureDesignator>(stmt.v.t)};
+        std::get<parser::ProcedureDesignator>(stmt.call.t)};
     if (auto *name{std::get_if<parser::Name>(&procedureDesignator.u)}) {
       // TODO: also ensure that the procedure is, in fact, an intrinsic
       if (name->source == "move_alloc") {
-        const auto &args{std::get<std::list<parser::ActualArgSpec>>(stmt.v.t)};
+        const auto &args{
+            std::get<std::list<parser::ActualArgSpec>>(stmt.call.t)};
         if (!args.empty()) {
           const parser::ActualArg &actualArg{
               std::get<parser::ActualArg>(args.front().t)};
@@ -1053,6 +1064,18 @@ bool IsUnlimitedPolymorphic(const Symbol &symbol) {
 
 bool IsPolymorphicAllocatable(const Symbol &symbol) {
   return IsAllocatable(symbol) && IsPolymorphic(symbol);
+}
+
+const Scope *FindCUDADeviceContext(const Scope *scope) {
+  return !scope ? nullptr : FindScopeContaining(*scope, [](const Scope &s) {
+    return IsCUDADeviceContext(&s);
+  });
+}
+
+std::optional<common::CUDADataAttr> GetCUDADataAttr(const Symbol *symbol) {
+  const auto *object{
+      symbol ? symbol->detailsIf<ObjectEntityDetails>() : nullptr};
+  return object ? object->cudaDataAttr() : std::nullopt;
 }
 
 std::optional<parser::MessageFormattedText> CheckAccessibleSymbol(
@@ -1549,14 +1572,14 @@ const DerivedTypeSpec *GetDtvArgDerivedType(const Symbol &proc) {
   }
 }
 
-bool HasDefinedIo(GenericKind::DefinedIo which, const DerivedTypeSpec &derived,
+bool HasDefinedIo(common::DefinedIo which, const DerivedTypeSpec &derived,
     const Scope *scope) {
   if (const Scope * dtScope{derived.scope()}) {
     for (const auto &pair : *dtScope) {
       const Symbol &symbol{*pair.second};
       if (const auto *generic{symbol.detailsIf<GenericDetails>()}) {
         GenericKind kind{generic->kind()};
-        if (const auto *io{std::get_if<GenericKind::DefinedIo>(&kind.u)}) {
+        if (const auto *io{std::get_if<common::DefinedIo>(&kind.u)}) {
           if (*io == which) {
             return true; // type-bound GENERIC exists
           }
@@ -1587,55 +1610,40 @@ bool HasDefinedIo(GenericKind::DefinedIo which, const DerivedTypeSpec &derived,
   return false;
 }
 
-static std::pair<const Symbol *, bool /*isPolymorphic*/>
-FindNonTypeBoundDefinedIo(const Scope &scope, const evaluate::DynamicType &type,
-    GenericKind::DefinedIo io) {
-  if (const DerivedTypeSpec * derived{evaluate::GetDerivedTypeSpec(type)}) {
-    if (const Symbol * symbol{scope.FindSymbol(GenericKind::AsFortran(io))}) {
-      if (const auto *generic{symbol->detailsIf<GenericDetails>()}) {
-        for (const auto &ref : generic->specificProcs()) {
-          const Symbol &specific{ref->GetUltimate()};
-          if (const DeclTypeSpec * dtvTypeSpec{GetDtvArgTypeSpec(specific)}) {
-            if (const DerivedTypeSpec * dtvDerived{dtvTypeSpec->AsDerived()}) {
-              if (evaluate::AreSameDerivedType(*derived, *dtvDerived)) {
-                return {&specific, dtvTypeSpec->IsPolymorphic()};
-              }
-            }
-          }
+void WarnOnDeferredLengthCharacterScalar(SemanticsContext &context,
+    const SomeExpr *expr, parser::CharBlock at, const char *what) {
+  if (context.languageFeatures().ShouldWarn(
+          common::UsageWarning::F202XAllocatableBreakingChange)) {
+    if (const Symbol *
+        symbol{evaluate::UnwrapWholeSymbolOrComponentDataRef(expr)}) {
+      const Symbol &ultimate{ResolveAssociations(*symbol)};
+      if (const DeclTypeSpec * type{ultimate.GetType()}; type &&
+          type->category() == DeclTypeSpec::Category::Character &&
+          type->characterTypeSpec().length().isDeferred() &&
+          IsAllocatable(ultimate) && ultimate.Rank() == 0) {
+        context.Say(at,
+            "The deferred length allocatable character scalar variable '%s' may be reallocated to a different length under the new Fortran 202X standard semantics for %s"_port_en_US,
+            symbol->name(), what);
+      }
+    }
+  }
+}
+
+bool CouldBeDataPointerValuedFunction(const Symbol *original) {
+  if (original) {
+    const Symbol &ultimate{original->GetUltimate()};
+    if (const Symbol * result{FindFunctionResult(ultimate)}) {
+      return IsPointer(*result) && !IsProcedure(*result);
+    }
+    if (const auto *generic{ultimate.detailsIf<GenericDetails>()}) {
+      for (const SymbolRef &ref : generic->specificProcs()) {
+        if (CouldBeDataPointerValuedFunction(&*ref)) {
+          return true;
         }
       }
     }
   }
-  return {nullptr, false};
-}
-
-std::pair<const Symbol *, bool /*isPolymorphic*/> FindNonTypeBoundDefinedIo(
-    const SemanticsContext &context, const parser::OutputItem &item,
-    bool isFormatted) {
-  if (const auto *expr{std::get_if<parser::Expr>(&item.u)};
-      expr && expr->typedExpr && expr->typedExpr->v) {
-    if (auto type{expr->typedExpr->v->GetType()}) {
-      return FindNonTypeBoundDefinedIo(context.FindScope(expr->source), *type,
-          isFormatted ? GenericKind::DefinedIo::WriteFormatted
-                      : GenericKind::DefinedIo::WriteUnformatted);
-    }
-  }
-  return {nullptr, false};
-}
-
-std::pair<const Symbol *, bool /*isPolymorphic*/> FindNonTypeBoundDefinedIo(
-    const SemanticsContext &context, const parser::InputItem &item,
-    bool isFormatted) {
-  if (const auto *var{std::get_if<parser::Variable>(&item.u)};
-      var && var->typedExpr && var->typedExpr->v) {
-    if (auto type{var->typedExpr->v->GetType()}) {
-      return FindNonTypeBoundDefinedIo(context.FindScope(var->GetSource()),
-          *type,
-          isFormatted ? GenericKind::DefinedIo::ReadFormatted
-                      : GenericKind::DefinedIo::ReadUnformatted);
-    }
-  }
-  return {nullptr, false};
+  return false;
 }
 
 } // namespace Fortran::semantics

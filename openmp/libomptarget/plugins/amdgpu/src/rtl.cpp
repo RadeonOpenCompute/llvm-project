@@ -78,7 +78,7 @@ using namespace llvm::omp::target::plugin::utils;
 #define CHECK_KMT_ERROR(val) kmtCheck((val), #val, __FILE__, __LINE__)
 template <typename T>
 int kmtCheck(T err, const char *const func, const char *const file,
-              const int line) {
+             const int line) {
   if (err != HSAKMT_STATUS_SUCCESS) {
     DP("HsaKmt Error at: %s : %u \n", file, line);
     return -1;

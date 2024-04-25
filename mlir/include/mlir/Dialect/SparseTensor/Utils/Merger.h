@@ -45,7 +45,7 @@ struct TensorExp final {
   // The `y`, `v`, and `op` parameters either must or must not be
   // `kInvalidId`/`nullptr`, depending on the value of the `k` parameter;
   // however, they have uniform C++ types regardless of the value of `k`.
-  TensorExp(Kind k, unsigned x, ExprId y, Value v, Operation *op);
+  TensorExp(Kind k, unsigned x, ExprId y, Value v, Operation *op, Attribute a);
 
   /// Tensor expression kind.
   Kind kind;
@@ -70,7 +70,14 @@ struct TensorExp final {
   /// and kSelect, this holds the original operation with all regions. For
   /// kBinaryBranch, this holds the YieldOp for the left or right half
   /// to be merged into a nested scf loop.
+  ///
+  /// Or the actual operation that we can not sparsify but having all dense
+  /// operands for kDenseOp.
   Operation *op;
+
+  /// An optional attribute that is required to determine the semantics of the
+  /// operations. E.g., CmpPredicateAttr for CmpI/CmpF operations.
+  Attribute attr;
 };
 
 /// Tensor expression kind.
@@ -79,6 +86,10 @@ struct TensorExp final {
 /// That is, its argument is a `LoopId` identifying the loop-variable
 /// in question, and its value will be the current iteration's value
 /// of that loop-variable.  See the `LoopId` documentation for more details.
+///
+/// The `kSynZero` leaf kind is for representing a synthetic zero value, which
+/// can be introduced when sparsifying operations like `arith::cmp` to generate
+/// `arith::cmp %lhs, %syn_zero` when the rhs operand is absent.
 //
 // TODO: Modify this definition so that the numeric values already encode
 // the `ExpArity` (while extending the notion of "arity" to include not
@@ -89,6 +100,7 @@ struct TensorExp final {
 enum class TensorExp::Kind {
   // Leaf.
   kTensor = 0,
+  kSynZero,
   kInvariant,
   kLoopVar,
   // Unary operations.
@@ -143,11 +155,14 @@ enum class TensorExp::Kind {
   kAndI,
   kOrI,
   kXorI,
+  kCmpI,
+  kCmpF,
   kShrS, // signed
   kShrU, // unsigned
   kShlI,
-  kBinary, // semiring binary op
-  kReduce, // semiring reduction op
+  kBinary,  // semiring binary op
+  kReduce,  // semiring reduction op
+  kDenseOp, // special category of operations requiring all dense operands
 };
 
 //===----------------------------------------------------------------------===//
@@ -246,13 +261,16 @@ public:
   ExprId addLoopVarExp(LoopId i);
   /// Constructs a new invariant expression, and returns its identifier.
   ExprId addInvariantExp(Value v);
+  /// Constructs a new synthetic zero expression.
+  ExprId addSynZeroExp();
   /// Constructs a new unary or binary expression, and returns its identifier.
   ExprId addExp(TensorExp::Kind k, ExprId e0, ExprId e1 = detail::kInvalidId,
-                Operation *op = nullptr);
+                Operation *op = nullptr, Attribute attr = nullptr);
   /// Constructs a new sesquinary expression, and returns its identifier.
   /// Currently no sesquinary `Kind` allows specifying the `op`, but we
   /// allow it anyways because `mapSet` is designed to allow it.
-  ExprId addExp(TensorExp::Kind k, ExprId e, Value v, Operation *op = nullptr);
+  ExprId addExp(TensorExp::Kind k, ExprId e, Value v, Operation *op = nullptr,
+                Attribute attr = nullptr);
 
   /// Constructs a new iteration lattice point, and returns its identifier.
   LatPointId addLat(TensorId t, LoopId i, ExprId e);
@@ -265,32 +283,41 @@ public:
   /// of `LoopId` (effectively constructing a larger "intersection" of those
   /// loops) with a newly constructed tensor (sub)expression of given kind.
   /// Returns the identifier of the new lattice point.
-  LatPointId conjLat(TensorExp::Kind kind, LatPointId p0, LatPointId p1,
+  LatPointId conjLat(ExprId e, LatPointId p0, LatPointId p1,
                      Operation *op = nullptr);
 
   /// Conjunctive merge of two lattice sets: `(s0 /\_op s1)`.
   /// Returns the identifier of the new set.
-  LatSetId conjSet(TensorExp::Kind kind, LatSetId s0, LatSetId s1,
-                   Operation *op = nullptr);
+  LatSetId conjSet(ExprId e, LatSetId s0, LatSetId s1, Operation *op = nullptr);
 
   /// Disjunctive merge of two lattice sets: `(s0 /\_op s1, s0, s1)`.
   /// Returns the identifier of the new set.
-  LatSetId disjSet(TensorExp::Kind kind, LatSetId s0, LatSetId s1,
-                   Operation *op = nullptr);
+  LatSetId disjSet(ExprId e, LatSetId s0, LatSetId s1, Operation *op = nullptr);
+
+  /// Disjunctive merge of two lattice sets and also set one of the operand to
+  /// zero: `(s0 /\_op s1 (e0 op e1), s0 (0 op e0), s1 (e1 op 0))`.
+  /// Returns the identifier of the new set.
+  LatSetId disjSetWithZero(ExprId e, LatSetId s0, LatSetId s1);
 
   /// Disjunctive merge of two lattice sets with custom handling of the
   /// overlap, left, and right regions.  Any region may be left missing
   /// in the output.  Returns the identifier of the new set.
-  LatSetId combiSet(TensorExp::Kind kind, LatSetId s0, LatSetId s1,
-                    Operation *orig, bool includeLeft, TensorExp::Kind ltrans,
-                    Operation *opleft, bool includeRight,
-                    TensorExp::Kind rtrans, Operation *opright);
+  LatSetId combiSet(ExprId e, LatSetId s0, LatSetId s1, Operation *orig,
+                    bool includeLeft, TensorExp::Kind ltrans, Operation *opleft,
+                    bool includeRight, TensorExp::Kind rtrans,
+                    Operation *opright);
 
   /// Maps the unary operator over the lattice set of the operand, i.e. each
   /// lattice point on an expression E is simply copied over, but with OP E
   /// as new expression. Returns the identifier of the new set.
   LatSetId mapSet(TensorExp::Kind kind, LatSetId s, Value v = Value(),
                   Operation *op = nullptr);
+
+  /// Maps the binary operator to the same operation but with one of its operand
+  /// set to zero, i.e. each lattice point on an expression E is simply copied
+  /// over, but with `OP 0 E` (if lhsZero == true) or `OP E 0` (if lhsZero ==
+  /// false) as new expression. Returns the identifier of the new set.
+  LatSetId mapBinWithSynZeroSet(ExprId e, LatSetId s, bool lhsZero);
 
   /// Optimizes the iteration lattice points in the given set. This
   /// method should be called right before code generation to avoid
@@ -377,14 +404,14 @@ public:
   bool hasSparseIdxReduction(const BitVector &bits) const;
 
   /// Gets the level-type of the `t`th tensor on `i`th loop.
-  DimLevelType getDimLevelType(TensorId t, LoopId i) const {
+  DimLevelType getLvlType(TensorId t, LoopId i) const {
     assert(isValidTensorId(t) && isValidLoopId(i));
     return lvlTypes[t][i];
   }
 
   /// Gets the level-type of the TensorLoopId.
-  DimLevelType getDimLevelType(TensorLoopId b) const {
-    return getDimLevelType(tensor(b), loop(b));
+  DimLevelType getLvlType(TensorLoopId b) const {
+    return getLvlType(tensor(b), loop(b));
   }
 
   /// Gets the loop identifier for the `lvl`th level of the `t`th tensor.
@@ -409,6 +436,9 @@ public:
     lvlTypes[t][i] = dlt;
     loopToLvl[t][i] = lvl;
     lvlToLoop[t][lvl] = i;
+    // TODO: Maybe we should favor a constant loop bound when there are multiple
+    // choices.
+    loopBounds[i] = std::make_pair(t, lvl);
   }
 
   using ForeachTensorLoopIdCallback = function_ref<void(
@@ -431,12 +461,12 @@ public:
     for (const TensorLoopId b : bits.set_bits()) {
       const TensorId t = tensor(b);
       const auto optLvl = getLvl(b);
-      const auto lvlTp = getDimLevelType(b);
+      const auto lvlTp = getLvlType(b);
       if (isLvlWithNonTrivialIdxExp(b)) {
         // This must be an undefined level.
         assert(!optLvl.has_value());
         // Slice the tid along the dependent level to iterate current loop.
-        callback(b, t, loopToDependencies[loop(b)][t], lvlTp,
+        callback(b, t, getLoopDependentLevel(b), lvlTp,
                  /*isIdxReduc=*/true);
       } else {
         callback(b, t, optLvl, lvlTp, /*isIdxReduc=*/false);
@@ -447,11 +477,13 @@ public:
   /// Sets whether the output tensor is sparse or not.
   void setHasSparseOut(bool s) { hasSparseOut = s; }
 
-  /// Establishes the two-way map that i <-> <t, lvl>.
-  void setLoopDependentTensorLevel(LoopId i, TensorId t, Level lvl) {
+  /// Establishes the two-way map that i <-> <t, lvl, dlt>.
+  void setLoopDependentTensorLevel(LoopId i, TensorId t, Level lvl,
+                                   DimLevelType dlt) {
     assert(isValidLoopId(i) && isValidLevel(t, lvl));
-    loopToDependencies[i][t] = lvl;
-    levelToDependentIdx[t][lvl].push_back(i);
+    assert(!loopToDependencies[i][t].has_value()); // must be the first def
+    loopToDependencies[i][t] = std::make_pair(lvl, dlt);
+    levelToDependentLoop[t][lvl].push_back(i);
   }
 
   /// Whether the loop has dependent slice.
@@ -464,7 +496,7 @@ public:
   /// expression on t_l, e.g., A[i+j] => {i, j}
   std::vector<LoopId> &getDependentLoops(TensorId t, Level lvl) {
     assert(isValidLevel(t, lvl));
-    return levelToDependentIdx[t][lvl];
+    return levelToDependentLoop[t][lvl];
   }
 
   /// Returns the defining [tid, lvl] for the loop.
@@ -473,13 +505,33 @@ public:
     return loopBounds[i];
   }
 
-  /// Checks whether the TensorLoopId represents a tensor level with
-  /// non-trivial index expression on it.
+  /// Checks whether the TensorLoopId represents a tensor level contains
+  /// non-trivial index expression.
   bool isLvlWithNonTrivialIdxExp(TensorLoopId b) const {
     const TensorId t = tensor(b);
     const LoopId i = loop(b);
     assert(isValidTensorId(t) && isValidLoopId(i));
     return loopToDependencies[i][t].has_value();
+  }
+
+  /// Checks whether the TensorLoopId represents a sparse tensor level contains
+  /// non-trivial index expression.
+  bool isSparseLvlWithNonTrivialIdxExp(TensorLoopId b) const {
+    if (isLvlWithNonTrivialIdxExp(b)) {
+      auto dlt = getLoopDependentLevelType(b);
+      return isCompressedDLT(dlt) || isSingletonDLT(dlt);
+    }
+    return false;
+  }
+
+  Level getLoopDependentLevel(TensorLoopId b) const {
+    assert(isLvlWithNonTrivialIdxExp(b));
+    return loopToDependencies[loop(b)][tensor(b)]->first;
+  }
+
+  DimLevelType getLoopDependentLevelType(TensorLoopId b) const {
+    assert(isLvlWithNonTrivialIdxExp(b));
+    return loopToDependencies[loop(b)][tensor(b)]->second;
   }
 
   /// Convenience getters to immediately access the stored nodes.
@@ -578,6 +630,7 @@ private:
     return i != detail::kInvalidId && i < numLoops;
   }
   bool isValidLevel(TensorId t, Level lvl) const {
+    assert(levelToDependentLoop[t].size() == lvlToLoop[t].size());
     return isValidTensorId(t) && lvl < lvlToLoop[t].size();
   }
   bool isValidExprId(ExprId e) const {
@@ -596,7 +649,11 @@ private:
   Type inferType(ExprId e, Value src) const;
 
   /// Traverses the SSA tree (possibly a DAG) to build a tensor expression.
-  std::optional<ExprId> buildTensorExp(linalg::GenericOp op, Value v);
+  /// The boolean value returned indicates whether the result of the current
+  /// operation being built depends on any value that is loaded from a sparse
+  /// tensor.
+  std::pair<std::optional<ExprId>, bool> buildTensorExp(linalg::GenericOp op,
+                                                        Value v);
 
   /// Merger data structures.
   const TensorId outTensor;
@@ -626,13 +683,15 @@ private:
   // Map from a loop to its dependencies if any.
   // The dependencies of a loop is a set of (tensor, level) pairs.
   // It is currently only set for non-trivial index expressions.
-  // E.g., A[i+j] => i and j will have dependencies {A0} to indicate that
-  // i and j are used in the non-trivial index expression on A0.
-  std::vector<std::vector<std::optional<Level>>> loopToDependencies;
+  // E.g., A[i+j] => i and j will have dependencies {A0, dlt(A0)} to indicate
+  // that i and j are used in the non-trivial index expression on A0.
+  std::vector<std::vector<std::optional<std::pair<Level, DimLevelType>>>>
+      loopToDependencies;
+
   // The inverse map of ldxToDependencies from tensor level -> dependent loop
   // E.g., A[i+j], we have A0 => {i, j}, to indicate that A0 uses both {i, j}
   // to compute its indices.
-  std::vector<std::vector<std::vector<LoopId>>> levelToDependentIdx;
+  std::vector<std::vector<std::vector<LoopId>>> levelToDependentLoop;
 
   // Map from a loop to the [tid, lvl] pair that defines the loop boundary.
   std::vector<std::pair<TensorId, Level>> loopBounds;

@@ -28,11 +28,11 @@ body: |
   ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[V_ACCVGPR_WRITE_B32_e64_2]], %bb.0, %13.sub1, %bb.1
   ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[V_ACCVGPR_WRITE_B32_e64_1]], %bb.0, %13.sub2, %bb.1
   ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[V_ACCVGPR_WRITE_B32_e64_]], %bb.0, %13.sub3, %bb.1
-  ; GFX908-NEXT:   [[PRED_COPY:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX908-NEXT:   [[PRED_COPY1:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX908-NEXT:   [[PRED_COPY2:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX908-NEXT:   [[PRED_COPY3:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY3]], %subreg.sub0, [[PRED_COPY2]], %subreg.sub1, [[PRED_COPY1]], %subreg.sub2, [[PRED_COPY]], %subreg.sub3
+  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX908-NEXT:   [[COPY3:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX908-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY5]], %subreg.sub0, [[COPY4]], %subreg.sub1, [[COPY3]], %subreg.sub2, [[COPY2]], %subreg.sub3
   ; GFX908-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX908-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX908-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -40,6 +40,7 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.2:
   ; GFX908-NEXT:   S_ENDPGM 0
+  ;
   ; GFX90A-LABEL: name: test_sgpr_init_multiuse
   ; GFX90A: bb.0:
   ; GFX90A-NEXT:   successors: %bb.1(0x80000000)
@@ -47,24 +48,24 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT:   [[COPY:%[0-9]+]]:sgpr_32 = COPY $sgpr0
   ; GFX90A-NEXT:   [[COPY1:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY1]]
-  ; GFX90A-NEXT:   [[PRED_COPY1:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY1]]
-  ; GFX90A-NEXT:   [[PRED_COPY2:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY1]]
-  ; GFX90A-NEXT:   [[PRED_COPY3:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY1]]
+  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[COPY1]]
+  ; GFX90A-NEXT:   [[COPY3:%[0-9]+]]:agpr_32 = COPY [[COPY1]]
+  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[COPY1]]
+  ; GFX90A-NEXT:   [[COPY5:%[0-9]+]]:agpr_32 = COPY [[COPY1]]
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.1:
   ; GFX90A-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX90A-NEXT:   liveins: $scc
   ; GFX90A-NEXT: {{  $}}
-  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY3]], %bb.0, %13.sub0, %bb.1
-  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY2]], %bb.0, %13.sub1, %bb.1
-  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY1]], %bb.0, %13.sub2, %bb.1
-  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %13.sub3, %bb.1
-  ; GFX90A-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX90A-NEXT:   [[PRED_COPY5:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX90A-NEXT:   [[PRED_COPY6:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX90A-NEXT:   [[PRED_COPY7:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY7]], %subreg.sub0, [[PRED_COPY6]], %subreg.sub1, [[PRED_COPY5]], %subreg.sub2, [[PRED_COPY4]], %subreg.sub3
+  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY5]], %bb.0, %13.sub0, %bb.1
+  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.0, %13.sub1, %bb.1
+  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY3]], %bb.0, %13.sub2, %bb.1
+  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.0, %13.sub3, %bb.1
+  ; GFX90A-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX90A-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX90A-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX90A-NEXT:   [[COPY9:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY9]], %subreg.sub0, [[COPY8]], %subreg.sub1, [[COPY7]], %subreg.sub2, [[COPY6]], %subreg.sub3
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX90A-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -72,7 +73,6 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.2:
   ; GFX90A-NEXT:   S_ENDPGM 0
-  ;
   bb.0:
     liveins: $sgpr0, $scc
     successors: %bb.1
@@ -114,18 +114,18 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT:   [[COPY:%[0-9]+]]:sgpr_64 = COPY $sgpr0_sgpr1
   ; GFX908-NEXT:   [[COPY1:%[0-9]+]]:vreg_64_align2 = COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY:%[0-9]+]]:areg_64_align2 = PRED_COPY [[COPY1]]
-  ; GFX908-NEXT:   [[PRED_COPY1:%[0-9]+]]:areg_64_align2 = PRED_COPY [[COPY1]]
+  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:areg_64_align2 = COPY [[COPY1]]
+  ; GFX908-NEXT:   [[COPY3:%[0-9]+]]:areg_64_align2 = COPY [[COPY1]]
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.1:
   ; GFX908-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX908-NEXT:   liveins: $scc
   ; GFX908-NEXT: {{  $}}
-  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:areg_64_align2 = PHI [[PRED_COPY1]], %bb.0, %9.sub0_sub1, %bb.1
-  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:areg_64_align2 = PHI [[PRED_COPY]], %bb.0, %9.sub2_sub3, %bb.1
-  ; GFX908-NEXT:   [[PRED_COPY2:%[0-9]+]]:vreg_64_align2 = PRED_COPY [[PHI1]]
-  ; GFX908-NEXT:   [[PRED_COPY3:%[0-9]+]]:vreg_64_align2 = PRED_COPY [[PHI]]
-  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY3]].sub0, %subreg.sub0, [[PRED_COPY3]].sub1, %subreg.sub1, [[PRED_COPY2]].sub0, %subreg.sub2, [[PRED_COPY2]].sub1, %subreg.sub3
+  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:areg_64_align2 = PHI [[COPY3]], %bb.0, %9.sub0_sub1, %bb.1
+  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:areg_64_align2 = PHI [[COPY2]], %bb.0, %9.sub2_sub3, %bb.1
+  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:vreg_64_align2 = COPY [[PHI1]]
+  ; GFX908-NEXT:   [[COPY5:%[0-9]+]]:vreg_64_align2 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY5]].sub0, %subreg.sub0, [[COPY5]].sub1, %subreg.sub1, [[COPY4]].sub0, %subreg.sub2, [[COPY4]].sub1, %subreg.sub3
   ; GFX908-NEXT:   [[V_MOV_B64_e32_:%[0-9]+]]:vreg_64_align2 = V_MOV_B64_e32 1073741824, implicit $exec
   ; GFX908-NEXT:   [[V_MOV_B64_e32_1:%[0-9]+]]:vreg_64_align2 = V_MOV_B64_e32 1065353216, implicit $exec
   ; GFX908-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B64_e32_1]].sub0, [[V_MOV_B64_e32_]].sub1, [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -133,6 +133,7 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.2:
   ; GFX908-NEXT:   S_ENDPGM 0
+  ;
   ; GFX90A-LABEL: name: test_sgpr_init_multiuse_agprtuple
   ; GFX90A: bb.0:
   ; GFX90A-NEXT:   successors: %bb.1(0x80000000)
@@ -140,18 +141,18 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT:   [[COPY:%[0-9]+]]:sgpr_64 = COPY $sgpr0_sgpr1
   ; GFX90A-NEXT:   [[COPY1:%[0-9]+]]:vreg_64_align2 = COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY:%[0-9]+]]:areg_64_align2 = PRED_COPY [[COPY1]]
-  ; GFX90A-NEXT:   [[PRED_COPY1:%[0-9]+]]:areg_64_align2 = PRED_COPY [[COPY1]]
+  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:areg_64_align2 = COPY [[COPY1]]
+  ; GFX90A-NEXT:   [[COPY3:%[0-9]+]]:areg_64_align2 = COPY [[COPY1]]
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.1:
   ; GFX90A-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX90A-NEXT:   liveins: $scc
   ; GFX90A-NEXT: {{  $}}
-  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:areg_64_align2 = PHI [[PRED_COPY1]], %bb.0, %9.sub0_sub1, %bb.1
-  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:areg_64_align2 = PHI [[PRED_COPY]], %bb.0, %9.sub2_sub3, %bb.1
-  ; GFX90A-NEXT:   [[PRED_COPY2:%[0-9]+]]:vreg_64_align2 = PRED_COPY [[PHI1]]
-  ; GFX90A-NEXT:   [[PRED_COPY3:%[0-9]+]]:vreg_64_align2 = PRED_COPY [[PHI]]
-  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY3]].sub0, %subreg.sub0, [[PRED_COPY3]].sub1, %subreg.sub1, [[PRED_COPY2]].sub0, %subreg.sub2, [[PRED_COPY2]].sub1, %subreg.sub3
+  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:areg_64_align2 = PHI [[COPY3]], %bb.0, %9.sub0_sub1, %bb.1
+  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:areg_64_align2 = PHI [[COPY2]], %bb.0, %9.sub2_sub3, %bb.1
+  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:vreg_64_align2 = COPY [[PHI1]]
+  ; GFX90A-NEXT:   [[COPY5:%[0-9]+]]:vreg_64_align2 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY5]].sub0, %subreg.sub0, [[COPY5]].sub1, %subreg.sub1, [[COPY4]].sub0, %subreg.sub2, [[COPY4]].sub1, %subreg.sub3
   ; GFX90A-NEXT:   [[V_MOV_B64_e32_:%[0-9]+]]:vreg_64_align2 = V_MOV_B64_e32 1073741824, implicit $exec
   ; GFX90A-NEXT:   [[V_MOV_B64_e32_1:%[0-9]+]]:vreg_64_align2 = V_MOV_B64_e32 1065353216, implicit $exec
   ; GFX90A-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B64_e32_1]].sub0, [[V_MOV_B64_e32_]].sub1, [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -159,7 +160,6 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.2:
   ; GFX90A-NEXT:   S_ENDPGM 0
-  ;
   bb.0:
     successors: %bb.1
     liveins: $sgpr0_sgpr1, $scc
@@ -198,27 +198,27 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT:   [[COPY:%[0-9]+]]:sgpr_32 = COPY $sgpr0
   ; GFX908-NEXT:   [[COPY1:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY1]]
-  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY1:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY2]]
+  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[COPY1]]
   ; GFX908-NEXT:   [[COPY3:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY2:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY3]]
-  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY3:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY4]]
+  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[COPY3]]
+  ; GFX908-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY6:%[0-9]+]]:agpr_32 = COPY [[COPY5]]
+  ; GFX908-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY8:%[0-9]+]]:agpr_32 = COPY [[COPY7]]
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.1:
   ; GFX908-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX908-NEXT:   liveins: $scc
   ; GFX908-NEXT: {{  $}}
-  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %16.sub0, %bb.1
-  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY1]], %bb.0, %16.sub1, %bb.1
-  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY2]], %bb.0, %16.sub2, %bb.1
-  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY3]], %bb.0, %16.sub3, %bb.1
-  ; GFX908-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX908-NEXT:   [[PRED_COPY5:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX908-NEXT:   [[PRED_COPY6:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX908-NEXT:   [[PRED_COPY7:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY7]], %subreg.sub0, [[PRED_COPY6]], %subreg.sub1, [[PRED_COPY5]], %subreg.sub2, [[PRED_COPY4]], %subreg.sub3
+  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.0, %16.sub0, %bb.1
+  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.0, %16.sub1, %bb.1
+  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY6]], %bb.0, %16.sub2, %bb.1
+  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY8]], %bb.0, %16.sub3, %bb.1
+  ; GFX908-NEXT:   [[COPY9:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX908-NEXT:   [[COPY10:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX908-NEXT:   [[COPY11:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX908-NEXT:   [[COPY12:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY12]], %subreg.sub0, [[COPY11]], %subreg.sub1, [[COPY10]], %subreg.sub2, [[COPY9]], %subreg.sub3
   ; GFX908-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX908-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX908-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -226,6 +226,7 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.2:
   ; GFX908-NEXT:   S_ENDPGM 0
+  ;
   ; GFX90A-LABEL: name: test_sgpr_init_singleuse
   ; GFX90A: bb.0:
   ; GFX90A-NEXT:   successors: %bb.1(0x80000000)
@@ -233,27 +234,27 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT:   [[COPY:%[0-9]+]]:sgpr_32 = COPY $sgpr0
   ; GFX90A-NEXT:   [[COPY1:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY1]]
-  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY1:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY2]]
+  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[COPY1]]
   ; GFX90A-NEXT:   [[COPY3:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY2:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY3]]
-  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY3:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY4]]
+  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[COPY3]]
+  ; GFX90A-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY6:%[0-9]+]]:agpr_32 = COPY [[COPY5]]
+  ; GFX90A-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY8:%[0-9]+]]:agpr_32 = COPY [[COPY7]]
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.1:
   ; GFX90A-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX90A-NEXT:   liveins: $scc
   ; GFX90A-NEXT: {{  $}}
-  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %16.sub0, %bb.1
-  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY1]], %bb.0, %16.sub1, %bb.1
-  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY2]], %bb.0, %16.sub2, %bb.1
-  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY3]], %bb.0, %16.sub3, %bb.1
-  ; GFX90A-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX90A-NEXT:   [[PRED_COPY5:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX90A-NEXT:   [[PRED_COPY6:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX90A-NEXT:   [[PRED_COPY7:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY7]], %subreg.sub0, [[PRED_COPY6]], %subreg.sub1, [[PRED_COPY5]], %subreg.sub2, [[PRED_COPY4]], %subreg.sub3
+  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.0, %16.sub0, %bb.1
+  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.0, %16.sub1, %bb.1
+  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY6]], %bb.0, %16.sub2, %bb.1
+  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY8]], %bb.0, %16.sub3, %bb.1
+  ; GFX90A-NEXT:   [[COPY9:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX90A-NEXT:   [[COPY10:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX90A-NEXT:   [[COPY11:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX90A-NEXT:   [[COPY12:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY12]], %subreg.sub0, [[COPY11]], %subreg.sub1, [[COPY10]], %subreg.sub2, [[COPY9]], %subreg.sub3
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX90A-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -261,7 +262,6 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.2:
   ; GFX90A-NEXT:   S_ENDPGM 0
-  ;
   bb.0:
     liveins: $sgpr0, $scc
     successors: %bb.1
@@ -305,24 +305,24 @@ body: |
   ; GFX908-NEXT:   liveins: $vgpr0, $scc
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT:   [[COPY:%[0-9]+]]:vgpr_32 = COPY $vgpr0
-  ; GFX908-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY1:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY2:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY3:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY1:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY3:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[COPY]]
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.1:
   ; GFX908-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX908-NEXT:   liveins: $scc
   ; GFX908-NEXT: {{  $}}
-  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY3]], %bb.0, %12.sub0, %bb.1
-  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY2]], %bb.0, %12.sub1, %bb.1
-  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY1]], %bb.0, %12.sub2, %bb.1
-  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %12.sub3, %bb.1
-  ; GFX908-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX908-NEXT:   [[PRED_COPY5:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX908-NEXT:   [[PRED_COPY6:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX908-NEXT:   [[PRED_COPY7:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY7]], %subreg.sub0, [[PRED_COPY6]], %subreg.sub1, [[PRED_COPY5]], %subreg.sub2, [[PRED_COPY4]], %subreg.sub3
+  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.0, %12.sub0, %bb.1
+  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY3]], %bb.0, %12.sub1, %bb.1
+  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.0, %12.sub2, %bb.1
+  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %12.sub3, %bb.1
+  ; GFX908-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX908-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX908-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX908-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY8]], %subreg.sub0, [[COPY7]], %subreg.sub1, [[COPY6]], %subreg.sub2, [[COPY5]], %subreg.sub3
   ; GFX908-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX908-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX908-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -330,30 +330,31 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.2:
   ; GFX908-NEXT:   S_ENDPGM 0
+  ;
   ; GFX90A-LABEL: name: test_vgpr_init
   ; GFX90A: bb.0:
   ; GFX90A-NEXT:   successors: %bb.1(0x80000000)
   ; GFX90A-NEXT:   liveins: $vgpr0, $scc
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT:   [[COPY:%[0-9]+]]:vgpr_32 = COPY $vgpr0
-  ; GFX90A-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY1:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY2:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY3:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY1:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY3:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[COPY]]
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.1:
   ; GFX90A-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX90A-NEXT:   liveins: $scc
   ; GFX90A-NEXT: {{  $}}
-  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY3]], %bb.0, %12.sub0, %bb.1
-  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY2]], %bb.0, %12.sub1, %bb.1
-  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY1]], %bb.0, %12.sub2, %bb.1
-  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %12.sub3, %bb.1
-  ; GFX90A-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX90A-NEXT:   [[PRED_COPY5:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX90A-NEXT:   [[PRED_COPY6:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX90A-NEXT:   [[PRED_COPY7:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY7]], %subreg.sub0, [[PRED_COPY6]], %subreg.sub1, [[PRED_COPY5]], %subreg.sub2, [[PRED_COPY4]], %subreg.sub3
+  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.0, %12.sub0, %bb.1
+  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY3]], %bb.0, %12.sub1, %bb.1
+  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.0, %12.sub2, %bb.1
+  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %12.sub3, %bb.1
+  ; GFX90A-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX90A-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX90A-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX90A-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY8]], %subreg.sub0, [[COPY7]], %subreg.sub1, [[COPY6]], %subreg.sub2, [[COPY5]], %subreg.sub3
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX90A-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -361,7 +362,6 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.2:
   ; GFX90A-NEXT:   S_ENDPGM 0
-  ;
   bb.0:
     liveins: $vgpr0, $scc
     successors: %bb.1
@@ -407,22 +407,22 @@ body: |
   ; GFX908-NEXT:   [[V_ACCVGPR_WRITE_B32_e64_3:%[0-9]+]]:agpr_32 = V_ACCVGPR_WRITE_B32_e64 [[COPY]], implicit $exec
   ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[V_ACCVGPR_WRITE_B32_e64_]], %subreg.sub0, [[V_ACCVGPR_WRITE_B32_e64_1]], %subreg.sub1, [[V_ACCVGPR_WRITE_B32_e64_2]], %subreg.sub2, [[V_ACCVGPR_WRITE_B32_e64_3]], %subreg.sub3
   ; GFX908-NEXT:   [[V_ACCVGPR_READ_B32_e64_:%[0-9]+]]:vgpr_32 = V_ACCVGPR_READ_B32_e64 [[REG_SEQUENCE]].sub0, implicit $exec
-  ; GFX908-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[V_ACCVGPR_READ_B32_e64_]]
-  ; GFX908-NEXT:   [[COPY1:%[0-9]+]]:vgpr_32 = COPY [[REG_SEQUENCE]].sub0
+  ; GFX908-NEXT:   [[COPY1:%[0-9]+]]:agpr_32 = COPY [[V_ACCVGPR_READ_B32_e64_]]
+  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:vgpr_32 = COPY [[REG_SEQUENCE]].sub0
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.1:
   ; GFX908-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX908-NEXT:   liveins: $scc
   ; GFX908-NEXT: {{  $}}
-  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %18.sub0, %bb.1
-  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %18.sub1, %bb.1
-  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %18.sub2, %bb.1
-  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %18.sub3, %bb.1
-  ; GFX908-NEXT:   [[PRED_COPY1:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX908-NEXT:   [[PRED_COPY2:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX908-NEXT:   [[PRED_COPY3:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX908-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX908-NEXT:   [[REG_SEQUENCE1:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY4]], %subreg.sub0, [[PRED_COPY3]], %subreg.sub1, [[PRED_COPY2]], %subreg.sub2, [[PRED_COPY1]], %subreg.sub3
+  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %18.sub0, %bb.1
+  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %18.sub1, %bb.1
+  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %18.sub2, %bb.1
+  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %18.sub3, %bb.1
+  ; GFX908-NEXT:   [[COPY3:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX908-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX908-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[REG_SEQUENCE1:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY6]], %subreg.sub0, [[COPY5]], %subreg.sub1, [[COPY4]], %subreg.sub2, [[COPY3]], %subreg.sub3
   ; GFX908-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX908-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX908-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE1]], 0, 0, 0, implicit $mode, implicit $exec
@@ -430,6 +430,7 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.2:
   ; GFX908-NEXT:   S_ENDPGM 0
+  ;
   ; GFX90A-LABEL: name: test_use_vgpr_temp
   ; GFX90A: bb.0:
   ; GFX90A-NEXT:   successors: %bb.1(0x80000000)
@@ -451,11 +452,11 @@ body: |
   ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[REG_SEQUENCE]].sub0, %bb.0, %18.sub1, %bb.1
   ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[REG_SEQUENCE]].sub0, %bb.0, %18.sub2, %bb.1
   ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[REG_SEQUENCE]].sub0, %bb.0, %18.sub3, %bb.1
-  ; GFX90A-NEXT:   [[PRED_COPY:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX90A-NEXT:   [[PRED_COPY1:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX90A-NEXT:   [[PRED_COPY2:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX90A-NEXT:   [[PRED_COPY3:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX90A-NEXT:   [[REG_SEQUENCE1:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY3]], %subreg.sub0, [[PRED_COPY2]], %subreg.sub1, [[PRED_COPY1]], %subreg.sub2, [[PRED_COPY]], %subreg.sub3
+  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX90A-NEXT:   [[COPY3:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX90A-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[REG_SEQUENCE1:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY5]], %subreg.sub0, [[COPY4]], %subreg.sub1, [[COPY3]], %subreg.sub2, [[COPY2]], %subreg.sub3
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX90A-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE1]], 0, 0, 0, implicit $mode, implicit $exec
@@ -463,7 +464,6 @@ body: |
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.2:
   ; GFX90A-NEXT:   S_ENDPGM 0
-  ;
   bb.0:
     ; Tests that tryOptimizeAGPRPhis kicks in for GFX908.
     liveins: $sgpr0, $scc
@@ -508,24 +508,24 @@ body: |
   ; GFX908-NEXT:   liveins: $vgpr0, $scc
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT:   [[COPY:%[0-9]+]]:vgpr_32 = COPY $vgpr0
-  ; GFX908-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY1:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY2:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX908-NEXT:   [[PRED_COPY3:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY1:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY3:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[COPY]]
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.1:
   ; GFX908-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX908-NEXT:   liveins: $scc
   ; GFX908-NEXT: {{  $}}
-  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY3]], %bb.0, %12.sub0, %bb.1
-  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY2]], %bb.0, %12.sub1, %bb.1
-  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY1]], %bb.0, %12.sub2, %bb.1
-  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %12.sub3, %bb.1
-  ; GFX908-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX908-NEXT:   [[PRED_COPY5:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX908-NEXT:   [[PRED_COPY6:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX908-NEXT:   [[PRED_COPY7:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY7]], %subreg.sub0, [[PRED_COPY6]], %subreg.sub1, [[PRED_COPY5]], %subreg.sub2, [[PRED_COPY4]], %subreg.sub3
+  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.0, %12.sub0, %bb.1
+  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY3]], %bb.0, %12.sub1, %bb.1
+  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.0, %12.sub2, %bb.1
+  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %12.sub3, %bb.1
+  ; GFX908-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX908-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX908-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX908-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY8]], %subreg.sub0, [[COPY7]], %subreg.sub1, [[COPY6]], %subreg.sub2, [[COPY5]], %subreg.sub3
   ; GFX908-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX908-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX908-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -533,30 +533,31 @@ body: |
   ; GFX908-NEXT: {{  $}}
   ; GFX908-NEXT: bb.2:
   ; GFX908-NEXT:   S_ENDPGM 0
+  ;
   ; GFX90A-LABEL: name: test_vgpr_init_two_copies
   ; GFX90A: bb.0:
   ; GFX90A-NEXT:   successors: %bb.1(0x80000000)
   ; GFX90A-NEXT:   liveins: $vgpr0, $scc
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT:   [[COPY:%[0-9]+]]:vgpr_32 = COPY $vgpr0
-  ; GFX90A-NEXT:   [[PRED_COPY:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY1:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY2:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
-  ; GFX90A-NEXT:   [[PRED_COPY3:%[0-9]+]]:agpr_32 = PRED_COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY1:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY3:%[0-9]+]]:agpr_32 = COPY [[COPY]]
+  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[COPY]]
   ; GFX90A-NEXT: {{  $}}
   ; GFX90A-NEXT: bb.1:
   ; GFX90A-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
   ; GFX90A-NEXT:   liveins: $scc
   ; GFX90A-NEXT: {{  $}}
-  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY3]], %bb.0, %12.sub0, %bb.1
-  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY2]], %bb.0, %12.sub1, %bb.1
-  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY1]], %bb.0, %12.sub2, %bb.1
-  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[PRED_COPY]], %bb.0, %12.sub3, %bb.1
-  ; GFX90A-NEXT:   [[PRED_COPY4:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI3]]
-  ; GFX90A-NEXT:   [[PRED_COPY5:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI2]]
-  ; GFX90A-NEXT:   [[PRED_COPY6:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI1]]
-  ; GFX90A-NEXT:   [[PRED_COPY7:%[0-9]+]]:vgpr_32 = PRED_COPY [[PHI]]
-  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[PRED_COPY7]], %subreg.sub0, [[PRED_COPY6]], %subreg.sub1, [[PRED_COPY5]], %subreg.sub2, [[PRED_COPY4]], %subreg.sub3
+  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.0, %12.sub0, %bb.1
+  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:agpr_32 = PHI [[COPY3]], %bb.0, %12.sub1, %bb.1
+  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.0, %12.sub2, %bb.1
+  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY1]], %bb.0, %12.sub3, %bb.1
+  ; GFX90A-NEXT:   [[COPY5:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX90A-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX90A-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[PHI1]]
+  ; GFX90A-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY8]], %subreg.sub0, [[COPY7]], %subreg.sub1, [[COPY6]], %subreg.sub2, [[COPY5]], %subreg.sub3
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
   ; GFX90A-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
   ; GFX90A-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
@@ -590,5 +591,127 @@ body: |
     S_CBRANCH_SCC1 %bb.1, implicit $scc
 
   bb.2:
+    S_ENDPGM 0
+...
+
+---
+name: test_vgpr_init_skip_phis_insertpt
+tracksRegLiveness: true
+
+body: |
+  ; GFX908-LABEL: name: test_vgpr_init_skip_phis_insertpt
+  ; GFX908: bb.0:
+  ; GFX908-NEXT:   successors: %bb.1(0x80000000)
+  ; GFX908-NEXT:   liveins: $vgpr0, $vgpr1, $scc
+  ; GFX908-NEXT: {{  $}}
+  ; GFX908-NEXT:   [[COPY:%[0-9]+]]:vgpr_32 = COPY $vgpr0
+  ; GFX908-NEXT:   [[COPY1:%[0-9]+]]:vgpr_32 = COPY $vgpr0
+  ; GFX908-NEXT: {{  $}}
+  ; GFX908-NEXT: bb.1:
+  ; GFX908-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
+  ; GFX908-NEXT:   liveins: $scc
+  ; GFX908-NEXT: {{  $}}
+  ; GFX908-NEXT:   [[PHI:%[0-9]+]]:vgpr_32 = PHI [[COPY]], %bb.0, [[COPY1]], %bb.1
+  ; GFX908-NEXT:   [[PHI1:%[0-9]+]]:vgpr_32 = PHI [[COPY]], %bb.0, [[COPY1]], %bb.1
+  ; GFX908-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[COPY3:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   [[COPY5:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX908-NEXT:   S_CBRANCH_SCC1 %bb.1, implicit $scc
+  ; GFX908-NEXT: {{  $}}
+  ; GFX908-NEXT: bb.2:
+  ; GFX908-NEXT:   successors: %bb.2(0x40000000), %bb.3(0x40000000)
+  ; GFX908-NEXT:   liveins: $scc
+  ; GFX908-NEXT: {{  $}}
+  ; GFX908-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY5]], %bb.1, %15.sub0, %bb.2
+  ; GFX908-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.1, %15.sub1, %bb.2
+  ; GFX908-NEXT:   [[PHI4:%[0-9]+]]:agpr_32 = PHI [[COPY3]], %bb.1, %15.sub2, %bb.2
+  ; GFX908-NEXT:   [[PHI5:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.1, %15.sub3, %bb.2
+  ; GFX908-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI5]]
+  ; GFX908-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[PHI4]]
+  ; GFX908-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX908-NEXT:   [[COPY9:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX908-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY9]], %subreg.sub0, [[COPY8]], %subreg.sub1, [[COPY7]], %subreg.sub2, [[COPY6]], %subreg.sub3
+  ; GFX908-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
+  ; GFX908-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
+  ; GFX908-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
+  ; GFX908-NEXT:   S_CBRANCH_SCC1 %bb.2, implicit $scc
+  ; GFX908-NEXT: {{  $}}
+  ; GFX908-NEXT: bb.3:
+  ; GFX908-NEXT:   S_ENDPGM 0
+  ;
+  ; GFX90A-LABEL: name: test_vgpr_init_skip_phis_insertpt
+  ; GFX90A: bb.0:
+  ; GFX90A-NEXT:   successors: %bb.1(0x80000000)
+  ; GFX90A-NEXT:   liveins: $vgpr0, $vgpr1, $scc
+  ; GFX90A-NEXT: {{  $}}
+  ; GFX90A-NEXT:   [[COPY:%[0-9]+]]:vgpr_32 = COPY $vgpr0
+  ; GFX90A-NEXT:   [[COPY1:%[0-9]+]]:vgpr_32 = COPY $vgpr0
+  ; GFX90A-NEXT: {{  $}}
+  ; GFX90A-NEXT: bb.1:
+  ; GFX90A-NEXT:   successors: %bb.1(0x40000000), %bb.2(0x40000000)
+  ; GFX90A-NEXT:   liveins: $scc
+  ; GFX90A-NEXT: {{  $}}
+  ; GFX90A-NEXT:   [[PHI:%[0-9]+]]:vgpr_32 = PHI [[COPY]], %bb.0, [[COPY1]], %bb.1
+  ; GFX90A-NEXT:   [[PHI1:%[0-9]+]]:vgpr_32 = PHI [[COPY]], %bb.0, [[COPY1]], %bb.1
+  ; GFX90A-NEXT:   [[COPY2:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[COPY3:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[COPY4:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   [[COPY5:%[0-9]+]]:agpr_32 = COPY [[PHI]]
+  ; GFX90A-NEXT:   S_CBRANCH_SCC1 %bb.1, implicit $scc
+  ; GFX90A-NEXT: {{  $}}
+  ; GFX90A-NEXT: bb.2:
+  ; GFX90A-NEXT:   successors: %bb.2(0x40000000), %bb.3(0x40000000)
+  ; GFX90A-NEXT:   liveins: $scc
+  ; GFX90A-NEXT: {{  $}}
+  ; GFX90A-NEXT:   [[PHI2:%[0-9]+]]:agpr_32 = PHI [[COPY5]], %bb.1, %15.sub0, %bb.2
+  ; GFX90A-NEXT:   [[PHI3:%[0-9]+]]:agpr_32 = PHI [[COPY4]], %bb.1, %15.sub1, %bb.2
+  ; GFX90A-NEXT:   [[PHI4:%[0-9]+]]:agpr_32 = PHI [[COPY3]], %bb.1, %15.sub2, %bb.2
+  ; GFX90A-NEXT:   [[PHI5:%[0-9]+]]:agpr_32 = PHI [[COPY2]], %bb.1, %15.sub3, %bb.2
+  ; GFX90A-NEXT:   [[COPY6:%[0-9]+]]:vgpr_32 = COPY [[PHI5]]
+  ; GFX90A-NEXT:   [[COPY7:%[0-9]+]]:vgpr_32 = COPY [[PHI4]]
+  ; GFX90A-NEXT:   [[COPY8:%[0-9]+]]:vgpr_32 = COPY [[PHI3]]
+  ; GFX90A-NEXT:   [[COPY9:%[0-9]+]]:vgpr_32 = COPY [[PHI2]]
+  ; GFX90A-NEXT:   [[REG_SEQUENCE:%[0-9]+]]:areg_128_align2 = REG_SEQUENCE [[COPY9]], %subreg.sub0, [[COPY8]], %subreg.sub1, [[COPY7]], %subreg.sub2, [[COPY6]], %subreg.sub3
+  ; GFX90A-NEXT:   [[V_MOV_B32_e32_:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
+  ; GFX90A-NEXT:   [[V_MOV_B32_e32_1:%[0-9]+]]:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
+  ; GFX90A-NEXT:   [[V_MFMA_F32_4X4X1F32_e64_:%[0-9]+]]:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 [[V_MOV_B32_e32_1]], [[V_MOV_B32_e32_]], [[REG_SEQUENCE]], 0, 0, 0, implicit $mode, implicit $exec
+  ; GFX90A-NEXT:   S_CBRANCH_SCC1 %bb.2, implicit $scc
+  ; GFX90A-NEXT: {{  $}}
+  ; GFX90A-NEXT: bb.3:
+  ; GFX90A-NEXT:   S_ENDPGM 0
+  bb.0:
+    liveins: $vgpr0, $vgpr1, $scc
+    successors: %bb.1
+
+    %0:vgpr_32 = COPY $vgpr0
+    %1:vgpr_32 = COPY $vgpr0
+
+  bb.1:
+    liveins: $scc
+    successors: %bb.1, %bb.2
+
+    %6:vgpr_32 = PHI %0, %bb.0, %1, %bb.1
+    %7:vgpr_32 = PHI %0, %bb.0, %1, %bb.1
+    S_CBRANCH_SCC1 %bb.1, implicit $scc
+
+  bb.2:
+    liveins: $scc
+    successors: %bb.2, %bb.3
+    %8:vgpr_32 = PHI %6, %bb.1, %16, %bb.2
+    %9:vgpr_32 = PHI %6, %bb.1, %17, %bb.2
+    %10:vgpr_32 = PHI %6, %bb.1, %18, %bb.2
+    %11:vgpr_32 = PHI %6, %bb.1, %19, %bb.2
+    %12:areg_128_align2 = REG_SEQUENCE %8, %subreg.sub0, %9, %subreg.sub1, %10, %subreg.sub2, %11, %subreg.sub3
+    %13:vgpr_32 = V_MOV_B32_e32 1073741824, implicit $exec
+    %14:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
+    %15:areg_128_align2 = V_MFMA_F32_4X4X1F32_e64 %14:vgpr_32, %13:vgpr_32, %12:areg_128_align2, 0, 0, 0, implicit $mode, implicit $exec
+    %16:vgpr_32 = COPY %15.sub0
+    %17:vgpr_32 = COPY %15.sub1
+    %18:vgpr_32 = COPY %15.sub2
+    %19:vgpr_32 = COPY %15.sub3
+    S_CBRANCH_SCC1 %bb.2, implicit $scc
+
+  bb.3:
     S_ENDPGM 0
 ...

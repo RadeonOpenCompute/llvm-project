@@ -39,10 +39,15 @@ add_llvm_library(omptarget.rtl.cuda.nextgen SHARED
   OMPT
   PluginInterface
   ${OPENMP_PTHREAD_LIB}
-  "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../exports,-z,defs"
 
   NO_INSTALL_RPATH
 )
+
+if (LIBOMP_HAVE_VERSION_SCRIPT_FLAG)
+  target_link_libraries(omptarget.rtl.cuda.nextgen PRIVATE
+  "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../exports,-z,defs")
+endif()
+
 
 if(LIBOMPTARGET_DEP_CUDA_FOUND AND NOT LIBOMPTARGET_FORCE_DLOPEN_LIBCUDA)
   libomptarget_say("Building CUDA plugin linked against libcuda")
@@ -59,6 +64,20 @@ target_compile_definitions(omptarget.rtl.cuda.nextgen PRIVATE TARGET_NAME="CUDA"
 target_compile_definitions(omptarget.rtl.cuda.nextgen PRIVATE DEBUG_PREFIX="TARGET CUDA RTL")
 
 target_include_directories(omptarget.rtl.cuda.nextgen PRIVATE ${LIBOMPTARGET_INCLUDE_DIR})
+
+# Configure testing for the CUDA plugin. We will build tests if we could a
+# functional NVIDIA GPU on the system, or if manually specifies by the user.
+option(LIBOMPTARGET_FORCE_NVIDIA_TESTS "Build NVIDIA libomptarget tests" OFF)
+if (LIBOMPTARGET_FOUND_NVIDIA_GPU OR LIBOMPTARGET_FORCE_NVIDIA_TESTS)
+  libomptarget_say("Enable tests using CUDA plugin")
+  set(LIBOMPTARGET_SYSTEM_TARGETS 
+      "${LIBOMPTARGET_SYSTEM_TARGETS} nvptx64-nvidia-cuda nvptx64-nvidia-cuda-LTO" PARENT_SCOPE)
+  list(APPEND LIBOMPTARGET_TESTED_PLUGINS "omptarget.rtl.cuda")
+  set(LIBOMPTARGET_TESTED_PLUGINS "${LIBOMPTARGET_TESTED_PLUGINS}" PARENT_SCOPE)
+else()
+  libomptarget_say("Not generating NVIDIA tests, no supported devices detected."
+                   " Use 'LIBOMPTARGET_FORCE_NVIDIA_TESTS' to override.")
+endif()
 
 # Install plugin under the lib destination folder.
 install(TARGETS omptarget.rtl.cuda.nextgen LIBRARY DESTINATION "${RUN_PACKAGE}${OPENMP_INSTALL_LIBDIR}")

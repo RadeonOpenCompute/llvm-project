@@ -13,7 +13,8 @@
 // TODO: Add other DW-based macros.
 #if !(                                                                         \
     defined HANDLE_DW_TAG || defined HANDLE_DW_AT || defined HANDLE_DW_FORM || \
-    defined HANDLE_DW_OP || defined HANDLE_DW_LANG || defined HANDLE_DW_ATE || \
+    defined HANDLE_DW_OP || defined HANDLE_DW_OP_LLVM_USEROP ||                    \
+    defined HANDLE_DW_LANG || defined HANDLE_DW_ATE ||                         \
     defined HANDLE_DW_VIRTUALITY || defined HANDLE_DW_DEFAULTED ||             \
     defined HANDLE_DW_CC || defined HANDLE_DW_LNS || defined HANDLE_DW_LNE ||  \
     defined HANDLE_DW_LNCT || defined HANDLE_DW_MACRO ||                       \
@@ -23,7 +24,8 @@
     defined HANDLE_DW_APPLE_PROPERTY || defined HANDLE_DW_UT ||                \
     defined HANDLE_DWARF_SECTION || defined HANDLE_DW_IDX ||                   \
     defined HANDLE_DW_END || defined HANDLE_DW_SECT ||                         \
-    defined HANDLE_DW_MSPACE)
+    defined HANDLE_DW_MSPACE || \
+    ( defined HANDLE_DW_ASPACE && defined HANDLE_DW_ASPACE_PRED) )
 #error "Missing macro definition of HANDLE_DW*"
 #endif
 
@@ -51,6 +53,10 @@
 
 #ifndef HANDLE_DW_OP
 #define HANDLE_DW_OP(ID, NAME, VERSION, VENDOR)
+#endif
+
+#ifndef HANDLE_DW_OP_LLVM_USEROP
+#define HANDLE_DW_OP_LLVM_USEROP(ID, NAME)
 #endif
 
 #ifndef HANDLE_DW_LANG
@@ -139,6 +145,14 @@
 
 #ifndef HANDLE_DW_MSPACE
 #define HANDLE_DW_MSPACE(ID, NAME)
+#endif
+
+#ifndef HANDLE_DW_ASPACE
+#define HANDLE_DW_ASPACE(ID, NAME)
+#endif
+
+#ifndef HANDLE_DW_ASPACE_PRED
+#define HANDLE_DW_ASPACE_PRED(ID, NAME, PRED)
 #endif
 
 HANDLE_DW_TAG(0x0000, null, 2, DWARF, DW_KIND_NONE)
@@ -624,6 +638,14 @@ HANDLE_DW_MSPACE(0x2, constant)
 HANDLE_DW_MSPACE(0x3, group)
 HANDLE_DW_MSPACE(0x4, private)
 
+// https://llvm.org/docs/AMDGPUUsage.html#address-space-identifier
+HANDLE_DW_ASPACE(0x0, none)
+HANDLE_DW_ASPACE_PRED(0x1, AMDGPU_generic, SELECT_AMDGPU)
+HANDLE_DW_ASPACE_PRED(0x2, AMDGPU_region, SELECT_AMDGPU)
+HANDLE_DW_ASPACE_PRED(0x3, AMDGPU_local, SELECT_AMDGPU)
+HANDLE_DW_ASPACE_PRED(0x5, AMDGPU_private_lane, SELECT_AMDGPU)
+HANDLE_DW_ASPACE_PRED(0x6, AMDGPU_private_wave, SELECT_AMDGPU)
+
 // Apple extensions.
 
 HANDLE_DW_AT(0x3fe1, APPLE_optimized, 0, APPLE)
@@ -903,10 +925,27 @@ HANDLE_DW_OP(0xe5, LLVM_bit_offset, 0, LLVM)
 HANDLE_DW_OP(0xe6, LLVM_call_frame_entry_reg, 0, LLVM)
 HANDLE_DW_OP(0xe7, LLVM_undefined, 0, LLVM)
 HANDLE_DW_OP(0xe8, LLVM_aspace_bregx, 0, LLVM)
-HANDLE_DW_OP(0xe9, LLVM_aspace_implicit_pointer, 0, LLVM)
 HANDLE_DW_OP(0xea, LLVM_piece_end, 0, LLVM)
 HANDLE_DW_OP(0xeb, LLVM_extend, 0, LLVM)
 HANDLE_DW_OP(0xec, LLVM_select_bit_piece, 0, LLVM)
+
+// DW_OP_LLVM_user has two operands:
+//   (1) An unsigned LEB128 "LLVM Vendor Extension Opcode".
+//   (2) Zero or more literal operands, the number and type of which are
+//       implied by the opcode (1).
+// DW_OP_LLVM_user acts as an extension multiplexer, opening up the encoding
+// space to accommodate an infinite number of extensions. This better reflects
+// the de-facto permanent allocation of extensions.
+HANDLE_DW_OP(0xe9, LLVM_user, 0, LLVM)
+// "LLVM Vendor Extension" operations under the DW_OP_LLVM_user encoding
+// scheme. This list is authoritative and exhaustive. Once an operation is
+// registered here it cannot be removed nor have its encoding changed. The
+// encoding space must skip zero (which is reserved) and have no gaps.
+//
+// The DW_OP_LLVM_user DW_OP_LLVM_nop operation has no effect on the
+// location stack or any of its values. It is defined as a placeholder for
+// testing purposes.
+HANDLE_DW_OP_LLVM_USEROP(0x0001, nop)
 
 // DWARF languages.
 HANDLE_DW_LANG(0x0001, C89, 0, 2, DWARF)
@@ -959,6 +998,7 @@ HANDLE_DW_LANG(0x002c, C17, 0, 0, DWARF)
 HANDLE_DW_LANG(0x002d, Fortran18, 0, 0, DWARF)
 HANDLE_DW_LANG(0x002e, Ada2005, 0, 0, DWARF)
 HANDLE_DW_LANG(0x002f, Ada2012, 0, 0, DWARF)
+HANDLE_DW_LANG(0x0033, Mojo, 0, 0, DWARF)
 // Vendor extensions:
 HANDLE_DW_LANG(0x8001, Mips_Assembler, std::nullopt, 0, MIPS)
 HANDLE_DW_LANG(0x8e57, GOOGLE_RenderScript, 0, 0, GOOGLE)
@@ -1269,6 +1309,7 @@ HANDLE_DW_SECT(8, RNGLISTS)
 #undef HANDLE_DW_AT
 #undef HANDLE_DW_FORM
 #undef HANDLE_DW_OP
+#undef HANDLE_DW_OP_LLVM_USEROP
 #undef HANDLE_DW_LANG
 #undef HANDLE_DW_ATE
 #undef HANDLE_DW_VIRTUALITY
@@ -1291,3 +1332,5 @@ HANDLE_DW_SECT(8, RNGLISTS)
 #undef HANDLE_DW_END
 #undef HANDLE_DW_SECT
 #undef HANDLE_DW_MSPACE
+#undef HANDLE_DW_ASPACE
+#undef HANDLE_DW_ASPACE_PRED

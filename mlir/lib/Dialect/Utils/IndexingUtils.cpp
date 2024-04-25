@@ -81,7 +81,15 @@ SmallVector<int64_t> mlir::computeElementwiseMul(ArrayRef<int64_t> v1,
   return computeElementwiseMulImpl(v1, v2);
 }
 
-int64_t mlir::computeMaxLinearIndex(ArrayRef<int64_t> basis) {
+int64_t mlir::computeSum(ArrayRef<int64_t> basis) {
+  assert(llvm::all_of(basis, [](int64_t s) { return s > 0; }) &&
+         "basis must be nonnegative");
+  if (basis.empty())
+    return 0;
+  return std::accumulate(basis.begin(), basis.end(), 1, std::plus<int64_t>());
+}
+
+int64_t mlir::computeProduct(ArrayRef<int64_t> basis) {
   assert(llvm::all_of(basis, [](int64_t s) { return s > 0; }) &&
          "basis must be nonnegative");
   if (basis.empty())
@@ -149,8 +157,15 @@ SmallVector<AffineExpr> mlir::computeElementwiseMul(ArrayRef<AffineExpr> v1,
   return computeElementwiseMulImpl(v1, v2);
 }
 
-AffineExpr mlir::computeMaxLinearIndex(MLIRContext *ctx,
-                                       ArrayRef<AffineExpr> basis) {
+AffineExpr mlir::computeSum(MLIRContext *ctx, ArrayRef<AffineExpr> basis) {
+  if (basis.empty())
+    return getAffineConstantExpr(0, ctx);
+  return std::accumulate(basis.begin(), basis.end(),
+                         getAffineConstantExpr(1, ctx),
+                         std::plus<AffineExpr>());
+}
+
+AffineExpr mlir::computeProduct(MLIRContext *ctx, ArrayRef<AffineExpr> basis) {
   if (basis.empty())
     return getAffineConstantExpr(0, ctx);
   return std::accumulate(basis.begin(), basis.end(),
@@ -211,6 +226,27 @@ bool mlir::isPermutationVector(ArrayRef<int64_t> interchange) {
     seenVals.insert(val);
   }
   return seenVals.size() == interchange.size();
+}
+
+SmallVector<int64_t>
+mlir::computePermutationVector(int64_t permSize, ArrayRef<int64_t> positions,
+                               ArrayRef<int64_t> desiredPositions) {
+  SmallVector<int64_t> res(permSize, -1);
+  DenseSet<int64_t> seen;
+  for (auto [pos, desiredPos] : llvm::zip_equal(positions, desiredPositions)) {
+    res[desiredPos] = pos;
+    seen.insert(pos);
+  }
+  int64_t nextPos = 0;
+  for (int64_t &entry : res) {
+    if (entry != -1)
+      continue;
+    while (seen.contains(nextPos))
+      ++nextPos;
+    entry = nextPos;
+    ++nextPos;
+  }
+  return res;
 }
 
 SmallVector<int64_t> mlir::getI64SubArray(ArrayAttr arrayAttr,

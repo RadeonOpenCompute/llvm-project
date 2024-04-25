@@ -513,8 +513,6 @@ bool AMDGPUCallLowering::lowerFormalArgumentsKernel(
   const SITargetLowering &TLI = *getTLI<SITargetLowering>();
   const DataLayout &DL = F.getParent()->getDataLayout();
 
-  Info->allocateKnownAddressLDSGlobal(F);
-
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(F.getCallingConv(), F.isVarArg(), MF, ArgLocs, F.getContext());
 
@@ -522,7 +520,7 @@ bool AMDGPUCallLowering::lowerFormalArgumentsKernel(
 
   unsigned i = 0;
   const Align KernArgBaseAlign(16);
-  const unsigned BaseOffset = Subtarget->getExplicitKernelArgOffset(F);
+  const unsigned BaseOffset = Subtarget->getExplicitKernelArgOffset();
   uint64_t ExplicitArgOffset = 0;
 
   // TODO: Align down to dword alignment and extract bits for extending loads.
@@ -596,8 +594,6 @@ bool AMDGPUCallLowering::lowerFormalArguments(
   const GCNSubtarget &Subtarget = MF.getSubtarget<GCNSubtarget>();
   const SIRegisterInfo *TRI = Subtarget.getRegisterInfo();
   const DataLayout &DL = F.getParent()->getDataLayout();
-
-  Info->allocateKnownAddressLDSGlobal(F);
 
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CC, F.isVarArg(), MF, ArgLocs, F.getContext());
@@ -728,7 +724,7 @@ bool AMDGPUCallLowering::lowerFormalArguments(
   if (!handleAssignments(Handler, SplitArgs, CCInfo, ArgLocs, B))
     return false;
 
-  uint64_t StackOffset = Assigner.StackOffset;
+  uint64_t StackSize = Assigner.StackSize;
 
   // Start adding system SGPRs.
   if (IsEntryFunc) {
@@ -743,7 +739,7 @@ bool AMDGPUCallLowering::lowerFormalArguments(
   // the caller's stack. So, whenever we lower formal arguments, we should keep
   // track of this information, since we might lower a tail call in this
   // function later.
-  Info->setBytesInStackArgArea(StackOffset);
+  Info->setBytesInStackArgArea(StackSize);
 
   // Move back to the end of the basic block.
   B.setMBB(MBB);
@@ -1061,7 +1057,7 @@ bool AMDGPUCallLowering::areCalleeOutgoingArgsTailCallable(
 
   // Make sure that they can fit on the caller's stack.
   const SIMachineFunctionInfo *FuncInfo = MF.getInfo<SIMachineFunctionInfo>();
-  if (OutInfo.getNextStackOffset() > FuncInfo->getBytesInStackArgArea()) {
+  if (OutInfo.getStackSize() > FuncInfo->getBytesInStackArgArea()) {
     LLVM_DEBUG(dbgs() << "... Cannot fit call operands on caller's stack.\n");
     return false;
   }
@@ -1232,7 +1228,7 @@ bool AMDGPUCallLowering::lowerTailCall(
 
     // The callee will pop the argument stack as a tail call. Thus, we must
     // keep it 16-byte aligned.
-    NumBytes = alignTo(OutInfo.getNextStackOffset(), ST.getStackAlignment());
+    NumBytes = alignTo(OutInfo.getStackSize(), ST.getStackAlignment());
 
     // FPDiff will be negative if this tail call requires more space than we
     // would automatically have in our incoming argument space. Positive if we
@@ -1398,7 +1394,7 @@ bool AMDGPUCallLowering::lowerCall(MachineIRBuilder &MIRBuilder,
   handleImplicitCallArguments(MIRBuilder, MIB, ST, *MFI, ImplicitArgRegs);
 
   // Get a count of how many bytes are to be pushed on the stack.
-  unsigned NumBytes = CCInfo.getNextStackOffset();
+  unsigned NumBytes = CCInfo.getStackSize();
 
   // If Callee is a reg, since it is used by a target specific
   // instruction, it must have a register class matching the

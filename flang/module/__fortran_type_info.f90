@@ -13,7 +13,7 @@
 
 module __Fortran_type_info
 
-  use __Fortran_builtins, only: __builtin_c_ptr, __builtin_c_funptr
+  use, intrinsic :: __Fortran_builtins, only: __builtin_c_ptr, __builtin_c_funptr
 
   private
 
@@ -108,7 +108,8 @@ module __Fortran_type_info
   type, bind(c) :: SpecialBinding
     integer(1) :: which ! SpecialBinding::Which
     integer(1) :: isArgDescriptorSet
-    integer(1) :: __padding0(6)
+    integer(1) :: isTypeBound
+    integer(1) :: __padding0(5)
     type(__builtin_c_funptr) :: proc
   end type
 

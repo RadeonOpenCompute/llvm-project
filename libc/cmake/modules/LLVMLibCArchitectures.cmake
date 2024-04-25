@@ -55,6 +55,8 @@ function(get_arch_and_system_from_triple triple arch_var sys_var)
     set(target_arch "x86_64")
   elseif(target_arch MATCHES "^(powerpc|ppc)")
     set(target_arch "power")
+  elseif(target_arch MATCHES "^riscv32")
+    set(target_arch "riscv32")
   elseif(target_arch MATCHES "^riscv64")
     set(target_arch "riscv64")
   else()
@@ -76,7 +78,7 @@ function(get_arch_and_system_from_triple triple arch_var sys_var)
   set(${sys_var} ${target_sys} PARENT_SCOPE)
 endfunction(get_arch_and_system_from_triple)
 
-execute_process(COMMAND ${CMAKE_CXX_COMPILER} -v
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version -v
                 RESULT_VARIABLE libc_compiler_info_result
                 OUTPUT_VARIABLE libc_compiler_info
                 ERROR_VARIABLE libc_compiler_info)
@@ -148,6 +150,8 @@ elseif(LIBC_TARGET_ARCHITECTURE STREQUAL "aarch64")
   set(LIBC_TARGET_ARCHITECTURE_IS_AARCH64 TRUE)
 elseif(LIBC_TARGET_ARCHITECTURE STREQUAL "x86_64")
   set(LIBC_TARGET_ARCHITECTURE_IS_X86 TRUE)
+elseif(LIBC_TARGET_ARCHITECTURE STREQUAL "riscv32")
+  set(LIBC_TARGET_ARCHITECTURE_IS_RISCV32 TRUE)
 elseif(LIBC_TARGET_ARCHITECTURE STREQUAL "riscv64")
   set(LIBC_TARGET_ARCHITECTURE_IS_RISCV64 TRUE)
 else()

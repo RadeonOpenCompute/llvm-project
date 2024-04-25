@@ -1148,14 +1148,12 @@ define i64 @test_mad_i64_i32(i32 %arg0, i32 %arg1, i64 %arg2) #0 {
 ; GFX1032-LABEL: test_mad_i64_i32:
 ; GFX1032:       ; %bb.0:
 ; GFX1032-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX1032-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX1032-NEXT:    v_mad_i64_i32 v[0:1], s4, v0, v1, v[2:3]
 ; GFX1032-NEXT:    s_setpc_b64 s[30:31]
 ;
 ; GFX1064-LABEL: test_mad_i64_i32:
 ; GFX1064:       ; %bb.0:
 ; GFX1064-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX1064-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX1064-NEXT:    v_mad_i64_i32 v[0:1], s[4:5], v0, v1, v[2:3]
 ; GFX1064-NEXT:    s_setpc_b64 s[30:31]
   %sext0 = sext i32 %arg0 to i64
@@ -1169,14 +1167,12 @@ define i64 @test_mad_u64_u32(i32 %arg0, i32 %arg1, i64 %arg2) #0 {
 ; GFX1032-LABEL: test_mad_u64_u32:
 ; GFX1032:       ; %bb.0:
 ; GFX1032-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX1032-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX1032-NEXT:    v_mad_u64_u32 v[0:1], s4, v0, v1, v[2:3]
 ; GFX1032-NEXT:    s_setpc_b64 s[30:31]
 ;
 ; GFX1064-LABEL: test_mad_u64_u32:
 ; GFX1064:       ; %bb.0:
 ; GFX1064-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX1064-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX1064-NEXT:    v_mad_u64_u32 v[0:1], s[4:5], v0, v1, v[2:3]
 ; GFX1064-NEXT:    s_setpc_b64 s[30:31]
   %sext0 = zext i32 %arg0 to i64
@@ -1959,7 +1955,7 @@ main_body:
   br i1 %cc, label %endif, label %if
 
 if:
-  %src = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> undef, i32 %idx, i32 0, i32 0, i32 0)
+  %src = call float @llvm.amdgcn.struct.ptr.buffer.load.f32(ptr addrspace(8) undef, i32 %idx, i32 0, i32 0, i32 0)
   %out = fadd float %src, %src
   %out.0 = call float @llvm.amdgcn.wwm.f32(float %out)
   %out.1 = fadd float %src, %out.0
@@ -2044,7 +2040,7 @@ main_body:
   br i1 %cc, label %endif, label %if
 
 if:
-  %src = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> undef, i32 %idx, i32 0, i32 0, i32 0)
+  %src = call float @llvm.amdgcn.struct.ptr.buffer.load.f32(ptr addrspace(8) undef, i32 %idx, i32 0, i32 0, i32 0)
   %out = fadd float %src, %src
   %out.0 = call float @llvm.amdgcn.strict.wwm.f32(float %out)
   %out.1 = fadd float %src, %out.0
@@ -2107,6 +2103,7 @@ define amdgpu_ps float @test_wqm2(i32 inreg %idx0, i32 inreg %idx1) #0 {
 ; GFX1032-NEXT:    buffer_load_dword v3, v1, s[0:3], 0 idxen
 ; GFX1032-NEXT:    s_waitcnt vmcnt(0)
 ; GFX1032-NEXT:    v_add_f32_e32 v0, v2, v3
+; GFX1032-NEXT:    ; kill: def $vgpr0 killed $vgpr0 killed $exec
 ; GFX1032-NEXT:    s_and_b32 exec_lo, exec_lo, s2
 ; GFX1032-NEXT:    ; return to shader part epilog
 ;
@@ -2121,11 +2118,12 @@ define amdgpu_ps float @test_wqm2(i32 inreg %idx0, i32 inreg %idx1) #0 {
 ; GFX1064-NEXT:    buffer_load_dword v3, v1, s[0:3], 0 idxen
 ; GFX1064-NEXT:    s_waitcnt vmcnt(0)
 ; GFX1064-NEXT:    v_add_f32_e32 v0, v2, v3
+; GFX1064-NEXT:    ; kill: def $vgpr0 killed $vgpr0 killed $exec
 ; GFX1064-NEXT:    s_and_b64 exec, exec, s[2:3]
 ; GFX1064-NEXT:    ; return to shader part epilog
 main_body:
-  %src0 = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> undef, i32 %idx0, i32 0, i32 0, i32 0)
-  %src1 = call float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32> undef, i32 %idx1, i32 0, i32 0, i32 0)
+  %src0 = call float @llvm.amdgcn.struct.ptr.buffer.load.f32(ptr addrspace(8) undef, i32 %idx0, i32 0, i32 0, i32 0)
+  %src1 = call float @llvm.amdgcn.struct.ptr.buffer.load.f32(ptr addrspace(8) undef, i32 %idx1, i32 0, i32 0, i32 0)
   %out = fadd float %src0, %src1
   %out.0 = bitcast float %out to i32
   %out.1 = call i32 @llvm.amdgcn.wqm.i32(i32 %out.0)
@@ -2491,8 +2489,7 @@ define amdgpu_kernel void @icmp64(i32 %n, i32 %s) {
 ; GFX1032-NEXT:    v_cmp_le_u32_e32 vcc_lo, s0, v0
 ; GFX1032-NEXT:    v_cndmask_b32_e32 v0, v0, v1, vcc_lo
 ; GFX1032-NEXT:    v_cmp_eq_u32_e32 vcc_lo, 0, v0
-; GFX1032-NEXT:    v_alignbit_b32 v0, 0, vcc_lo, 1
-; GFX1032-NEXT:    v_readfirstlane_b32 s0, v0
+; GFX1032-NEXT:    s_lshr_b32 s0, vcc_lo, 1
 ; GFX1032-NEXT:    s_ff1_i32_b32 s0, s0
 ; GFX1032-NEXT:    s_min_u32 s0, s0, s1
 ; GFX1032-NEXT:    s_cmp_gt_u32 s0, 9
@@ -2589,9 +2586,8 @@ define amdgpu_kernel void @fcmp64(float %n, float %s) {
 ; GFX1032-NEXT:    v_trunc_f32_e32 v1, v1
 ; GFX1032-NEXT:    v_fma_f32 v0, -v1, s0, v0
 ; GFX1032-NEXT:    v_cmp_eq_f32_e32 vcc_lo, 0, v0
-; GFX1032-NEXT:    v_alignbit_b32 v1, 0, vcc_lo, 1
+; GFX1032-NEXT:    s_lshr_b32 s0, vcc_lo, 1
 ; GFX1032-NEXT:    v_cmp_nlg_f32_e32 vcc_lo, 0, v0
-; GFX1032-NEXT:    v_readfirstlane_b32 s0, v1
 ; GFX1032-NEXT:    s_ff1_i32_b32 s0, s0
 ; GFX1032-NEXT:    s_min_u32 s0, s0, s1
 ; GFX1032-NEXT:    s_cmp_gt_u32 s0, 9
@@ -2856,7 +2852,6 @@ define void @callee_no_stack_with_call() #1 {
 ; GFX1032-LABEL: callee_no_stack_with_call:
 ; GFX1032:       ; %bb.0:
 ; GFX1032-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX1032-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX1032-NEXT:    s_mov_b32 s16, s33
 ; GFX1032-NEXT:    s_mov_b32 s33, s32
 ; GFX1032-NEXT:    s_or_saveexec_b32 s17, -1
@@ -2888,7 +2883,6 @@ define void @callee_no_stack_with_call() #1 {
 ; GFX1064-LABEL: callee_no_stack_with_call:
 ; GFX1064:       ; %bb.0:
 ; GFX1064-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX1064-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX1064-NEXT:    s_mov_b32 s16, s33
 ; GFX1064-NEXT:    s_mov_b32 s33, s32
 ; GFX1064-NEXT:    s_or_saveexec_b64 s[18:19], -1
@@ -2937,7 +2931,7 @@ declare float @llvm.amdgcn.wwm.f32(float)
 declare i32 @llvm.amdgcn.wqm.i32(i32)
 declare float @llvm.amdgcn.interp.p1(float, i32, i32, i32)
 declare float @llvm.amdgcn.interp.p2(float, float, i32, i32, i32)
-declare float @llvm.amdgcn.struct.buffer.load.f32(<4 x i32>, i32, i32, i32, i32 immarg)
+declare float @llvm.amdgcn.struct.ptr.buffer.load.f32(ptr addrspace(8), i32, i32, i32, i32 immarg)
 declare i32 @llvm.amdgcn.mbcnt.lo(i32, i32)
 declare i32 @llvm.amdgcn.mbcnt.hi(i32, i32)
 declare i64 @llvm.amdgcn.fcmp.i64.f32(float, float, i32)

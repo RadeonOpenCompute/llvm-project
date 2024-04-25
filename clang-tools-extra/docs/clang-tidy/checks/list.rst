@@ -92,6 +92,7 @@ Clang-Tidy Checks
    `bugprone-forwarding-reference-overload <bugprone/forwarding-reference-overload.html>`_,
    `bugprone-implicit-widening-of-multiplication-result <bugprone/implicit-widening-of-multiplication-result.html>`_, "Yes"
    `bugprone-inaccurate-erase <bugprone/inaccurate-erase.html>`_, "Yes"
+   `bugprone-switch-missing-default-case <bugprone/switch-missing-default-case.html>`_,
    `bugprone-incorrect-roundings <bugprone/incorrect-roundings.html>`_,
    `bugprone-infinite-loop <bugprone/infinite-loop.html>`_,
    `bugprone-integer-division <bugprone/integer-division.html>`_,
@@ -102,8 +103,10 @@ Clang-Tidy Checks
    `bugprone-misplaced-pointer-arithmetic-in-alloc <bugprone/misplaced-pointer-arithmetic-in-alloc.html>`_, "Yes"
    `bugprone-misplaced-widening-cast <bugprone/misplaced-widening-cast.html>`_,
    `bugprone-move-forwarding-reference <bugprone/move-forwarding-reference.html>`_, "Yes"
+   `bugprone-multiple-new-in-one-expression <bugprone/multiple-new-in-one-expression.html>`_,
    `bugprone-multiple-statement-macro <bugprone/multiple-statement-macro.html>`_,
    `bugprone-no-escape <bugprone/no-escape.html>`_,
+   `bugprone-non-zero-enum-to-bool-conversion <bugprone/non-zero-enum-to-bool-conversion.html>`_,
    `bugprone-not-null-terminated-result <bugprone/not-null-terminated-result.html>`_, "Yes"
    `bugprone-parent-virtual-call <bugprone/parent-virtual-call.html>`_, "Yes"
    `bugprone-posix-return <bugprone/posix-return.html>`_, "Yes"
@@ -137,6 +140,7 @@ Clang-Tidy Checks
    `bugprone-undelegated-constructor <bugprone/undelegated-constructor.html>`_,
    `bugprone-unhandled-exception-at-new <bugprone/unhandled-exception-at-new.html>`_,
    `bugprone-unhandled-self-assignment <bugprone/unhandled-self-assignment.html>`_,
+   `bugprone-unique-ptr-array-mismatch <bugprone/unique-ptr-array-mismatch.html>`_, "Yes"
    `bugprone-unsafe-functions <bugprone/unsafe-functions.html>`_,
    `bugprone-unused-raii <bugprone/unused-raii.html>`_, "Yes"
    `bugprone-unused-return-value <bugprone/unused-return-value.html>`_,
@@ -179,7 +183,6 @@ Clang-Tidy Checks
    `clang-analyzer-valist.Unterminated <clang-analyzer/valist.Unterminated.html>`_,
    `concurrency-mt-unsafe <concurrency/mt-unsafe.html>`_,
    `concurrency-thread-canceltype-asynchronous <concurrency/thread-canceltype-asynchronous.html>`_,
-   `cppcoreguidelines-avoid-capture-default-when-capturing-this <cppcoreguidelines/avoid-capture-default-when-capturing-this.html>`_, "Yes"
    `cppcoreguidelines-avoid-capturing-lambda-coroutines <cppcoreguidelines/avoid-capturing-lambda-coroutines.html>`_,
    `cppcoreguidelines-avoid-const-or-ref-data-members <cppcoreguidelines/avoid-const-or-ref-data-members.html>`_,
    `cppcoreguidelines-avoid-do-while <cppcoreguidelines/avoid-do-while.html>`_,
@@ -189,6 +192,8 @@ Clang-Tidy Checks
    `cppcoreguidelines-init-variables <cppcoreguidelines/init-variables.html>`_, "Yes"
    `cppcoreguidelines-interfaces-global-init <cppcoreguidelines/interfaces-global-init.html>`_,
    `cppcoreguidelines-macro-usage <cppcoreguidelines/macro-usage.html>`_,
+   `cppcoreguidelines-misleading-capture-default-by-value <cppcoreguidelines/misleading-capture-default-by-value.html>`_, "Yes"
+   `cppcoreguidelines-missing-std-forward <cppcoreguidelines/missing-std-forward.html>`_,
    `cppcoreguidelines-narrowing-conversions <cppcoreguidelines/narrowing-conversions.html>`_,
    `cppcoreguidelines-no-malloc <cppcoreguidelines/no-malloc.html>`_,
    `cppcoreguidelines-owning-memory <cppcoreguidelines/owning-memory.html>`_,
@@ -251,6 +256,8 @@ Clang-Tidy Checks
    `misc-confusable-identifiers <misc/confusable-identifiers.html>`_,
    `misc-const-correctness <misc/const-correctness.html>`_, "Yes"
    `misc-definitions-in-headers <misc/definitions-in-headers.html>`_, "Yes"
+   `misc-header-include-cycle <misc/header-include-cycle.html>`_,
+   `misc-include-cleaner <misc/include-cleaner.html>`_, "Yes"
    `misc-misleading-bidirectional <misc/misleading-bidirectional.html>`_,
    `misc-misleading-identifier <misc/misleading-identifier.html>`_,
    `misc-misplaced-const <misc/misplaced-const.html>`_,
@@ -284,6 +291,7 @@ Clang-Tidy Checks
    `modernize-replace-random-shuffle <modernize/replace-random-shuffle.html>`_, "Yes"
    `modernize-return-braced-init-list <modernize/return-braced-init-list.html>`_, "Yes"
    `modernize-shrink-to-fit <modernize/shrink-to-fit.html>`_, "Yes"
+   `modernize-type-traits <modernize/type-traits.html>`_, "Yes"
    `modernize-unary-static-assert <modernize/unary-static-assert.html>`_, "Yes"
    `modernize-use-auto <modernize/use-auto.html>`_, "Yes"
    `modernize-use-bool-literals <modernize/use-bool-literals.html>`_, "Yes"
@@ -295,6 +303,7 @@ Clang-Tidy Checks
    `modernize-use-noexcept <modernize/use-noexcept.html>`_, "Yes"
    `modernize-use-nullptr <modernize/use-nullptr.html>`_, "Yes"
    `modernize-use-override <modernize/use-override.html>`_, "Yes"
+   `modernize-use-std-print <modernize/use-std-print.html>`_, "Yes"
    `modernize-use-trailing-return-type <modernize/use-trailing-return-type.html>`_, "Yes"
    `modernize-use-transparent-functors <modernize/use-transparent-functors.html>`_, "Yes"
    `modernize-use-uncaught-exceptions <modernize/use-uncaught-exceptions.html>`_, "Yes"
@@ -312,6 +321,7 @@ Clang-Tidy Checks
    `objc-super-self <objc/super-self.html>`_, "Yes"
    `openmp-exception-escape <openmp/exception-escape.html>`_,
    `openmp-use-default-none <openmp/use-default-none.html>`_,
+   `performance-avoid-endl <performance/avoid-endl.html>`_, "Yes"
    `performance-faster-string-find <performance/faster-string-find.html>`_, "Yes"
    `performance-for-range-copy <performance/for-range-copy.html>`_, "Yes"
    `performance-implicit-conversion-in-loop <performance/implicit-conversion-in-loop.html>`_,
@@ -322,7 +332,9 @@ Clang-Tidy Checks
    `performance-move-constructor-init <performance/move-constructor-init.html>`_,
    `performance-no-automatic-move <performance/no-automatic-move.html>`_,
    `performance-no-int-to-ptr <performance/no-int-to-ptr.html>`_,
+   `performance-noexcept-destructor <performance/noexcept-destructor.html>`_, "Yes"
    `performance-noexcept-move-constructor <performance/noexcept-move-constructor.html>`_, "Yes"
+   `performance-noexcept-swap <performance/noexcept-swap.html>`_, "Yes"
    `performance-trivially-destructible <performance/trivially-destructible.html>`_, "Yes"
    `performance-type-promotion-in-math-fn <performance/type-promotion-in-math-fn.html>`_, "Yes"
    `performance-unnecessary-copy-initialization <performance/unnecessary-copy-initialization.html>`_, "Yes"
@@ -474,7 +486,11 @@ Clang-Tidy Checks
    `cppcoreguidelines-c-copy-assignment-signature <cppcoreguidelines/c-copy-assignment-signature.html>`_, `misc-unconventional-assign-operator <misc/unconventional-assign-operator.html>`_,
    `cppcoreguidelines-explicit-virtual-functions <cppcoreguidelines/explicit-virtual-functions.html>`_, `modernize-use-override <modernize/use-override.html>`_, "Yes"
    `cppcoreguidelines-macro-to-enum <cppcoreguidelines/macro-to-enum.html>`_, `modernize-macro-to-enum <modernize/macro-to-enum.html>`_, "Yes"
+   `cppcoreguidelines-noexcept-destructor <cppcoreguidelines/noexcept-destructor.html>`_, `performance-noexcept-destructor <performance/noexcept-destructor.html>`_, "Yes"
+   `cppcoreguidelines-noexcept-move-operations <cppcoreguidelines/noexcept-move-operations.html>`_, `performance-noexcept-move-constructor <performance/noexcept-move-constructor.html>`_, "Yes"
+   `cppcoreguidelines-noexcept-swap <cppcoreguidelines/noexcept-swap.html>`_, `performance-noexcept-swap <performance/noexcept-swap.html>`_, "Yes"
    `cppcoreguidelines-non-private-member-variables-in-classes <cppcoreguidelines/non-private-member-variables-in-classes.html>`_, `misc-non-private-member-variables-in-classes <misc/non-private-member-variables-in-classes.html>`_,
+   `cppcoreguidelines-use-default-member-init <cppcoreguidelines/use-default-member-init.html>`_, `modernize-use-default-member-init <modernize/use-default-member-init.html>`_,
    `fuchsia-header-anon-namespaces <fuchsia/header-anon-namespaces.html>`_, `google-build-namespaces <google/build-namespaces.html>`_,
    `google-readability-braces-around-statements <google/readability-braces-around-statements.html>`_, `readability-braces-around-statements <readability/braces-around-statements.html>`_, "Yes"
    `google-readability-function-size <google/readability-function-size.html>`_, `readability-function-size <readability/function-size.html>`_,

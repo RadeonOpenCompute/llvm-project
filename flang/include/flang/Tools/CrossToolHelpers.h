@@ -13,17 +13,61 @@
 #ifndef FORTRAN_TOOLS_CROSS_TOOL_HELPERS_H
 #define FORTRAN_TOOLS_CROSS_TOOL_HELPERS_H
 
+#include "flang/Frontend/LangOptions.h"
+#include <cstdint>
+
 #include "mlir/Dialect/OpenMP/OpenMPDialect.h"
 #include "mlir/IR/BuiltinOps.h"
+
+struct OffloadModuleOpts {
+  OffloadModuleOpts() {}
+  OffloadModuleOpts(uint32_t OpenMPTargetDebug, bool OpenMPTeamSubscription,
+      bool OpenMPThreadSubscription, bool OpenMPNoThreadState,
+      bool OpenMPNoNestedParallelism, bool OpenMPIsTargetDevice,
+      uint32_t OpenMPVersion, std::string OMPHostIRFile = {})
+      : OpenMPTargetDebug(OpenMPTargetDebug),
+        OpenMPTeamSubscription(OpenMPTeamSubscription),
+        OpenMPThreadSubscription(OpenMPThreadSubscription),
+        OpenMPNoThreadState(OpenMPNoThreadState),
+        OpenMPNoNestedParallelism(OpenMPNoNestedParallelism),
+        OpenMPIsTargetDevice(OpenMPIsTargetDevice),
+        OpenMPVersion(OpenMPVersion), OMPHostIRFile(OMPHostIRFile) {}
+
+  OffloadModuleOpts(Fortran::frontend::LangOptions &Opts)
+      : OpenMPTargetDebug(Opts.OpenMPTargetDebug),
+        OpenMPTeamSubscription(Opts.OpenMPTeamSubscription),
+        OpenMPThreadSubscription(Opts.OpenMPThreadSubscription),
+        OpenMPNoThreadState(Opts.OpenMPNoThreadState),
+        OpenMPNoNestedParallelism(Opts.OpenMPNoNestedParallelism),
+        OpenMPIsTargetDevice(Opts.OpenMPIsTargetDevice),
+        OpenMPVersion(Opts.OpenMPVersion), OMPHostIRFile(Opts.OMPHostIRFile) {}
+
+  uint32_t OpenMPTargetDebug = 0;
+  bool OpenMPTeamSubscription = false;
+  bool OpenMPThreadSubscription = false;
+  bool OpenMPNoThreadState = false;
+  bool OpenMPNoNestedParallelism = false;
+  bool OpenMPIsTargetDevice = false;
+  uint32_t OpenMPVersion = 11;
+  std::string OMPHostIRFile = {};
+};
 
 //  Shares assinging of the OpenMP OffloadModuleInterface and its assorted
 //  attributes accross Flang tools (bbc/flang)
 void setOffloadModuleInterfaceAttributes(
-    mlir::ModuleOp &module, bool isDevice) {
+    mlir::ModuleOp &module, OffloadModuleOpts Opts) {
   // Should be registered by the OpenMPDialect
   if (auto offloadMod = llvm::dyn_cast<mlir::omp::OffloadModuleInterface>(
           module.getOperation())) {
-    offloadMod.setIsDevice(isDevice);
+    offloadMod.setIsTargetDevice(Opts.OpenMPIsTargetDevice);
+    if (Opts.OpenMPIsTargetDevice) {
+      offloadMod.setFlags(Opts.OpenMPTargetDebug, Opts.OpenMPTeamSubscription,
+          Opts.OpenMPThreadSubscription, Opts.OpenMPNoThreadState,
+          Opts.OpenMPNoNestedParallelism, Opts.OpenMPVersion);
+
+      if (!Opts.OMPHostIRFile.empty())
+        offloadMod.setHostIRFilePath(Opts.OMPHostIRFile);
+    }
   }
 }
 
@@ -36,6 +80,12 @@ void setOffloadModuleInterfaceTargetAttribute(mlir::ModuleOp &module,
           module.getOperation())) {
     offloadMod.setTarget(targetCPU, targetFeatures);
   }
+}
+
+void setOpenMPVersionAttribute(mlir::ModuleOp &module, int64_t version) {
+  module.getOperation()->setAttr(
+      mlir::StringAttr::get(module.getContext(), llvm::Twine{"omp.version"}),
+      mlir::omp::VersionAttr::get(module.getContext(), version));
 }
 
 #endif // FORTRAN_TOOLS_CROSS_TOOL_HELPERS_H

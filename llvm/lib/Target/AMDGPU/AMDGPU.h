@@ -41,6 +41,7 @@ FunctionPass *createSIFixControlFlowLiveIntervalsPass();
 FunctionPass *createSIOptimizeExecMaskingPreRAPass();
 FunctionPass *createSIOptimizeVGPRLiveRangePass();
 FunctionPass *createSIFixSGPRCopiesPass();
+FunctionPass *createLowerWWMCopiesPass();
 FunctionPass *createSIMemoryLegalizerPass();
 FunctionPass *createSIInsertWaitcntsPass();
 FunctionPass *createSIPreAllocateWWMRegsPass();
@@ -54,7 +55,6 @@ FunctionPass *createAMDGPUCodeGenPreparePass();
 FunctionPass *createAMDGPULateCodeGenPreparePass();
 FunctionPass *createAMDGPUMachineCFGStructurizerPass();
 FunctionPass *createAMDGPURewriteOutArgumentsPass();
-ModulePass *createAMDGPUReplaceLDSUseWithPointerPass();
 ModulePass *createAMDGPULowerModuleLDSPass();
 FunctionPass *createSIModeRegisterPass();
 FunctionPass *createGCNPreRAOptimizationsPass();
@@ -90,10 +90,6 @@ enum class ScanOptions { DPP, Iterative, None };
 FunctionPass *createAMDGPUAtomicOptimizerPass(ScanOptions ScanStrategy);
 void initializeAMDGPUAtomicOptimizerPass(PassRegistry &);
 extern char &AMDGPUAtomicOptimizerID;
-
-ModulePass *createAMDGPULowerIntrinsicsPass();
-void initializeAMDGPULowerIntrinsicsPass(PassRegistry &);
-extern char &AMDGPULowerIntrinsicsID;
 
 ModulePass *createAMDGPUCtorDtorLoweringLegacyPass();
 void initializeAMDGPUCtorDtorLoweringLegacyPass(PassRegistry &);
@@ -151,11 +147,17 @@ extern char &SIPeepholeSDWAID;
 void initializeSIShrinkInstructionsPass(PassRegistry&);
 extern char &SIShrinkInstructionsID;
 
+void initializeSISimplifyPredicatedCopiesPass(PassRegistry &);
+extern char &SISimplifyPredicatedCopiesID;
+
 void initializeSIFixSGPRCopiesPass(PassRegistry &);
 extern char &SIFixSGPRCopiesID;
 
-void initializeSISimplifyPredicatedCopiesPass(PassRegistry &);
-extern char &SISimplifyPredicatedCopiesID;
+void initializeSIFixVGPRCopiesPass(PassRegistry &);
+extern char &SIFixVGPRCopiesID;
+
+void initializeSILowerWWMCopiesPass(PassRegistry &);
+extern char &SILowerWWMCopiesID;
 
 void initializeSILowerI1CopiesPass(PassRegistry &);
 extern char &SILowerI1CopiesID;
@@ -240,6 +242,16 @@ struct AMDGPUAlwaysInlinePass : PassInfoMixin<AMDGPUAlwaysInlinePass> {
 
 private:
   bool GlobalOpt;
+};
+
+class AMDGPUCodeGenPreparePass
+    : public PassInfoMixin<AMDGPUCodeGenPreparePass> {
+private:
+  TargetMachine &TM;
+
+public:
+  AMDGPUCodeGenPreparePass(TargetMachine &TM) : TM(TM){};
+  PreservedAnalyses run(Function &, FunctionAnalysisManager &);
 };
 
 FunctionPass *createAMDGPUAnnotateUniformValues();
@@ -343,6 +355,9 @@ extern char &GCNPreRAOptimizationsID;
 FunctionPass *createAMDGPUSetWavePriorityPass();
 void initializeAMDGPUSetWavePriorityPass(PassRegistry &);
 
+void initializeGCNRewritePartialRegUsesPass(llvm::PassRegistry &);
+extern char &GCNRewritePartialRegUsesID;
+
 namespace AMDGPU {
 enum TargetIndex {
   TI_CONSTDATA_START,
@@ -360,53 +375,60 @@ enum TargetIndex {
 /// a separate piece of memory that is unique from other
 /// memory locations.
 namespace AMDGPUAS {
-  enum : unsigned {
-    // The maximum value for flat, generic, local, private, constant and region.
-    MAX_AMDGPU_ADDRESS = 7,
+enum : unsigned {
+  // The maximum value for flat, generic, local, private, constant and region.
+  MAX_AMDGPU_ADDRESS = 8,
 
-    FLAT_ADDRESS = 0,     ///< Address space for flat memory.
-    GLOBAL_ADDRESS = 1,   ///< Address space for global memory (RAT0, VTX0).
-    REGION_ADDRESS = 2,   ///< Address space for region memory. (GDS)
+  FLAT_ADDRESS = 0,   ///< Address space for flat memory.
+  GLOBAL_ADDRESS = 1, ///< Address space for global memory (RAT0, VTX0).
+  REGION_ADDRESS = 2, ///< Address space for region memory. (GDS)
 
-    CONSTANT_ADDRESS = 4, ///< Address space for constant memory (VTX2).
-    LOCAL_ADDRESS = 3,    ///< Address space for local memory.
-    PRIVATE_ADDRESS = 5,  ///< Address space for private memory.
+  CONSTANT_ADDRESS = 4, ///< Address space for constant memory (VTX2).
+  LOCAL_ADDRESS = 3,    ///< Address space for local memory.
+  PRIVATE_ADDRESS = 5,  ///< Address space for private memory.
 
-    CONSTANT_ADDRESS_32BIT = 6, ///< Address space for 32-bit constant memory.
+  CONSTANT_ADDRESS_32BIT = 6, ///< Address space for 32-bit constant memory.
 
-    BUFFER_FAT_POINTER = 7, ///< Address space for 160-bit buffer fat pointers.
+  BUFFER_FAT_POINTER = 7, ///< Address space for 160-bit buffer fat pointers.
+                          ///< Not used in backend.
 
-    /// Address space for direct addressable parameter memory (CONST0).
-    PARAM_D_ADDRESS = 6,
-    /// Address space for indirect addressable parameter memory (VTX1).
-    PARAM_I_ADDRESS = 7,
+  BUFFER_RESOURCE = 8, ///< Address space for 128-bit buffer resources.
 
-    // Do not re-order the CONSTANT_BUFFER_* enums.  Several places depend on
-    // this order to be able to dynamically index a constant buffer, for
-    // example:
-    //
-    // ConstantBufferAS = CONSTANT_BUFFER_0 + CBIdx
+  /// Internal address spaces. Can be freely renumbered.
+  STREAMOUT_REGISTER = 128, ///< Address space for GS NGG Streamout registers.
+  /// end Internal address spaces.
 
-    CONSTANT_BUFFER_0 = 8,
-    CONSTANT_BUFFER_1 = 9,
-    CONSTANT_BUFFER_2 = 10,
-    CONSTANT_BUFFER_3 = 11,
-    CONSTANT_BUFFER_4 = 12,
-    CONSTANT_BUFFER_5 = 13,
-    CONSTANT_BUFFER_6 = 14,
-    CONSTANT_BUFFER_7 = 15,
-    CONSTANT_BUFFER_8 = 16,
-    CONSTANT_BUFFER_9 = 17,
-    CONSTANT_BUFFER_10 = 18,
-    CONSTANT_BUFFER_11 = 19,
-    CONSTANT_BUFFER_12 = 20,
-    CONSTANT_BUFFER_13 = 21,
-    CONSTANT_BUFFER_14 = 22,
-    CONSTANT_BUFFER_15 = 23,
+  /// Address space for direct addressable parameter memory (CONST0).
+  PARAM_D_ADDRESS = 6,
+  /// Address space for indirect addressable parameter memory (VTX1).
+  PARAM_I_ADDRESS = 7,
 
-    // Some places use this if the address space can't be determined.
-    UNKNOWN_ADDRESS_SPACE = ~0u,
-  };
+  // Do not re-order the CONSTANT_BUFFER_* enums.  Several places depend on
+  // this order to be able to dynamically index a constant buffer, for
+  // example:
+  //
+  // ConstantBufferAS = CONSTANT_BUFFER_0 + CBIdx
+
+  CONSTANT_BUFFER_0 = 8,
+  CONSTANT_BUFFER_1 = 9,
+  CONSTANT_BUFFER_2 = 10,
+  CONSTANT_BUFFER_3 = 11,
+  CONSTANT_BUFFER_4 = 12,
+  CONSTANT_BUFFER_5 = 13,
+  CONSTANT_BUFFER_6 = 14,
+  CONSTANT_BUFFER_7 = 15,
+  CONSTANT_BUFFER_8 = 16,
+  CONSTANT_BUFFER_9 = 17,
+  CONSTANT_BUFFER_10 = 18,
+  CONSTANT_BUFFER_11 = 19,
+  CONSTANT_BUFFER_12 = 20,
+  CONSTANT_BUFFER_13 = 21,
+  CONSTANT_BUFFER_14 = 22,
+  CONSTANT_BUFFER_15 = 23,
+
+  // Some places use this if the address space can't be determined.
+  UNKNOWN_ADDRESS_SPACE = ~0u,
+};
 }
 
 namespace AMDGPU {
@@ -424,6 +446,32 @@ inline bool isExtendedGlobalAddrSpace(unsigned AS) {
          AS == AMDGPUAS::CONSTANT_ADDRESS_32BIT ||
          AS > AMDGPUAS::MAX_AMDGPU_ADDRESS;
 }
+
+static inline bool addrspacesMayAlias(unsigned AS1, unsigned AS2) {
+  static_assert(AMDGPUAS::MAX_AMDGPU_ADDRESS <= 8, "Addr space out of range");
+
+  if (AS1 > AMDGPUAS::MAX_AMDGPU_ADDRESS || AS2 > AMDGPUAS::MAX_AMDGPU_ADDRESS)
+    return true;
+
+  // This array is indexed by address space value enum elements 0 ... to 8
+  // clang-format off
+  static const bool ASAliasRules[9][9] = {
+    /*                   Flat   Global Region  Group Constant Private Const32 BufFatPtr BufRsrc */
+    /* Flat     */        {true,  true,  false, true,  true,  true,  true,  true,  true},
+    /* Global   */        {true,  true,  false, false, true,  false, true,  true,  true},
+    /* Region   */        {false, false, true,  false, false, false, false, false, false},
+    /* Group    */        {true,  false, false, true,  false, false, false, false, false},
+    /* Constant */        {true,  true,  false, false, false, false, true,  true,  true},
+    /* Private  */        {true,  false, false, false, false, true,  false, false, false},
+    /* Constant 32-bit */ {true,  true,  false, false, true,  false, false, true,  true},
+    /* Buffer Fat Ptr  */ {true,  true,  false, false, true,  false, true,  true,  true},
+    /* Buffer Resource */ {true,  true,  false, false, true,  false, true,  true,  true},
+  };
+  // clang-format on
+
+  return ASAliasRules[AS1][AS2];
+}
+
 }
 
 } // End namespace llvm

@@ -2,6 +2,12 @@
 // RUN: %env_tool_opts=strip_path_prefix=/TestCases/ %run %t 2>&1 | FileCheck %s
 //
 // Tests __sanitizer_symbolize_pc.
+
+// FIXME: Investigate why it does not print GLOBAL_VAR_ABC.
+// XFAIL: hwasan && target=aarch64{{.*}}
+// LSan tests fail on Darwin
+// UNSUPPORTED: darwin && lsan
+
 #include <stdio.h>
 #include <sanitizer/common_interface_defs.h>
 

@@ -36,12 +36,28 @@ ELF Improvements
 * ``DT_RISCV_VARIANT_CC`` is now produced if at least one ``R_RISCV_JUMP_SLOT``
   relocation references a symbol with the ``STO_RISCV_VARIANT_CC`` bit.
   (`D107951 <https://reviews.llvm.org/D107951>`_)
+* ``--remap-inputs=`` and ``--remap-inputs-file=`` are added to remap input files.
+  (`D148859 <https://reviews.llvm.org/D148859>`_)
+* ``PT_RISCV_ATTRIBUTES`` is added to include the SHT_RISCV_ATTRIBUTES section.
+  (`D152065 <https://reviews.llvm.org/D152065>`_)
 
 Breaking changes
 ----------------
 
 COFF Improvements
 -----------------
+
+* lld-link can now find libraries with relative paths that are relative to
+  `/libpath`. Before it would only be able to find libraries relative to the
+  current directory.
+  I.e. ``lld-link /libpath:c:\relative\root relative\path\my.lib`` where before
+  we would have to do ``lld-link /libpath:c:\relative\root\relative\path my.lib``
+* lld-link learned -print-search-paths that will print all the paths where it will
+  search for libraries.
+* By default lld-link will now search for libraries in the toolchain directories.
+  Specifically it will search:
+  ``<toolchain>/lib``, ``<toolchain>/lib/clang/<version>/lib`` and
+  ``<toolchain>/lib/clang/<version>/lib/windows``.
 
 MinGW Improvements
 ------------------
@@ -52,3 +68,9 @@ MachO Improvements
 WebAssembly Improvements
 ------------------------
 
+Fixes
+#####
+
+* Arm exception index tables (.ARM.exidx sections) are now output
+  correctly when they are at a non zero offset within their output
+  section. (`D148033 <https://reviews.llvm.org/D148033>`_)

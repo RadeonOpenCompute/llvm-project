@@ -405,6 +405,8 @@ void __kmp_print_storage_map_gtid(int gtid, void *p1, void *p2, size_t size,
   }
 #endif /* KMP_PRINT_DATA_PLACEMENT */
   __kmp_release_bootstrap_lock(&__kmp_stdio_lock);
+
+  va_end(ap);
 }
 
 void __kmp_warn(char const *format, ...) {
@@ -1152,6 +1154,9 @@ void __kmp_serialized_parallel(ident_t *loc, kmp_int32 global_tid) {
   }
   // Reset for next parallel region
   this_thr->th.th_set_proc_bind = proc_bind_default;
+
+  // Reset num_threads for next parallel region
+  this_thr->th.th_set_nproc = 0;
 
 #if OMPT_SUPPORT
   ompt_data_t ompt_parallel_data = ompt_data_none;
@@ -6100,7 +6105,6 @@ void *__kmp_launch_thread(kmp_info_t *this_thr) {
       __kmp_join_barrier(gtid);
     }
   }
-  TCR_SYNC_PTR((intptr_t)__kmp_global.g.g_done);
 
 #if OMPD_SUPPORT
   if (ompd_state & OMPD_ENABLE_BP)
@@ -8828,7 +8832,6 @@ __kmp_determine_reduction_method(
 
   int team_size;
 
-  KMP_DEBUG_ASSERT(loc); // it would be nice to test ( loc != 0 )
   KMP_DEBUG_ASSERT(lck); // it would be nice to test ( lck != 0 )
 
 #define FAST_REDUCTION_ATOMIC_METHOD_GENERATED                                 \

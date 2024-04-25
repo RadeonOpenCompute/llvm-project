@@ -440,8 +440,9 @@ MachineInstr &TargetInstrInfo::duplicate(MachineBasicBlock &MBB,
 // If the COPY instruction in MI can be folded to a stack operation, return
 // the register class to use.
 static const TargetRegisterClass *canFoldCopy(const MachineInstr &MI,
+                                              const TargetInstrInfo &TII,
                                               unsigned FoldIdx) {
-  assert(MI.isCopy() && "MI must be a COPY instruction");
+  assert(TII.isCopyInstr(MI) && "MI must be a COPY instruction");
   if (MI.getNumOperands() != 2)
     return nullptr;
   assert(FoldIdx<2 && "FoldIdx refers no nonexistent operand");
@@ -630,10 +631,10 @@ MachineInstr *TargetInstrInfo::foldMemoryOperand(MachineInstr &MI,
   }
 
   // Straight COPY may fold as load/store.
-  if (!MI.isCopy() || Ops.size() != 1)
+  if (!isCopyInstr(MI) || Ops.size() != 1)
     return nullptr;
 
-  const TargetRegisterClass *RC = canFoldCopy(MI, Ops[0]);
+  const TargetRegisterClass *RC = canFoldCopy(MI, *this, Ops[0]);
   if (!RC)
     return nullptr;
 
@@ -694,6 +695,61 @@ MachineInstr *TargetInstrInfo::foldMemoryOperand(MachineInstr &MI,
     }
   }
   return NewMI;
+}
+
+/// transferImplicitOperands - MI is a pseudo-instruction, and the lowered
+/// replacement instructions immediately precede it.  Copy any implicit
+/// operands from MI to the replacement instruction.
+static void transferImplicitOperands(MachineInstr *MI,
+                                     const TargetRegisterInfo *TRI) {
+  MachineBasicBlock::iterator CopyMI = MI;
+  --CopyMI;
+
+  Register DstReg = MI->getOperand(0).getReg();
+  for (const MachineOperand &MO : MI->implicit_operands()) {
+    CopyMI->addOperand(MO);
+
+    // Be conservative about preserving kills when subregister defs are
+    // involved. If there was implicit kill of a super-register overlapping the
+    // copy result, we would kill the subregisters previous copies defined.
+
+    if (MO.isKill() && TRI->regsOverlap(DstReg, MO.getReg()))
+      CopyMI->getOperand(CopyMI->getNumOperands() - 1).setIsKill(false);
+  }
+}
+
+void TargetInstrInfo::lowerCopy(MachineInstr *MI,
+                                const TargetRegisterInfo *TRI) const {
+  if (MI->allDefsAreDead()) {
+    MI->setDesc(get(TargetOpcode::KILL));
+    return;
+  }
+
+  MachineOperand &DstMO = MI->getOperand(0);
+  MachineOperand &SrcMO = MI->getOperand(1);
+
+  bool IdentityCopy = (SrcMO.getReg() == DstMO.getReg());
+  if (IdentityCopy || SrcMO.isUndef()) {
+    // No need to insert an identity copy instruction, but replace with a KILL
+    // if liveness is changed.
+    if (SrcMO.isUndef() || MI->getNumOperands() > 2) {
+      // We must make sure the super-register gets killed. Replace the
+      // instruction with KILL.
+      MI->setDesc(get(TargetOpcode::KILL));
+      return;
+    }
+    // Vanilla identity copy.
+    MI->eraseFromParent();
+    return;
+  }
+
+  copyPhysReg(*MI->getParent(), MI, MI->getDebugLoc(), DstMO.getReg(),
+              SrcMO.getReg(), SrcMO.isKill());
+
+  if (MI->getNumOperands() > 2)
+    transferImplicitOperands(MI, TRI);
+  MI->eraseFromParent();
+  return;
 }
 
 bool TargetInstrInfo::hasReassociableOperands(
@@ -1343,11 +1399,7 @@ TargetInstrInfo::describeLoadedValue(const MachineInstr &MI,
     if (Reg == DestReg)
       return ParamLoadedValue(*DestSrc->Source, Expr);
 
-    // Cases where super- or sub-registers needs to be described should
-    // be handled by the target's hook implementation.
-    assert(!TRI->isSuperOrSubRegisterEq(Reg, DestReg) &&
-           "TargetInstrInfo::describeLoadedValue can't describe super- or "
-           "sub-regs for copy instructions");
+    // If the target's hook couldn't describe this copy, give up.
     return std::nullopt;
   } else if (auto RegImm = isAddImmediate(MI, Reg)) {
     Register SrcReg = RegImm->Reg;
@@ -1651,10 +1703,25 @@ bool TargetInstrInfo::isMBBSafeToOutlineFrom(MachineBasicBlock &MBB,
   // Some instrumentations create special TargetOpcode at the start which
   // expands to special code sequences which must be present.
   auto First = MBB.getFirstNonDebugInstr();
-  if (First != MBB.end() &&
-      (First->getOpcode() == TargetOpcode::FENTRY_CALL ||
-       First->getOpcode() == TargetOpcode::PATCHABLE_FUNCTION_ENTER))
+  if (First == MBB.end())
+    return true;
+
+  if (First->getOpcode() == TargetOpcode::FENTRY_CALL ||
+      First->getOpcode() == TargetOpcode::PATCHABLE_FUNCTION_ENTER)
     return false;
 
+  // Some instrumentations create special pseudo-instructions at or just before
+  // the end that must be present.
+  auto Last = MBB.getLastNonDebugInstr();
+  if (Last->getOpcode() == TargetOpcode::PATCHABLE_RET ||
+      Last->getOpcode() == TargetOpcode::PATCHABLE_TAIL_CALL)
+    return false;
+
+  if (Last != First && Last->isReturn()) {
+    --Last;
+    if (Last->getOpcode() == TargetOpcode::PATCHABLE_FUNCTION_EXIT ||
+        Last->getOpcode() == TargetOpcode::PATCHABLE_TAIL_CALL)
+      return false;
+  }
   return true;
 }

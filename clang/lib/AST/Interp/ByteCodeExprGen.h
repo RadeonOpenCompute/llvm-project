@@ -93,6 +93,8 @@ public:
   bool VisitMaterializeTemporaryExpr(const MaterializeTemporaryExpr *E);
   bool VisitCompoundLiteralExpr(const CompoundLiteralExpr *E);
   bool VisitTypeTraitExpr(const TypeTraitExpr *E);
+  bool VisitLambdaExpr(const LambdaExpr *E);
+  bool VisitPredefinedExpr(const PredefinedExpr *E);
 
 protected:
   bool visitExpr(const Expr *E) override;
@@ -164,7 +166,8 @@ protected:
     if (!visitInitializer(Init))
       return false;
 
-    if (Init->getType()->isRecordType() && !this->emitCheckGlobalCtor(Init))
+    if ((Init->getType()->isArrayType() || Init->getType()->isRecordType()) &&
+        !this->emitCheckGlobalCtor(Init))
       return false;
 
     return this->emitPopPtr(Init);
@@ -181,8 +184,11 @@ protected:
     return this->emitPopPtr(I);
   }
 
+  bool visitConditional(const AbstractConditionalOperator *E,
+                        llvm::function_ref<bool(const Expr *)> V);
+
   /// Creates a local primitive value.
-  unsigned allocateLocalPrimitive(DeclTy &&Decl, PrimType Ty, bool IsMutable,
+  unsigned allocateLocalPrimitive(DeclTy &&Decl, PrimType Ty, bool IsConst,
                                   bool IsExtended = false);
 
   /// Allocates a space storing a local given its type.
@@ -198,7 +204,7 @@ private:
   friend class ArrayIndexScope<Emitter>;
 
   /// Emits a zero initializer.
-  bool visitZeroInitializer(PrimType T, const Expr *E);
+  bool visitZeroInitializer(QualType QT, const Expr *E);
 
   enum class DerefKind {
     /// Value is read and pushed to stack.
@@ -239,15 +245,6 @@ private:
     if (const auto *RD = T->getPointeeCXXRecordDecl())
       return RD;
     return T->getAsCXXRecordDecl();
-  }
-
-  /// Returns whether we should create a global variable for the
-  /// given ValueDecl.
-  bool shouldBeGloballyIndexed(const ValueDecl *VD) const {
-    if (const auto *V = dyn_cast<VarDecl>(VD))
-      return V->hasGlobalStorage() || V->isConstexpr();
-
-    return false;
   }
 
   llvm::RoundingMode getRoundingMode(const Expr *E) const {

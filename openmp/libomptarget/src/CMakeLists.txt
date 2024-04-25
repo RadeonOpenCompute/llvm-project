@@ -9,8 +9,16 @@
 # Build offloading library libomptarget.so.
 #
 ##===----------------------------------------------------------------------===##
+# libhsakmt.a
+find_library ( HSAKMT_LIB libhsakmt.a REQURIED HINTS ${CMAKE_INSTALL_PREFIX} PATHS /opt/rocm)
+get_filename_component ( HSAKMT_LIB_PATH ${HSAKMT_LIB} DIRECTORY )
+link_directories (${HSAKMT_LIB_PATH})
 
-libomptarget_say("Building offloading runtime library libomptarget.")
+# lib_amdgpu
+pkg_check_modules(drm_amdgpu REQUIRED IMPORTED_TARGET libdrm_amdgpu)
+
+# libnuma
+find_library(numa libnuma.so REQUIRED HINTS /usr/lib/x86_64-linux-gnu/)
 
 add_llvm_library(omptarget
   SHARED
@@ -33,10 +41,15 @@ add_llvm_library(omptarget
   Object
 
   LINK_LIBS
-  PRIVATE
-  "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports"
-  #  NO_INSTALL_RPATH
-  )
+  PUBLIC
+  omp
+)
+target_include_directories(omptarget PRIVATE ${LIBOMPTARGET_INCLUDE_DIR})
+
+if (LIBOMP_HAVE_VERSION_SCRIPT_FLAG)
+  target_link_libraries(omptarget PRIVATE
+    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports")
+endif()
 
 # Don't override an externally defined RPATH
 if(NOT DEFINED CMAKE_INSTALL_RPATH)
@@ -57,7 +70,12 @@ find_library(LLVM_OFFLOAD_ARCH LLVMOffloadArch HINTS ${LLVM_LIBRARY_DIR} ${LLVM_
 
 target_include_directories(omptarget PRIVATE ${LIBOMPTARGET_INCLUDE_DIR})
 
-target_link_libraries(omptarget PRIVATE
+target_link_libraries(
+  omptarget
+  PRIVATE hsakmt
+  PRIVATE drm_amdgpu
+  PRIVATE numa
+  PRIVATE
   ${CMAKE_DL_LIBS}
   ${LLVM_OFFLOAD_ARCH}
   "-Wl,--no-allow-shlib-undefined")

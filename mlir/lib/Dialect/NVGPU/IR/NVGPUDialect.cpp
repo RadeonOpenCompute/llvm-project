@@ -14,6 +14,7 @@
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeUtilities.h"
@@ -34,35 +35,28 @@ void nvgpu::NVGPUDialect::initialize() {
       >();
 }
 
-bool nvgpu::NVGPUDialect::hasSharedMemoryAddressSpace(MemRefType type) {
-  Attribute memorySpace = type.getMemorySpace();
+bool nvgpu::NVGPUDialect::isSharedMemoryAddressSpace(Attribute memorySpace) {
   if (!memorySpace)
     return false;
-  if (auto intAttr = memorySpace.dyn_cast<IntegerAttr>())
+  if (auto intAttr = llvm::dyn_cast<IntegerAttr>(memorySpace))
     return intAttr.getInt() == NVGPUDialect::kSharedMemoryAddressSpace;
-  if (auto gpuAttr = memorySpace.dyn_cast<gpu::AddressSpaceAttr>())
+  if (auto gpuAttr = llvm::dyn_cast<gpu::AddressSpaceAttr>(memorySpace))
     return gpuAttr.getValue() == gpu::AddressSpace::Workgroup;
   return false;
+}
+
+bool nvgpu::NVGPUDialect::hasSharedMemoryAddressSpace(MemRefType type) {
+  Attribute memorySpace = type.getMemorySpace();
+  return isSharedMemoryAddressSpace(memorySpace);
 }
 
 //===----------------------------------------------------------------------===//
 // NVGPU_DeviceAsyncCopyOp
 //===----------------------------------------------------------------------===//
 
-/// Return true if the last dimension of the MemRefType has unit stride. Also
-/// return true for memrefs with no strides.
-static bool isLastMemrefDimUnitStride(MemRefType type) {
-  int64_t offset;
-  SmallVector<int64_t> strides;
-  if (failed(getStridesAndOffset(type, strides, offset))) {
-    return false;
-  }
-  return strides.back() == 1;
-}
-
 LogicalResult DeviceAsyncCopyOp::verify() {
-  auto srcMemref = getSrc().getType().cast<MemRefType>();
-  auto dstMemref = getDst().getType().cast<MemRefType>();
+  auto srcMemref = llvm::cast<MemRefType>(getSrc().getType());
+  auto dstMemref = llvm::cast<MemRefType>(getDst().getType());
 
   if (!isLastMemrefDimUnitStride(srcMemref))
     return emitError("source memref most minor dim must have unit stride");
@@ -83,6 +77,33 @@ LogicalResult DeviceAsyncCopyOp::verify() {
     return emitOpError() << "expected " << dstMemref.getRank()
                          << " destination indices, got "
                          << getDstIndices().size();
+  int64_t dstElements = getDstElements().getZExtValue();
+  int64_t sizeInBytes = (dstMemref.getElementTypeBitWidth() * dstElements) / 8;
+  if (sizeInBytes != 4 && sizeInBytes != 8 && sizeInBytes != 16) {
+    unsigned dstWidth = dstMemref.getElementTypeBitWidth();
+    InFlightDiagnostic diag = emitError();
+    diag << "Requested copy elements is " << dstElements << " with width "
+         << dstMemref.getElementTypeBitWidth()
+         << ". But copy elements could be one of ";
+    if ((32 / dstWidth) > 0)
+      diag << (32 / dstWidth) << ", ";
+    if ((64 / dstWidth) > 0)
+      diag << (64 / dstWidth) << ", ";
+    if ((128 / dstWidth) > 0)
+      diag << (128 / dstWidth) << ".";
+    return diag;
+  }
+  if (getBypassL1().has_value()) {
+    int64_t req = 16 * 8 / dstMemref.getElementTypeBitWidth();
+    if (getBypassL1().value() && sizeInBytes != 16) {
+      return emitOpError() << "bypassL1 does not satify alignment for "
+                           << dstMemref << " with destination element "
+                           << dstElements
+                           << ". Unset bypassL1, or set "
+                              "destination element to "
+                           << req;
+    }
+  }
   return success();
 }
 
@@ -94,6 +115,15 @@ void MmaSyncOp::build(::mlir::OpBuilder &odsBuilder,
                       Value matrixB, Value matrixC, ArrayAttr mmaShape) {
   build(odsBuilder, odsState, matrixC.getType(), matrixA, matrixB, matrixC,
         mmaShape, UnitAttr());
+}
+
+void MmaSyncOp::build(::mlir::OpBuilder &odsBuilder,
+                      ::mlir::OperationState &odsState, Value matrixA,
+                      Value matrixB, Value matrixC, ArrayRef<int64_t> mmaShape,
+                      bool tf32Enabled) {
+  build(odsBuilder, odsState, matrixC.getType(), matrixA, matrixB, matrixC,
+        odsBuilder.getI64ArrayAttr(mmaShape),
+        tf32Enabled ? odsBuilder.getUnitAttr() : UnitAttr());
 }
 
 /// Performs verification for MmaSyncOp and MmaSparseSyncOp.
@@ -246,10 +276,10 @@ LogicalResult MmaSparseSyncOp::verify() {
 LogicalResult LdMatrixOp::verify() {
 
   // ldmatrix reads data from source in shared memory
-  auto srcMemref = getSrcMemref().getType().cast<MemRefType>();
+  auto srcMemref = llvm::cast<MemRefType>(getSrcMemref().getType());
 
   // ldmatrix writes data to result/destination in vector registers
-  auto resVector = getRes().getType().cast<VectorType>();
+  auto resVector = llvm::cast<VectorType>(getRes().getType());
 
   // vector register shape, element type, and bitwidth
   ArrayRef<int64_t> resShape = resVector.getShape();

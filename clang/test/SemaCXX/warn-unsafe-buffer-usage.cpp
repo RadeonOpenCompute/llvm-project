@@ -1,4 +1,6 @@
-// RUN: %clang_cc1 -std=c++20 -Wno-all -Wunsafe-buffer-usage -fblocks -include %s -verify %s
+// RUN: %clang_cc1 -std=c++20 -Wno-all -Wunsafe-buffer-usage \
+// RUN:            -fsafe-buffer-usage-suggestions \
+// RUN:            -fblocks -include %s -verify %s
 
 // RUN: %clang -x c++ -fsyntax-only -fblocks -include %s %s 2>&1 | FileCheck --allow-empty %s
 // RUN: %clang_cc1 -std=c++11 -fblocks -include %s %s 2>&1 | FileCheck --allow-empty %s
@@ -10,7 +12,7 @@
 #pragma clang system_header
 
 // Xfail buffer warns until MIOPEN GTEST compiles ok
-// XFAIL: * 
+// XFAIL: *
 
 // no spanification warnings for system headers
 void foo(...);  // let arguments of `foo` to hold testing expressions
@@ -37,7 +39,7 @@ void testIncrement(char *p) { // expected-warning{{'p' is an unsafe pointer used
 void * voidPtrCall(void);
 char * charPtrCall(void);
 
-void testArraySubscripts(int *p, int **pp) {
+void testArraySubscripts(int *p, int **pp) { // expected-note{{change type of 'pp' to 'std::span' to preserve bounds information}}
 // expected-warning@-1{{'p' is an unsafe pointer used for buffer access}}
 // expected-warning@-2{{'pp' is an unsafe pointer used for buffer access}}
   foo(p[1],             // expected-note{{used in buffer access here}}
@@ -105,12 +107,12 @@ void testArraySubscriptsWithAuto(int *p, int **pp) {
   foo(ap4[1]);    // expected-note{{used in buffer access here}}
 }
 
-//TODO: do not warn for unevaluated context
-void testUnevaluatedContext(int * p) {// expected-warning{{'p' is an unsafe pointer used for buffer access}}
-  foo(sizeof(p[1]),             // expected-note{{used in buffer access here}}
-      sizeof(decltype(p[1])));  // expected-note{{used in buffer access here}}
+void testUnevaluatedContext(int * p) {// no-warning
+  foo(sizeof(p[1]),             // no-warning
+      sizeof(decltype(p[1])));  // no-warning
 }
 
+// expected-note@+1{{change type of 'a' to 'std::span' to preserve bounds information}}
 void testQualifiedParameters(const int * p, const int * const q, const int a[10], const int b[10][10]) {
   // expected-warning@-1{{'p' is an unsafe pointer used for buffer access}}
   // expected-warning@-2{{'q' is an unsafe pointer used for buffer access}}
@@ -326,7 +328,7 @@ template<typename T> void fArr(T t[]) {
 
 template void fArr<int>(int t[]); // expected-note {{in instantiation of}}
 
-int testReturn(int t[]) {
+int testReturn(int t[]) {// expected-note{{change type of 't' to 'std::span' to preserve bounds information}}
   // expected-warning@-1{{'t' is an unsafe pointer used for buffer access}}
   return t[1]; // expected-note{{used in buffer access here}}
 }

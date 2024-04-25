@@ -22,6 +22,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/SubtargetFeature.h"
 #include "llvm/TargetParser/Triple.h"
 
 #include <vector>
@@ -36,10 +37,12 @@ struct Session {
   orc::JITDylib *MainJD = nullptr;
   orc::ObjectLinkingLayer ObjLayer;
   orc::JITDylibSearchOrder JDSearchOrder;
+  SubtargetFeatures Features;
 
   ~Session();
 
-  static Expected<std::unique_ptr<Session>> Create(Triple TT);
+  static Expected<std::unique_ptr<Session>> Create(Triple TT,
+                                                   SubtargetFeatures Features);
   void dumpSessionInfo(raw_ostream &OS);
   void modifyPassConfig(const Triple &FTT,
                         jitlink::PassConfiguration &PassConfig);

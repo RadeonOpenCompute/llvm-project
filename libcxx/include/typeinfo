@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef __LIBCPP_TYPEINFO
-#define __LIBCPP_TYPEINFO
+#ifndef _LIBCPP_TYPEINFO
+#define _LIBCPP_TYPEINFO
 
 /*
 
@@ -64,7 +64,6 @@ public:
 #include <__verbose_abort>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -80,7 +79,7 @@ namespace std  // purposefully not using versioning namespace
 
 #if defined(_LIBCPP_ABI_MICROSOFT)
 
-class _LIBCPP_EXCEPTION_ABI type_info
+class _LIBCPP_EXPORTED_FROM_ABI type_info
 {
     type_info& operator=(const type_info&);
     type_info(const type_info&);
@@ -300,7 +299,7 @@ struct __type_info_implementations {
      __impl;
 };
 
-class _LIBCPP_EXCEPTION_ABI type_info
+class _LIBCPP_EXPORTED_FROM_ABI type_info
 {
   type_info& operator=(const type_info&);
   type_info(const type_info&);
@@ -355,17 +354,17 @@ public:
 };
 #endif // defined(_LIBCPP_ABI_MICROSOFT)
 
-class _LIBCPP_EXCEPTION_ABI bad_cast
+class _LIBCPP_EXPORTED_FROM_ABI bad_cast
     : public exception
 {
  public:
   bad_cast() _NOEXCEPT;
-  bad_cast(const bad_cast&) _NOEXCEPT = default;
+  _LIBCPP_HIDE_FROM_ABI bad_cast(const bad_cast&) _NOEXCEPT = default;
   ~bad_cast() _NOEXCEPT override;
   const char* what() const _NOEXCEPT override;
 };
 
-class _LIBCPP_EXCEPTION_ABI bad_typeid
+class _LIBCPP_EXPORTED_FROM_ABI bad_typeid
     : public exception
 {
  public:
@@ -415,8 +414,9 @@ void __throw_bad_cast()
 _LIBCPP_END_NAMESPACE_STD
 
 #if !defined(_LIBCPP_REMOVE_TRANSITIVE_INCLUDES) && _LIBCPP_STD_VER <= 20
+#  include <cstdlib>
 #  include <exception>
 #  include <type_traits>
 #endif
 
-#endif // __LIBCPP_TYPEINFO
+#endif // _LIBCPP_TYPEINFO

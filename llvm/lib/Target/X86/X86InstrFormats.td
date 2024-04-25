@@ -231,7 +231,7 @@ class TAPD : TA { Prefix OpPrefix = PD; }
 class TAXD : TA { Prefix OpPrefix = XD; }
 class TAXS : TA { Prefix OpPrefix = XS; }
 class VEX    { Encoding OpEnc = EncVEX; }
-class VEX_WIG  { bit IgnoresVEX_W = 1; }
+class WIG  { bit IgnoresW = 1; }
 // Special version of REX_W that can be changed to VEX.W==0 for EVEX2VEX.
 class VEX_W1X  { bit hasREX_W = 1; bit EVEX_W1_VEX_W0 = 1; }
 class VEX_4V : VEX { bit hasVEX_4V = 1; }
@@ -259,19 +259,10 @@ class EVEX_CD8<int esize, CD8VForm form> {
 class XOP { Encoding OpEnc = EncXOP; }
 class XOP_4V : XOP { bit hasVEX_4V = 1; }
 
-// Specify the alternative register form instruction to replace the current
-// instruction in case it was picked during generation of memory folding tables
-class FoldGenData<string _RegisterForm> {
-  string FoldGenRegForm = _RegisterForm;
-}
-
 // Provide a specific instruction to be used by the EVEX2VEX conversion.
 class EVEX2VEXOverride<string VEXInstrName> {
   string EVEX2VEXOverride = VEXInstrName;
 }
-
-// Mark the instruction as "illegal to memory fold/unfold"
-class NotMemoryFoldable { bit isMemoryFoldable = 0; }
 
 // Prevent EVEX->VEX conversion from considering this instruction.
 class NotEVEX2VEXConvertible { bit notEVEX2VEXConvertible = 1; }
@@ -323,7 +314,7 @@ class X86Inst<bits<8> opcod, Format f, ImmType i, dag outs, dag ins,
   bit hasREPPrefix = 0;     // Does this inst have a REP prefix?
   Encoding OpEnc = EncNormal; // Encoding used by this instruction
   bits<2> OpEncBits = OpEnc.Value;
-  bit IgnoresVEX_W = 0;     // Does this inst ignore REX_W field?
+  bit IgnoresW = 0;         // Does this inst ignore REX_W field?
   bit EVEX_W1_VEX_W0 = 0;   // This EVEX inst with VEX.W==1 can become a VEX
                             // instruction with VEX.W == 0.
   bit hasVEX_4V = 0;        // Does this inst require the VEX.VVVV field?
@@ -355,14 +346,9 @@ class X86Inst<bits<8> opcod, Format f, ImmType i, dag outs, dag ins,
                                      CD8_EltSize,
                                      !srl(VectSize, CD8_Form{1-0}))), 0);
 
-  // Used in the memory folding generation (TableGen backend) to point to an alternative
-  // instruction to replace the current one in case it got picked during generation.
-  string FoldGenRegForm = ?;
-
   // Used to prevent an explicit EVEX2VEX override for this instruction.
   string EVEX2VEXOverride = ?;
 
-  bit isMemoryFoldable = 1;     // Is it allowed to memory fold/unfold this instruction?
   bit notEVEX2VEXConvertible = 0; // Prevent EVEX->VEX conversion.
   bit ExplicitVEXPrefix = 0; // Force the instruction to use VEX encoding.
   // Force to check predicate before compress EVEX to VEX encoding.

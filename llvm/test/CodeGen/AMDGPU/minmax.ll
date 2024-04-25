@@ -6,7 +6,6 @@ define i32 @test_minmax_i32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_minmax_i32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_maxmin_i32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %smax = call i32 @llvm.smax.i32(i32 %a, i32 %b)
@@ -48,7 +47,6 @@ define i32 @test_minmax_commuted_i32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_minmax_commuted_i32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_maxmin_i32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %smax = call i32 @llvm.smax.i32(i32 %a, i32 %b)
@@ -60,7 +58,6 @@ define i32 @test_maxmin_i32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_maxmin_i32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_minmax_i32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %smin = call i32 @llvm.smin.i32(i32 %a, i32 %b)
@@ -72,7 +69,6 @@ define i32 @test_maxmin_commuted_i32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_maxmin_commuted_i32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_minmax_i32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %smin = call i32 @llvm.smin.i32(i32 %a, i32 %b)
@@ -84,10 +80,8 @@ define void @test_smed3_i32(ptr addrspace(1) %arg, i32 %x, i32 %y, i32 %z) {
 ; GFX11-LABEL: test_smed3_i32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_med3_i32 v2, v2, v3, v4
 ; GFX11-NEXT:    global_store_b32 v[0:1], v2, off
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %tmp0 = call i32 @llvm.smin.i32(i32 %x, i32 %y)
   %tmp1 = call i32 @llvm.smax.i32(i32 %x, i32 %y)
@@ -101,7 +95,6 @@ define i32 @test_minmax_u32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_minmax_u32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_maxmin_u32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %umax = call i32 @llvm.umax.i32(i32 %a, i32 %b)
@@ -143,7 +136,6 @@ define i32 @test_minmax_commuted_u32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_minmax_commuted_u32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_maxmin_u32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %umax = call i32 @llvm.umax.i32(i32 %a, i32 %b)
@@ -155,7 +147,6 @@ define i32 @test_maxmin_u32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_maxmin_u32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_minmax_u32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %umin = call i32 @llvm.umin.i32(i32 %a, i32 %b)
@@ -167,7 +158,6 @@ define i32 @test_maxmin_commuted_u32(i32 %a, i32 %b, i32 %c) {
 ; GFX11-LABEL: test_maxmin_commuted_u32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_minmax_u32 v0, v0, v1, v2
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %umin = call i32 @llvm.umin.i32(i32 %a, i32 %b)
@@ -179,10 +169,8 @@ define void @test_umed3_i32(ptr addrspace(1) %arg, i32 %x, i32 %y, i32 %z) {
 ; GFX11-LABEL: test_umed3_i32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_med3_u32 v2, v2, v3, v4
 ; GFX11-NEXT:    global_store_b32 v[0:1], v2, off
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %tmp0 = call i32 @llvm.umin.i32(i32 %x, i32 %y)
   %tmp1 = call i32 @llvm.umax.i32(i32 %x, i32 %y)
@@ -196,7 +184,6 @@ define float @test_minmax_f32_ieee_true(float %a, float %b, float %c) {
 ; SDAG-LABEL: test_minmax_f32_ieee_true:
 ; SDAG:       ; %bb.0:
 ; SDAG-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; SDAG-NEXT:    s_waitcnt_vscnt null, 0x0
 ; SDAG-NEXT:    v_dual_max_f32 v1, v1, v1 :: v_dual_max_f32 v0, v0, v0
 ; SDAG-NEXT:    v_max_f32_e32 v2, v2, v2
 ; SDAG-NEXT:    v_maxmin_f32 v0, v0, v1, v2
@@ -205,7 +192,6 @@ define float @test_minmax_f32_ieee_true(float %a, float %b, float %c) {
 ; GISEL-LABEL: test_minmax_f32_ieee_true:
 ; GISEL:       ; %bb.0:
 ; GISEL-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GISEL-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GISEL-NEXT:    v_dual_max_f32 v0, v0, v0 :: v_dual_max_f32 v1, v1, v1
 ; GISEL-NEXT:    v_max_f32_e32 v2, v2, v2
 ; GISEL-NEXT:    v_maxmin_f32 v0, v0, v1, v2
@@ -257,7 +243,6 @@ define float @test_maxmin_f32_ieee_true(float %a, float %b, float %c) {
 ; SDAG-LABEL: test_maxmin_f32_ieee_true:
 ; SDAG:       ; %bb.0:
 ; SDAG-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; SDAG-NEXT:    s_waitcnt_vscnt null, 0x0
 ; SDAG-NEXT:    v_dual_max_f32 v1, v1, v1 :: v_dual_max_f32 v0, v0, v0
 ; SDAG-NEXT:    v_max_f32_e32 v2, v2, v2
 ; SDAG-NEXT:    v_minmax_f32 v0, v0, v1, v2
@@ -266,7 +251,6 @@ define float @test_maxmin_f32_ieee_true(float %a, float %b, float %c) {
 ; GISEL-LABEL: test_maxmin_f32_ieee_true:
 ; GISEL:       ; %bb.0:
 ; GISEL-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GISEL-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GISEL-NEXT:    v_dual_max_f32 v0, v0, v0 :: v_dual_max_f32 v1, v1, v1
 ; GISEL-NEXT:    v_max_f32_e32 v2, v2, v2
 ; GISEL-NEXT:    v_minmax_f32 v0, v0, v1, v2
@@ -290,10 +274,8 @@ define void @test_med3_f32(ptr addrspace(1) %arg, float %x, float %y, float %z) 
 ; GFX11-LABEL: test_med3_f32:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_med3_f32 v2, v2, v3, v4
 ; GFX11-NEXT:    global_store_b32 v[0:1], v2, off
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %tmp0 = call float @llvm.minnum.f32(float %x, float %y)
   %tmp1 = call float @llvm.maxnum.f32(float %x, float %y)
@@ -345,7 +327,6 @@ define half @test_minmax_commuted_f16_ieee_true(half %a, half %b, half %c) {
 ; SDAG-LABEL: test_minmax_commuted_f16_ieee_true:
 ; SDAG:       ; %bb.0:
 ; SDAG-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; SDAG-NEXT:    s_waitcnt_vscnt null, 0x0
 ; SDAG-NEXT:    v_max_f16_e32 v1, v1, v1
 ; SDAG-NEXT:    v_max_f16_e32 v0, v0, v0
 ; SDAG-NEXT:    v_max_f16_e32 v2, v2, v2
@@ -355,7 +336,6 @@ define half @test_minmax_commuted_f16_ieee_true(half %a, half %b, half %c) {
 ; GISEL-LABEL: test_minmax_commuted_f16_ieee_true:
 ; GISEL:       ; %bb.0:
 ; GISEL-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GISEL-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GISEL-NEXT:    v_max_f16_e32 v0, v0, v0
 ; GISEL-NEXT:    v_max_f16_e32 v1, v1, v1
 ; GISEL-NEXT:    v_max_f16_e32 v2, v2, v2
@@ -380,7 +360,6 @@ define half @test_maxmin_commuted_f16_ieee_true(half %a, half %b, half %c) {
 ; SDAG-LABEL: test_maxmin_commuted_f16_ieee_true:
 ; SDAG:       ; %bb.0:
 ; SDAG-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; SDAG-NEXT:    s_waitcnt_vscnt null, 0x0
 ; SDAG-NEXT:    v_max_f16_e32 v1, v1, v1
 ; SDAG-NEXT:    v_max_f16_e32 v0, v0, v0
 ; SDAG-NEXT:    v_max_f16_e32 v2, v2, v2
@@ -390,7 +369,6 @@ define half @test_maxmin_commuted_f16_ieee_true(half %a, half %b, half %c) {
 ; GISEL-LABEL: test_maxmin_commuted_f16_ieee_true:
 ; GISEL:       ; %bb.0:
 ; GISEL-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GISEL-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GISEL-NEXT:    v_max_f16_e32 v0, v0, v0
 ; GISEL-NEXT:    v_max_f16_e32 v1, v1, v1
 ; GISEL-NEXT:    v_max_f16_e32 v2, v2, v2
@@ -405,10 +383,8 @@ define void @test_med3_f16(ptr addrspace(1) %arg, half %x, half %y, half %z) #0 
 ; GFX11-LABEL: test_med3_f16:
 ; GFX11:       ; %bb.0:
 ; GFX11-NEXT:    s_waitcnt vmcnt(0) expcnt(0) lgkmcnt(0)
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    v_med3_f16 v2, v2, v3, v4
 ; GFX11-NEXT:    global_store_b16 v[0:1], v2, off
-; GFX11-NEXT:    s_waitcnt_vscnt null, 0x0
 ; GFX11-NEXT:    s_setpc_b64 s[30:31]
   %tmp0 = call half @llvm.minnum.f16(half %x, half %y)
   %tmp1 = call half @llvm.maxnum.f16(half %x, half %y)

@@ -317,6 +317,45 @@ module attributes {gpu.container_module} {
     gpu.set_default_device %arg0
     return
   }
+
+  // CHECK-LABEL: func @sparse_ops
+  func.func @sparse_ops(%arg0: index) {
+    // CHECK: gpu.wait async
+    %token0 = gpu.wait async
+    // CHECK: gpu.alloc async
+    %mem1, %token1 = gpu.alloc async [%token0] (%arg0) : memref<?xindex>
+    // CHECK: gpu.alloc async
+    %mem2, %token2 = gpu.alloc async [%token1] (%arg0) : memref<?xf64>
+    // CHECK: gpu.create_coo async
+    %spmat, %token4 = gpu.create_coo async [%token2] %arg0, %arg0, %arg0, %mem1, %mem1, %mem2 : memref<?xindex>, memref<?xindex>, memref<?xf64>
+    // CHECK: gpu.create_csr async
+    %spmat2, %token5 = gpu.create_csr async [%token4] %arg0, %arg0, %arg0, %mem1, %mem1, %mem2 : memref<?xindex>, memref<?xindex>, memref<?xf64>
+    // CHECK: gpu.create_dn_tensor async
+    %dnvec, %token6 = gpu.create_dn_tensor async [%token5]  %mem2, %arg0 : index into memref<?xf64>
+    // CHECK: gpu.spmv_buffer_size async
+    %bufferSz, %token7 = gpu.spmv_buffer_size async [%token6] %spmat, %dnvec, %dnvec  into f64
+    // CHECK: gpu.spmv async
+    %token8 = gpu.spmv async [%token7] %spmat, %dnvec, %dnvec, %mem2 : memref<?xf64>  into f64
+    // CHECK: gpu.create_dn_tensor async
+    %dnmat, %token9 = gpu.create_dn_tensor async [%token8]  %mem2, %arg0, %arg0 : index, index into memref<?xf64>
+    // CHECK: gpu.spmm_buffer_size async
+    %bufferSz2, %token10 = gpu.spmm_buffer_size async [%token9] %spmat, %dnmat, %dnmat : index into f64
+    // CHECK: gpu.spmm async
+    %token11 = gpu.spmm async [%token10]  %spmat, %dnmat, %dnmat, %mem2 : memref<?xf64>  into f64
+    // CHECK: gpu.sddmm_buffer_size async
+    %bufferSz3, %token12 = gpu.sddmm_buffer_size async [%token11] %dnmat, %dnmat, %spmat  into f64
+    // CHECK: gpu.sddmm async
+    %token13 = gpu.sddmm async [%token12]  %dnmat, %dnmat, %spmat, %mem2 : memref<?xf64>  into f64
+    // CHECK: gpu.destroy_dn_tensor async
+    %token14 = gpu.destroy_dn_tensor async [%token13] %dnmat
+    // CHECK: gpu.destroy_sp_mat async
+    %token15 = gpu.destroy_sp_mat async [%token14] %spmat
+    // CHECK: gpu.destroy_dn_tensor async
+    %token16 = gpu.destroy_dn_tensor async [%token15] %dnvec
+    // CHECK: gpu.wait
+    gpu.wait [%token16]
+    return
+  }
 }
 
 // Just check that this doesn't crash.

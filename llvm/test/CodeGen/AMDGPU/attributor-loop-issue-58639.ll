@@ -27,7 +27,7 @@ define internal fastcc double @baz(ptr %arg) {
 ; CHECK-NEXT:    [[TMP2:%.*]] = tail call double [[TMP1]]()
 ; CHECK-NEXT:    br label [[BB3:%.*]]
 ; CHECK:       bb3:
-; CHECK-NEXT:    [[TMP4:%.*]] = getelementptr inbounds [[TMP0]], ptr [[ARG]], i64 0, i32 1
+; CHECK-NEXT:    [[TMP4:%.*]] = getelementptr inbounds [[TMP0:%.*]], ptr [[ARG]], i64 0, i32 1
 ; CHECK-NEXT:    br label [[BB5:%.*]]
 ; CHECK:       bb5:
 ; CHECK-NEXT:    [[TMP6:%.*]] = load ptr, ptr [[TMP4]], align 8

@@ -15,11 +15,11 @@ differences are as follows:
 #. **Non-const variables** - This includes function arguments, struct and
    class data members, non-const globals and local variables. They all use the
    ``snake_case`` style.
-#. **const and constexpr variables** - They use the capitlized
+#. **const and constexpr variables** - They use the capitalized
    ``SNAKE_CASE`` irrespective of whether they are local or global.
 #. **Function and methods** - They use the ``snake_case`` style like the
    non-const variables.
-#. **Internal type names** - These are types which are interal to the libc
+#. **Internal type names** - These are types which are internal to the libc
    implementation. They use the ``CaptilizedCamelCase`` style.
 #. **Public names** - These are the names as prescribed by the standards and
    will follow the style as prescribed by the standards.
@@ -39,23 +39,28 @@ We define two kinds of macros: **code defined** and **build defined** macros.
 
    * **Properties** - Build related properties like used compiler, target
      architecture or enabled CPU features defined by introspecting compiler
-     defined preprocessor defininitions. e.g., ``LIBC_TARGET_ARCH_IS_ARM``,
+     defined preprocessor definitions. e.g., ``LIBC_TARGET_ARCH_IS_ARM``,
      ``LIBC_TARGET_CPU_HAS_AVX2``, ``LIBC_COMPILER_IS_CLANG``, ...
    * **Attributes** - Compiler agnostic attributes or functions to handle
      specific operations. e.g., ``LIBC_INLINE``, ``LIBC_NO_LOOP_UNROLL``,
      ``LIBC_LIKELY``, ``LIBC_INLINE_ASM``.
 
-Inline functions defined in header files
-========================================
+Inline functions and variables defined in header files
+======================================================
 
-When defining functions inline in header files, we follow certain rules:
+When defining functions and variables inline in header files, we follow certain
+rules:
 
 #. The functions should not be given file-static linkage. There can be class
    static methods defined inline however.
-#. Instead of using the ``inline`` keyword, they should be tagged with the
-   ``LIBC_INLINE`` macro defined in ``src/__support/common.h``. For example:
+#. Instead of using the ``inline`` keyword, functions should be tagged with the
+   ``LIBC_INLINE`` macro and variables should be tagged with the
+   ``LIBC_INLINE_VAR`` macro defined in ``src/__support/macros/attributes.h``.
+   For example:
 
    .. code-block:: c++
+
+     LIBC_INLINE_VAR constexpr bool foo = true;
 
      LIBC_INLINE ReturnType function_defined_inline(ArgType arg) {
        ...
@@ -98,7 +103,7 @@ followed:
 
 #. The header file ``src/errno/libc_errno.h`` is shipped as part of the target
    corresponding to the ``errno`` entrypoint ``libc.src.errno.errno``. We do
-   not in general allow dependecies between entrypoints. However, the ``errno``
+   not in general allow dependencies between entrypoints. However, the ``errno``
    entrypoint is the only exceptional entrypoint on which other entrypoints
    should explicitly depend on if they set ``errno`` to indicate error
    conditions.
@@ -155,5 +160,5 @@ The only exception to using the above pattern is if allocating using the
 failures will still need to be handled gracefully. Further, keep in mind that
 these functions do not call the constructors and destructors of the
 allocated/deallocated objects. So, use these functions carefully and only
-when it is absolutely clear that constructor and desctructor invocation is
+when it is absolutely clear that constructor and destructor invocation is
 not required.

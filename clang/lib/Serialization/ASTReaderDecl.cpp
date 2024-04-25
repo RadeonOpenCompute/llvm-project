@@ -89,7 +89,7 @@ namespace clang {
     using RecordData = ASTReader::RecordData;
 
     TypeID DeferredTypeID = 0;
-    unsigned AnonymousDeclNumber;
+    unsigned AnonymousDeclNumber = 0;
     GlobalDeclID NamedDeclForTagDecl = 0;
     IdentifierInfo *TypedefNameForLinkage = nullptr;
 
@@ -476,9 +476,8 @@ namespace {
 
 /// Iterator over the redeclarations of a declaration that have already
 /// been merged into the same redeclaration chain.
-template<typename DeclT>
-class MergedRedeclIterator {
-  DeclT *Start;
+template <typename DeclT> class MergedRedeclIterator {
+  DeclT *Start = nullptr;
   DeclT *Canonical = nullptr;
   DeclT *Current = nullptr;
 
@@ -566,13 +565,14 @@ void ASTDeclReader::Visit(Decl *D) {
     ID->TypeForDecl = Reader.GetType(DeferredTypeID).getTypePtrOrNull();
   } else if (auto *FD = dyn_cast<FunctionDecl>(D)) {
     // FunctionDecl's body was written last after all other Stmts/Exprs.
-    // We only read it if FD doesn't already have a body (e.g., from another
-    // module).
-    // FIXME: Can we diagnose ODR violations somehow?
     if (Record.readInt())
       ReadFunctionDefinition(FD);
   } else if (auto *VD = dyn_cast<VarDecl>(D)) {
     ReadVarDeclInit(VD);
+  } else if (auto *FD = dyn_cast<FieldDecl>(D)) {
+    if (FD->hasInClassInitializer() && Record.readInt()) {
+      FD->setLazyInClassInitializer(LazyDeclStmtPtr(GetCurrentCursorOffset()));
+    }
   }
 }
 
@@ -1501,15 +1501,13 @@ void ASTDeclReader::VisitFieldDecl(FieldDecl *FD) {
   VisitDeclaratorDecl(FD);
   FD->Mutable = Record.readInt();
 
-  if (auto ISK = static_cast<FieldDecl::InitStorageKind>(Record.readInt())) {
-    FD->InitStorage.setInt(ISK);
-    FD->InitStorage.setPointer(ISK == FieldDecl::ISK_CapturedVLAType
-                                   ? Record.readType().getAsOpaquePtr()
-                                   : Record.readExpr());
-  }
-
-  if (auto *BW = Record.readExpr())
-    FD->setBitWidth(BW);
+  unsigned Bits = Record.readInt();
+  FD->StorageKind = Bits >> 1;
+  if (FD->StorageKind == FieldDecl::ISK_CapturedVLAType)
+    FD->CapturedVLAType =
+        cast<VariableArrayType>(Record.readType().getTypePtr());
+  else if (Bits & 1)
+    FD->setBitWidth(Record.readExpr());
 
   if (!FD->getDeclName()) {
     if (auto *Tmpl = readDeclAs<FieldDecl>())
@@ -1660,6 +1658,13 @@ void ASTDeclReader::ReadVarDeclInit(VarDecl *VD) {
     EvaluatedStmt *Eval = VD->ensureEvaluatedStmt();
     Eval->HasConstantInitialization = (Val & 2) != 0;
     Eval->HasConstantDestruction = (Val & 4) != 0;
+    Eval->WasEvaluated = (Val & 8) != 0;
+    if (Eval->WasEvaluated) {
+      Eval->Evaluated = Record.readAPValue();
+      if (Eval->Evaluated.needsCleanup())
+        Reader.getContext().addDestruction(&Eval->Evaluated);
+    }
+
     // Store the offset of the initializer. Don't deserialize it yet: it might
     // not be needed, and might refer back to the variable, for example if it
     // contains a lambda.
@@ -2213,7 +2218,8 @@ void ASTDeclReader::VisitCXXDeductionGuideDecl(CXXDeductionGuideDecl *D) {
   D->setExplicitSpecifier(Record.readExplicitSpec());
   D->Ctor = readDeclAs<CXXConstructorDecl>();
   VisitFunctionDecl(D);
-  D->setIsCopyDeductionCandidate(Record.readInt());
+  D->setDeductionCandidateKind(
+      static_cast<DeductionCandidate>(Record.readInt()));
 }
 
 void ASTDeclReader::VisitCXXMethodDecl(CXXMethodDecl *D) {
@@ -3092,10 +3098,15 @@ Attr *ASTRecordReader::readAttr() {
   unsigned ParsedKind = Record.readInt();
   unsigned Syntax = Record.readInt();
   unsigned SpellingIndex = Record.readInt();
+  bool IsAlignas = (ParsedKind == AttributeCommonInfo::AT_Aligned &&
+                    Syntax == AttributeCommonInfo::AS_Keyword &&
+                    SpellingIndex == AlignedAttr::Keyword_alignas);
+  bool IsRegularKeywordAttribute = Record.readBool();
 
   AttributeCommonInfo Info(AttrName, ScopeName, AttrRange, ScopeLoc,
                            AttributeCommonInfo::Kind(ParsedKind),
-                           AttributeCommonInfo::Syntax(Syntax), SpellingIndex);
+                           {AttributeCommonInfo::Syntax(Syntax), SpellingIndex,
+                            IsAlignas, IsRegularKeywordAttribute});
 
 #include "clang/Serialization/AttrPCHRead.inc"
 
@@ -4464,7 +4475,7 @@ void ASTDeclReader::UpdateDecl(Decl *D,
 
       // Only apply the update if the field still has an uninstantiated
       // default member initializer.
-      if (FD->hasInClassInitializer() && !FD->getInClassInitializer()) {
+      if (FD->hasInClassInitializer() && !FD->hasNonNullInClassInitializer()) {
         if (DefaultInit)
           FD->setInClassInitializer(DefaultInit);
         else
@@ -4618,9 +4629,8 @@ void ASTDeclReader::UpdateDecl(Decl *D,
       break;
 
     case UPD_DECL_MARKED_OPENMP_THREADPRIVATE:
-      D->addAttr(OMPThreadPrivateDeclAttr::CreateImplicit(
-          Reader.getContext(), readSourceRange(),
-          AttributeCommonInfo::AS_Pragma));
+      D->addAttr(OMPThreadPrivateDeclAttr::CreateImplicit(Reader.getContext(),
+                                                          readSourceRange()));
       break;
 
     case UPD_DECL_MARKED_OPENMP_ALLOCATE: {
@@ -4630,8 +4640,7 @@ void ASTDeclReader::UpdateDecl(Decl *D,
       Expr *Alignment = Record.readExpr();
       SourceRange SR = readSourceRange();
       D->addAttr(OMPAllocateDeclAttr::CreateImplicit(
-          Reader.getContext(), AllocatorKind, Allocator, Alignment, SR,
-          AttributeCommonInfo::AS_Pragma));
+          Reader.getContext(), AllocatorKind, Allocator, Alignment, SR));
       break;
     }
 
@@ -4652,7 +4661,7 @@ void ASTDeclReader::UpdateDecl(Decl *D,
       unsigned Level = Record.readInt();
       D->addAttr(OMPDeclareTargetDeclAttr::CreateImplicit(
           Reader.getContext(), MapType, DevType, IndirectE, Indirect, Level,
-          readSourceRange(), AttributeCommonInfo::AS_Pragma));
+          readSourceRange()));
       break;
     }
 

@@ -57,6 +57,7 @@ def GPU_Dialect : Dialect {
   let dependentDialects = ["arith::ArithDialect"];
   let useDefaultAttributePrinterParser = 1;
   let useDefaultTypePrinterParser = 1;
+  let usePropertiesForAttributes = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -91,11 +92,11 @@ def GPU_AddressSpaceAttr :
 //===----------------------------------------------------------------------===//
 
 def GPU_AsyncToken : DialectType<
-  GPU_Dialect, CPred<"$_self.isa<::mlir::gpu::AsyncTokenType>()">, "async token type">,
+  GPU_Dialect, CPred<"::llvm::isa<::mlir::gpu::AsyncTokenType>($_self)">, "async token type">,
              BuildableType<"mlir::gpu::AsyncTokenType::get($_builder.getContext())">;
 
 // Predicat to check if type is gpu::MMAMatrixType.
-def IsMMAMatrixTypePred : CPred<"$_self.isa<::mlir::gpu::MMAMatrixType>()">;
+def IsMMAMatrixTypePred : CPred<"::llvm::isa<::mlir::gpu::MMAMatrixType>($_self)">;
 
 def GPU_MMAMatrix : DialectType<
   GPU_Dialect, IsMMAMatrixTypePred, "MMAMatrix type">;
@@ -105,8 +106,21 @@ def GPU_MMAMemRef : MemRefOf<[I8, I32, F16, F32, VectorOfRankAndType<[1], [I8, I
 
 class MMAMatrixOf<list<Type> allowedTypes> :
   ContainerType<AnyTypeOf<allowedTypes>, IsMMAMatrixTypePred,
-  "$_self.cast<::mlir::gpu::MMAMatrixType>().getElementType()",
+  "::llvm::cast<::mlir::gpu::MMAMatrixType>($_self).getElementType()",
   "gpu.mma_matrix", "::mlir::gpu::MMAMatrixType">;
+
+// Types for all sparse handles.
+def GPU_SparseDnTensorHandle :
+  DialectType<GPU_Dialect,
+    CPred<"llvm::isa<::mlir::gpu::SparseDnTensorHandleType>($_self)">,
+    "dense tensor handle type">,
+  BuildableType<"mlir::gpu::SparseDnTensorHandleType::get($_builder.getContext())">;
+
+def GPU_SparseSpMatHandle :
+  DialectType<GPU_Dialect,
+    CPred<"llvm::isa<::mlir::gpu::SparseSpMatHandleType>($_self)">,
+    "sparse matrix handle type">,
+  BuildableType<"mlir::gpu::SparseSpMatHandleType::get($_builder.getContext())">;
 
 //===----------------------------------------------------------------------===//
 // GPU Interfaces.

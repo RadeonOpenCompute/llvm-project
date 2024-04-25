@@ -23,6 +23,29 @@ class CoreAPIsStandardTest : public CoreAPIsBasedStandardTest {};
 
 namespace {
 
+TEST_F(CoreAPIsStandardTest, JITDylibAddToLinkOrder) {
+  // Check that the JITDylib::addToLinkOrder methods behave as expected.
+  auto &JD2 = ES.createBareJITDylib("JD2");
+  auto &JD3 = ES.createBareJITDylib("JD3");
+
+  JD.addToLinkOrder(JD2);
+  JD.withLinkOrderDo([&](const JITDylibSearchOrder &SO) {
+    EXPECT_EQ(SO.size(), 2U);
+    EXPECT_EQ(SO[0].first, &JD);
+    EXPECT_EQ(SO[1].first, &JD2);
+  });
+
+  JD.addToLinkOrder(makeJITDylibSearchOrder({&JD2, &JD3}));
+  JD.withLinkOrderDo([&](const JITDylibSearchOrder &SO) {
+    // JD2 was already in the search order, so we expect just one extra item
+    // here.
+    EXPECT_EQ(SO.size(), 3U);
+    EXPECT_EQ(SO[0].first, &JD);
+    EXPECT_EQ(SO[1].first, &JD2);
+    EXPECT_EQ(SO[2].first, &JD3);
+  });
+}
+
 TEST_F(CoreAPIsStandardTest, BasicSuccessfulLookup) {
   bool OnCompletionRun = false;
 
@@ -1263,6 +1286,40 @@ TEST_F(CoreAPIsStandardTest, FailAfterPartialResolution) {
       },
       NoDependenciesToRegister);
   EXPECT_TRUE(QueryHandlerRun) << "Query handler never ran";
+}
+
+TEST_F(CoreAPIsStandardTest, FailDefineMaterializingDueToDefunctTracker) {
+  // Check that a defunct resource tracker causes defineMaterializing to error
+  // immediately.
+
+  std::unique_ptr<MaterializationResponsibility> FooMR;
+  auto MU = std::make_unique<SimpleMaterializationUnit>(
+      SymbolFlagsMap({{Foo, FooSym.getFlags()}}),
+      [&](std::unique_ptr<MaterializationResponsibility> R) {
+        FooMR = std::move(R);
+      });
+
+  auto RT = JD.createResourceTracker();
+  cantFail(JD.define(std::move(MU), RT));
+
+  bool OnCompletionRan = false;
+  auto OnCompletion = [&](Expected<SymbolMap> Result) {
+    EXPECT_THAT_EXPECTED(Result, Failed());
+    OnCompletionRan = true;
+  };
+
+  ES.lookup(LookupKind::Static, makeJITDylibSearchOrder(&JD),
+            SymbolLookupSet(Foo), SymbolState::Ready, OnCompletion,
+            NoDependenciesToRegister);
+
+  cantFail(RT->remove());
+
+  EXPECT_THAT_ERROR(FooMR->defineMaterializing(SymbolFlagsMap()), Failed())
+      << "defineMaterializing should have failed due to a defunct tracker";
+
+  FooMR->failMaterialization();
+
+  EXPECT_TRUE(OnCompletionRan) << "OnCompletion handler did not run.";
 }
 
 TEST_F(CoreAPIsStandardTest, TestLookupWithUnthreadedMaterialization) {

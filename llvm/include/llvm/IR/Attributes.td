@@ -41,6 +41,9 @@ class TypeAttr<string S, list<AttrProperty> P> : Attr<S, P>;
 /// StringBool attribute.
 class StrBoolAttr<string S> : Attr<S, []>;
 
+/// Arbitrary string attribute.
+class ComplexStrAttr<string S, list<AttrProperty> P> : Attr<S, P>;
+
 /// Target-independent enum attributes.
 
 /// Alignment of parameter (5 bits) stored as log2 of alignment with +1 bias.
@@ -270,6 +273,9 @@ def SanitizeHWAddress : EnumAttr<"sanitize_hwaddress", [FnAttr]>;
 /// MemTagSanitizer is on.
 def SanitizeMemTag : EnumAttr<"sanitize_memtag", [FnAttr]>;
 
+/// Attribute to identify global variables instrumented by Sanitizers.
+def SanitizedPaddedGlobal : EnumAttr<"sanitized_padded_global", []>;
+
 /// Speculative Load Hardening is enabled.
 ///
 /// Note that this uses the default compatibility (always compatible during
@@ -321,6 +327,9 @@ def NoInlineLineTables : StrBoolAttr<"no-inline-line-tables">;
 def ProfileSampleAccurate : StrBoolAttr<"profile-sample-accurate">;
 def UseSampleProfile : StrBoolAttr<"use-sample-profile">;
 
+def DenormalFPMath : ComplexStrAttr<"denormal-fp-math", [FnAttr]>;
+def DenormalFPMathF32 : ComplexStrAttr<"denormal-fp-math-f32", [FnAttr]>;
+
 class CompatRule<string F> {
   // The name of the function called to check the attribute of the caller and
   // callee and decide whether inlining should be allowed. The function's
@@ -340,6 +349,8 @@ def : CompatRule<"isEqual<SafeStackAttr>">;
 def : CompatRule<"isEqual<ShadowCallStackAttr>">;
 def : CompatRule<"isEqual<UseSampleProfileAttr>">;
 def : CompatRule<"isEqual<NoProfileAttr>">;
+def : CompatRule<"checkDenormMode">;
+
 
 class MergeRule<string F> {
   // The name of the function called to merge the attributes of the caller and

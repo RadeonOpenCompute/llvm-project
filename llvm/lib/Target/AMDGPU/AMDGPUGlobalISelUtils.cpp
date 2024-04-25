@@ -10,8 +10,8 @@
 #include "GCNSubtarget.h"
 #include "llvm/CodeGen/GlobalISel/GISelKnownBits.h"
 #include "llvm/CodeGen/GlobalISel/MIPatternMatch.h"
+#include "llvm/CodeGen/LowLevelType.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/Support/LowLevelTypeImpl.h"
 
 using namespace llvm;
 using namespace MIPatternMatch;
@@ -38,8 +38,7 @@ AMDGPU::getBaseWithConstantOffset(MachineRegisterInfo &MRI, Register Reg,
       return std::pair(Def->getOperand(1).getReg(), Offset);
 
     // FIXME: matcher should ignore copies
-    if (mi_match(Def->getOperand(2).getReg(), MRI, m_Copy(m_ICst(Offset))) ||
-        mi_match(Def->getOperand(2).getReg(), MRI, m_Pred_Copy(m_ICst(Offset))))
+    if (mi_match(Def->getOperand(2).getReg(), MRI, m_Copy(m_ICst(Offset))))
       return std::pair(Def->getOperand(1).getReg(), Offset);
   }
 

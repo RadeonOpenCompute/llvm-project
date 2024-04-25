@@ -16,11 +16,36 @@ namespace llvm {
 
 // This needs to be kept in sync with the field bits in SIRegisterClass.
 enum SIRCFlags : uint8_t {
-  // For vector registers.
-  HasVGPR = 1 << 0,
-  HasAGPR = 1 << 1,
-  HasSGPR = 1 << 2
-}; // enum SIRCFlags
+  RegTupleAlignUnitsWidth = 2,
+  HasVGPRBit = RegTupleAlignUnitsWidth,
+  HasAGPRBit,
+  HasSGPRbit,
+
+  HasVGPR = 1 << HasVGPRBit,
+  HasAGPR = 1 << HasAGPRBit,
+  HasSGPR = 1 << HasSGPRbit,
+
+  RegTupleAlignUnitsMask = (1 << RegTupleAlignUnitsWidth) - 1,
+  RegKindMask = (HasVGPR | HasAGPR | HasSGPR)
+}; // enum SIRCFlagsr
+
+namespace SIEncodingFamily {
+// This must be kept in sync with the SIEncodingFamily class in SIInstrInfo.td
+// and the columns of the getMCOpcodeGen table.
+enum {
+  SI = 0,
+  VI = 1,
+  SDWA = 2,
+  SDWA9 = 3,
+  GFX80 = 4,
+  GFX9 = 5,
+  GFX10 = 6,
+  SDWA10 = 7,
+  GFX90A = 8,
+  GFX940 = 9,
+  GFX11 = 10,
+};
+}
 
 namespace SIInstrFlags {
 // This needs to be kept in sync with the field bits in InstSI.
@@ -924,7 +949,8 @@ namespace VirtRegFlag {
 // Virtual register flags used for various target specific handlings during
 // codegen.
 enum Register_Flag : uint8_t {
-  WWM_REG = 0 // Register operand in a whole-wave mode operation.
+  // Register operand in a whole-wave mode operation.
+  WWM_REG = 1 << 0,
 };
 
 } // namespace VirtRegFlag

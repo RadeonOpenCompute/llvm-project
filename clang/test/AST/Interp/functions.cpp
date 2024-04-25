@@ -178,6 +178,31 @@ namespace FunctionReturnType {
   static_assert(s.fp == nullptr, ""); // zero-initialized function pointer.
 }
 
+namespace Comparison {
+  void f(), g();
+  constexpr void (*pf)() = &f, (*pg)() = &g;
+
+  constexpr bool u13 = pf < pg; // ref-warning {{ordered comparison of function pointers}} \
+                                // ref-error {{must be initialized by a constant expression}} \
+                                // ref-note {{comparison between '&f' and '&g' has unspecified value}} \
+                                // expected-warning {{ordered comparison of function pointers}} \
+                                // expected-error {{must be initialized by a constant expression}} \
+                                // expected-note {{comparison between '&f' and '&g' has unspecified value}}
+
+  constexpr bool u14 = pf < (void(*)())nullptr; // ref-warning {{ordered comparison of function pointers}} \
+                                                // ref-error {{must be initialized by a constant expression}} \
+                                                // ref-note {{comparison between '&f' and 'nullptr' has unspecified value}} \
+                                                // expected-warning {{ordered comparison of function pointers}} \
+                                                // expected-error {{must be initialized by a constant expression}} \
+                                                // expected-note {{comparison between '&f' and 'nullptr' has unspecified value}}
+
+
+
+  static_assert(pf != pg, "");
+  static_assert(pf == &f, "");
+  static_assert(pg == &g, "");
+}
+
 }
 
 struct F {
@@ -202,3 +227,33 @@ constexpr int nyd(int m);
 constexpr int doit() { return nyd(10); }
 constexpr int nyd(int m) { return m; }
 static_assert(doit() == 10, "");
+
+namespace InvalidCall {
+  struct S {
+    constexpr int a() const { // expected-error {{never produces a constant expression}} \
+                              // ref-error {{never produces a constant expression}}
+      return 1 / 0; // expected-note 2{{division by zero}} \
+                    // expected-warning {{is undefined}} \
+                    // ref-note 2{{division by zero}} \
+                    // ref-warning {{is undefined}}
+    }
+  };
+  constexpr S s;
+  static_assert(s.a() == 1, ""); // expected-error {{not an integral constant expression}} \
+                                 // expected-note {{in call to}} \
+                                 // ref-error {{not an integral constant expression}} \
+                                 // ref-note {{in call to}}
+
+  /// This used to cause an assertion failure in the new constant interpreter.
+  constexpr void func(); // expected-note {{declared here}} \
+                         // ref-note {{declared here}}
+  struct SS {
+    constexpr SS() { func(); } // expected-note {{undefined function }} \
+                               // ref-note {{undefined function}}
+  };
+  constexpr SS ss; // expected-error {{must be initialized by a constant expression}} \
+                   // expected-note {{in call to 'SS()'}} \
+                   // ref-error {{must be initialized by a constant expression}} \
+                   // ref-note {{in call to 'SS()'}}
+
+}

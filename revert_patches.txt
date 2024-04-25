@@ -1,3 +1,15 @@
+ee2a35ac4ab [X86] Add AVX-NE-CONVERT instruc
+Revert "[X86] Support -march=sierraforest, grandridge,
+Revert "[AMDGPU] Enable OMod on more VOP3 instructions"   # rocrand assert fails
+
+#break nekbone, cxx20 offsetof
+e327b52766ed [C2x] reject type definitions in offsetof
+
+7f12efa88  [X86][FP16] Lower half->i16 into vcvttph2[u]w directly
+
+FP16
+Revert "[X86][MemFold] Update some records for X86MemFoldTables.inc"
+
 SROA breaks MIOpen
 Revert "[SROA] Create additional vector type candidates based on store and load slices"
 Revert "[SROA] Fix bug where CandidateTys is appended while being iterated"
@@ -12,8 +24,8 @@ Johannes: breakage
 Revert "[OpenMP] Disable early vectorization of loads/stores in the runtime " 
   asserts in  snap and MI-Teams
 
-Nicole and Saiyed:
-Revert " [OpenMP][DeviceRTL][AMDGPU] Support code object version 5"
+
+Revert Complete the implementation of P2361 Unevaluated string literals
 
 Revert "[Parser] Parse string literal arguments of 'avail"
 

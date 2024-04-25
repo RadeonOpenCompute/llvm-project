@@ -1156,8 +1156,6 @@ TEST_P(ASTImporterOptionSpecificTestBase, NonTypeTemplateParmDeclDefaultArg) {
   NonTypeTemplateParmDecl *To = Import(From, Lang_CXX03);
   ASSERT_TRUE(To->hasDefaultArgument());
   Stmt *ToArg = To->getDefaultArgument();
-  ASSERT_TRUE(isa<ConstantExpr>(ToArg));
-  ToArg = *ToArg->child_begin();
   ASSERT_TRUE(isa<IntegerLiteral>(ToArg));
   ASSERT_EQ(cast<IntegerLiteral>(ToArg)->getValue().getLimitedValue(), 1U);
 }
@@ -2332,6 +2330,43 @@ TEST_P(ImportFunctions,
   // Check that the redecl chain is intact.
   EXPECT_EQ(ToBFOutOfClass->getPreviousDecl(), ToBFInClass);
   EXPECT_EQ(ToDFOutOfClass->getPreviousDecl(), ToDFInClass);
+}
+
+TEST_P(ASTImporterOptionSpecificTestBase,
+       ImportVirtualOverriddenMethodOnALoopTest) {
+  // B::f() calls => f1() ==> C ==> C::f()
+  //     \
+  //      \---- A::f()
+  //
+  // C::f()'s ImportOverriddenMethods() asserts B::isVirtual(), so B::f()'s
+  // ImportOverriddenMethods() should be completed before B::f()'s body
+  const char *Code =
+      R"(
+      void f1();
+      class A {
+        virtual void f(){}
+      };
+      class B: public A {
+        void f() override {
+          f1();
+        }
+      };
+      class C: public B {
+        void f() override {}
+      };
+      void f1() { C c; }
+      )";
+  Decl *FromTU = getTuDecl(Code, Lang_CXX11);
+
+  auto *FromF = FirstDeclMatcher<CXXMethodDecl>().match(
+      FromTU, cxxMethodDecl(hasName("B::f")));
+
+  auto *ToBF = Import(FromF, Lang_CXX11);
+  EXPECT_TRUE(ToBF->isVirtual());
+
+  auto *ToCF = FirstDeclMatcher<CXXMethodDecl>().match(
+      ToBF->getTranslationUnitDecl(), cxxMethodDecl(hasName("C::f")));
+  EXPECT_TRUE(ToCF->isVirtual());
 }
 
 TEST_P(ASTImporterOptionSpecificTestBase, ImportVariableChainInC) {
@@ -7374,7 +7409,7 @@ TEST_P(ImportFunctions, CTADImplicit) {
       cxxDeductionGuideDecl(hasParameter(0, hasType(asString("A<T>")))));
   auto *ToD = Import(FromD, Lang_CXX17);
   ASSERT_TRUE(ToD);
-  EXPECT_TRUE(ToD->isCopyDeductionCandidate());
+  EXPECT_EQ(ToD->getDeductionCandidateKind(), DeductionCandidate::Copy);
   // Check that the deduced class template is also imported.
   EXPECT_TRUE(findFromTU(FromD)->Importer->GetAlreadyImportedOrNull(
       FromD->getDeducedTemplate()));
@@ -7970,6 +8005,27 @@ TEST_P(ASTImporterOptionSpecificTestBase, ImportDeductionGuideDifferentOrder) {
                 ->getParam(0)
                 ->getDeclContext(),
             ToDGOther);
+}
+
+TEST_P(ASTImporterOptionSpecificTestBase,
+       ImportFieldsFirstForCorrectRecordLayoutTest) {
+  // UnaryOperator(&) triggers RecordLayout computation, which relies on
+  // correctly imported fields.
+  auto Code =
+      R"(
+      class A {
+        int m() {
+          return &((A *)0)->f1 - &((A *)0)->f2;
+        }
+        int f1;
+        int f2;
+      };
+      )";
+  Decl *FromTU = getTuDecl(Code, Lang_CXX11);
+
+  auto *FromF = FirstDeclMatcher<CXXMethodDecl>().match(
+      FromTU, cxxMethodDecl(hasName("A::m")));
+  Import(FromF, Lang_CXX11);
 }
 
 TEST_P(ASTImporterOptionSpecificTestBase,
@@ -8574,6 +8630,68 @@ TEST_P(ASTImporterOptionSpecificTestBase, ImportTwoTypedefsToUnnamedRecord) {
       FirstDeclMatcher<TypedefDecl>().match(ToTU, typedefDecl(hasName("T2")));
   EXPECT_NE(Typedef1->getUnderlyingType().getTypePtr(),
             Typedef2->getUnderlyingType().getTypePtr());
+}
+
+TEST_P(ASTImporterOptionSpecificTestBase,
+       ImportExistingTypedefToUnnamedRecordPtr) {
+  const char *Code =
+      R"(
+      typedef const struct { int fff; } * const T;
+      extern T x;
+      )";
+  Decl *ToTU = getToTuDecl(Code, Lang_C99);
+  Decl *FromTU = getTuDecl(Code, Lang_C99);
+
+  auto *FromX =
+      FirstDeclMatcher<VarDecl>().match(FromTU, varDecl(hasName("x")));
+  auto *ToX = Import(FromX, Lang_C99);
+  EXPECT_TRUE(ToX);
+
+  auto *Typedef1 =
+      FirstDeclMatcher<TypedefDecl>().match(ToTU, typedefDecl(hasName("T")));
+  auto *Typedef2 =
+      LastDeclMatcher<TypedefDecl>().match(ToTU, typedefDecl(hasName("T")));
+  // FIXME: These should be imported separately, like in the test above.
+  // Or: In the test above these should be merged too.
+  EXPECT_EQ(Typedef1, Typedef2);
+
+  auto *FromR = FirstDeclMatcher<RecordDecl>().match(
+      FromTU, recordDecl(hasDescendant(fieldDecl(hasName("fff")))));
+  auto *ToRExisting = FirstDeclMatcher<RecordDecl>().match(
+      ToTU, recordDecl(hasDescendant(fieldDecl(hasName("fff")))));
+  ASSERT_TRUE(FromR);
+  auto *ToRImported = Import(FromR, Lang_C99);
+  // FIXME: If typedefs are not imported separately, do not import ToRImported
+  // separately.
+  EXPECT_NE(ToRExisting, ToRImported);
+}
+
+TEST_P(ASTImporterOptionSpecificTestBase,
+       ImportTypedefWithDifferentUnderlyingType) {
+  const char *Code =
+      R"(
+      using X1 = int;
+      using Y1 = int;
+
+      using RPB1 = X1*;
+      typedef RPB1 RPX1;
+      using RPB1 = Y1*; // redeclared
+      typedef RPB1 RPY1;
+
+      auto X = 0 ? (RPX1){} : (RPY1){};
+      )";
+  Decl *FromTU = getTuDecl(Code, Lang_CXX11);
+
+  auto *FromX =
+      FirstDeclMatcher<VarDecl>().match(FromTU, varDecl(hasName("X")));
+
+  auto *FromXType = FromX->getType()->getAs<TypedefType>();
+  EXPECT_FALSE(FromXType->typeMatchesDecl());
+
+  auto *ToX = Import(FromX, Lang_CXX11);
+  auto *ToXType = ToX->getType()->getAs<TypedefType>();
+  // FIXME: This should be false.
+  EXPECT_TRUE(ToXType->typeMatchesDecl());
 }
 
 INSTANTIATE_TEST_SUITE_P(ParameterizedTests, ASTImporterLookupTableTest,

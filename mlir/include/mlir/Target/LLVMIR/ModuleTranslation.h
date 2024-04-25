@@ -46,6 +46,7 @@ class LoopAnnotationTranslation;
 
 class DINodeAttr;
 class LLVMFuncOp;
+class ComdatSelectorOp;
 
 /// Implementation class for module translation. Holds a reference to the module
 /// being translated, and the mappings between the original and the translated
@@ -121,14 +122,13 @@ public:
   /// in these blocks.
   void forgetMapping(Region &region);
 
-  /// Returns the LLVM metadata corresponding to a symbol reference to an mlir
-  /// LLVM dialect alias scope operation.
-  llvm::MDNode *getAliasScope(Operation *op, SymbolRefAttr aliasScopeRef) const;
+  /// Returns the LLVM metadata corresponding to a mlir LLVM dialect alias scope
+  /// attribute.
+  llvm::MDNode *getAliasScope(AliasScopeAttr aliasScopeAttr) const;
 
-  /// Returns the LLVM metadata corresponding to an array of symbol references
-  /// to mlir LLVM dialect alias scope operations.
-  llvm::MDNode *getAliasScopes(Operation *op,
-                               ArrayRef<SymbolRefAttr> aliasScopeRefs) const;
+  /// Returns the LLVM metadata corresponding to an array of mlir LLVM dialect
+  /// alias scope attributes.
+  llvm::MDNode *getAliasScopes(ArrayRef<AliasScopeAttr> aliasScopeAttrs) const;
 
   // Sets LLVM metadata for memory operations that are in a parallel loop.
   void setAccessGroupsMetadata(AccessGroupOpInterface op,
@@ -162,16 +162,13 @@ public:
 
   /// Returns the OpenMP IR builder associated with the LLVM IR module being
   /// constructed.
-  llvm::OpenMPIRBuilder *getOpenMPBuilder() {
-    if (!ompBuilder) {
-      ompBuilder = std::make_unique<llvm::OpenMPIRBuilder>(*llvmModule);
-      ompBuilder->initialize();
-    }
-    return ompBuilder.get();
-  }
+  llvm::OpenMPIRBuilder *getOpenMPBuilder();
+
+  /// Returns the LLVM module in which the IR is being constructed.
+  llvm::Module *getLLVMModule() { return llvmModule.get(); }
 
   /// Translates the given location.
-  const llvm::DILocation *translateLoc(Location loc, llvm::DILocalScope *scope);
+  llvm::DILocation *translateLoc(Location loc, llvm::DILocalScope *scope);
 
   /// Translates the given LLVM debug info metadata.
   llvm::Metadata *translateDebugInfo(LLVM::DINodeAttr attr);
@@ -277,20 +274,17 @@ private:
   LogicalResult convertOperation(Operation &op, llvm::IRBuilderBase &builder);
   LogicalResult convertFunctionSignatures();
   LogicalResult convertFunctions();
+  LogicalResult convertComdats();
   LogicalResult convertGlobals();
   LogicalResult convertOneFunction(LLVMFuncOp func);
-
-  /// Process access_group LLVM Metadata operations and create LLVM
-  /// metadata nodes.
-  LogicalResult createAccessGroupMetadata();
 
   /// Process alias.scope LLVM Metadata operations and create LLVM
   /// metadata nodes for them and their domains.
   LogicalResult createAliasScopeMetadata();
 
-  /// Returns the LLVM metadata corresponding to a symbol reference to an mlir
-  /// LLVM dialect TBAATagOp operation.
-  llvm::MDNode *getTBAANode(Operation *op, SymbolRefAttr tagRef) const;
+  /// Returns the LLVM metadata corresponding to the given mlir LLVM dialect
+  /// TBAATagAttr.
+  llvm::MDNode *getTBAANode(TBAATagAttr tbaaAttr) const;
 
   /// Process tbaa LLVM Metadata operations and create LLVM
   /// metadata nodes for them.
@@ -336,11 +330,15 @@ private:
 
   /// Mapping from an alias scope metadata operation to its LLVM metadata.
   /// This map is populated on module entry.
-  DenseMap<Operation *, llvm::MDNode *> aliasScopeMetadataMapping;
+  DenseMap<Attribute, llvm::MDNode *> aliasScopeMetadataMapping;
 
-  /// Mapping from a tbaa metadata operation to its LLVM metadata.
+  /// Mapping from a tbaa attribute to its LLVM metadata.
   /// This map is populated on module entry.
-  DenseMap<const Operation *, llvm::MDNode *> tbaaMetadataMapping;
+  DenseMap<Attribute, llvm::MDNode *> tbaaMetadataMapping;
+
+  /// Mapping from a comdat selector operation to its LLVM comdat struct.
+  /// This map is populated on module entry.
+  DenseMap<ComdatSelectorOp, llvm::Comdat *> comdatMapping;
 
   /// Stack of user-specified state elements, useful when translating operations
   /// with regions.
@@ -369,10 +367,10 @@ llvm::Constant *getLLVMConstant(llvm::Type *llvmType, Attribute attr,
                                 const ModuleTranslation &moduleTranslation);
 
 /// Creates a call to an LLVM IR intrinsic function with the given arguments.
-llvm::Value *createIntrinsicCall(llvm::IRBuilderBase &builder,
-                                 llvm::Intrinsic::ID intrinsic,
-                                 ArrayRef<llvm::Value *> args = {},
-                                 ArrayRef<llvm::Type *> tys = {});
+llvm::CallInst *createIntrinsicCall(llvm::IRBuilderBase &builder,
+                                    llvm::Intrinsic::ID intrinsic,
+                                    ArrayRef<llvm::Value *> args = {},
+                                    ArrayRef<llvm::Type *> tys = {});
 } // namespace detail
 
 } // namespace LLVM

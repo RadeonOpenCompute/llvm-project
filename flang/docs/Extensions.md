@@ -99,6 +99,7 @@ end
 * `<>` as synonym for `.NE.` and `/=`
 * `$` and `@` as legal characters in names
 * Initialization in type declaration statements using `/values/`
+* Saved integer, logical and real scalars are zero initialized.
 * Kind specification with `*`, e.g. `REAL*4`
 * `DOUBLE COMPLEX` as a synonym for `COMPLEX(KIND(0.D0))` --
   but not when spelled `TYPE(DOUBLECOMPLEX)`.
@@ -112,6 +113,7 @@ end
 * Quad precision REAL literals with `Q`
 * `X` prefix/suffix as synonym for `Z` on hexadecimal literals
 * `B`, `O`, `Z`, and `X` accepted as suffixes as well as prefixes
+* Support for using bare `L` in FORMAT statement
 * Triplets allowed in array constructors
 * `%LOC`, `%VAL`, and `%REF`
 * Leading comma allowed before I/O item list
@@ -281,6 +283,14 @@ end
 * When a name is brought into a scope by multiple ways,
   such as USE-association as well as an `IMPORT` from its host,
   it's an error only if the resolution is ambiguous.
+* An entity may appear in a `DATA` statement before its explicit
+  type declaration under `IMPLICIT NONE(TYPE)`.
+* INCLUDE lines can start in any column, can be preceded in
+  fixed form source by a '0' in column 6, can contain spaces
+  between the letters of the word INCLUDE, and can have a
+  numeric character literal kind prefix on the file name.
+* Intrinsic procedures TAND and ATAND. Constant folding is currently
+  not supported for these procedures but this is planned.
 
 ### Extensions supported when enabled by options
 
@@ -361,6 +371,7 @@ end
 * Constraint C1406, which prohibits the same module name from being used
   in a scope for both an intrinsic and a non-intrinsic module, is implemented
   as a portability warning only, not a hard error.
+* IBM @PROCESS directive is accepted but ignored.
 
 ## Preprocessing behavior
 
@@ -407,6 +418,9 @@ end
   This is especially desirable when two generics of the same
   name are combined due to USE association and the mixture may
   be inadvertent.
+* Since Fortran 90, INCLUDE lines have been allowed to have
+  a numeric kind parameter prefix on the file name.  No other
+  Fortran compiler supports them that I can find.
 
 ## Behavior in cases where the standard is ambiguous or indefinite
 
@@ -451,7 +465,7 @@ end
   Other Fortran compilers disagree in their interpretations of this example;
   some seem to treat the references to `m` as if they were host associations
   to an implicitly typed variable (and print `3`), while others seem to
-  treat them as references to implicitly typed local variabless, and
+  treat them as references to implicitly typed local variables, and
   load uninitialized values.
 
   In f18, we chose to emit an error message for this case since the standard
@@ -578,7 +592,18 @@ end module
 * F18 allows `OPTIONAL` dummy arguments to interoperable procedures
   unless they are `VALUE` (C865).
 
+* F18 processes the `NAMELIST` group declarations in a scope after it
+  has resolved all of the names in that scope.  This means that names
+  that appear before their local declarations do not resolve to host
+  associated objects and do not elicit errors about improper redeclarations
+  of implicitly typed entities.
+
+
 ## De Facto Standard Features
 
 * `EXTENDS_TYPE_OF()` returns `.TRUE.` if both of its arguments have the
   same type, a case that is technically implementation-defined.
+
+* `ENCODING=` is not in the list of changeable modes on an I/O unit,
+  but every Fortran compiler allows the encoding to be changed on an
+  open unit.

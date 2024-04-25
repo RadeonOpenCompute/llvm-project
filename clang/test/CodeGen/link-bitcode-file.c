@@ -1,3 +1,7 @@
+// XFAIL: *
+// Restore test once https://github.com/llvm/llvm-project/pull/71978 makes it to
+// amd-mainline-open
+
 // RUN: %clang_cc1 -triple i386-pc-linux-gnu -DBITCODE -emit-llvm-bc -o %t.bc %s
 // RUN: %clang_cc1 -triple i386-pc-linux-gnu -DBITCODE2 -emit-llvm-bc -o %t-2.bc %s
 // RUN: %clang_cc1 -triple i386-pc-linux-gnu -mlink-bitcode-file %t.bc \
@@ -10,6 +14,14 @@
 // Make sure we deal with failure to load the file.
 // RUN: not %clang_cc1 -triple i386-pc-linux-gnu -mlink-bitcode-file no-such-file.bc \
 // RUN:    -emit-llvm -o - %s 2>&1 | FileCheck -check-prefix=CHECK-NO-FILE %s
+
+// Make sure we can perform the same options if the input is LLVM-IR
+// RUN: %clang_cc1 -triple i386-pc-linux-gnu -emit-llvm-bc -o %t-in.bc %s
+// RUN: %clang_cc1 -triple i386-pc-linux-gnu -mlink-bitcode-file %t.bc \
+// RUN:     -O3 -emit-llvm -o - %t-in.bc | FileCheck -check-prefix=CHECK-NO-BC %s
+// RUN: %clang_cc1 -triple i386-pc-linux-gnu -O3 -emit-llvm -o - \
+// RUN:     -mlink-bitcode-file %t.bc -mlink-bitcode-file %t-2.bc %t-in.bc \
+// RUN:     | FileCheck -check-prefix=CHECK-NO-BC -check-prefix=CHECK-NO-BC2 %s
 
 int f(void);
 

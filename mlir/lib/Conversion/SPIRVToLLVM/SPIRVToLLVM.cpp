@@ -37,7 +37,7 @@ using namespace mlir;
 static bool isSignedIntegerOrVector(Type type) {
   if (type.isSignedInteger())
     return true;
-  if (auto vecType = type.dyn_cast<VectorType>())
+  if (auto vecType = dyn_cast<VectorType>(type))
     return vecType.getElementType().isSignedInteger();
   return false;
 }
@@ -46,18 +46,29 @@ static bool isSignedIntegerOrVector(Type type) {
 static bool isUnsignedIntegerOrVector(Type type) {
   if (type.isUnsignedInteger())
     return true;
-  if (auto vecType = type.dyn_cast<VectorType>())
+  if (auto vecType = dyn_cast<VectorType>(type))
     return vecType.getElementType().isUnsignedInteger();
   return false;
 }
 
+/// Returns the width of an integer or of the element type of an integer vector,
+/// if applicable.
+static std::optional<uint64_t> getIntegerOrVectorElementWidth(Type type) {
+  if (auto intType = dyn_cast<IntegerType>(type))
+    return intType.getWidth();
+  if (auto vecType = dyn_cast<VectorType>(type))
+    if (auto intType = dyn_cast<IntegerType>(vecType.getElementType()))
+      return intType.getWidth();
+  return std::nullopt;
+}
+
 /// Returns the bit width of integer, float or vector of float or integer values
 static unsigned getBitWidth(Type type) {
-  assert((type.isIntOrFloat() || type.isa<VectorType>()) &&
+  assert((type.isIntOrFloat() || isa<VectorType>(type)) &&
          "bitwidth is not supported for this type");
   if (type.isIntOrFloat())
     return type.getIntOrFloatBitWidth();
-  auto vecType = type.dyn_cast<VectorType>();
+  auto vecType = dyn_cast<VectorType>(type);
   auto elementType = vecType.getElementType();
   assert(elementType.isIntOrFloat() &&
          "only integers and floats have a bitwidth");
@@ -66,29 +77,29 @@ static unsigned getBitWidth(Type type) {
 
 /// Returns the bit width of LLVMType integer or vector.
 static unsigned getLLVMTypeBitWidth(Type type) {
-  return (LLVM::isCompatibleVectorType(type) ? LLVM::getVectorElementType(type)
-                                             : type)
-      .cast<IntegerType>()
+  return cast<IntegerType>((LLVM::isCompatibleVectorType(type)
+                                ? LLVM::getVectorElementType(type)
+                                : type))
       .getWidth();
 }
 
 /// Creates `IntegerAttribute` with all bits set for given type
 static IntegerAttr minusOneIntegerAttribute(Type type, Builder builder) {
-  if (auto vecType = type.dyn_cast<VectorType>()) {
-    auto integerType = vecType.getElementType().cast<IntegerType>();
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    auto integerType = cast<IntegerType>(vecType.getElementType());
     return builder.getIntegerAttr(integerType, -1);
   }
-  auto integerType = type.cast<IntegerType>();
+  auto integerType = cast<IntegerType>(type);
   return builder.getIntegerAttr(integerType, -1);
 }
 
 /// Creates `llvm.mlir.constant` with all bits set for the given type.
 static Value createConstantAllBitsSet(Location loc, Type srcType, Type dstType,
                                       PatternRewriter &rewriter) {
-  if (srcType.isa<VectorType>()) {
+  if (isa<VectorType>(srcType)) {
     return rewriter.create<LLVM::ConstantOp>(
         loc, dstType,
-        SplatElementsAttr::get(srcType.cast<ShapedType>(),
+        SplatElementsAttr::get(cast<ShapedType>(srcType),
                                minusOneIntegerAttribute(srcType, rewriter)));
   }
   return rewriter.create<LLVM::ConstantOp>(
@@ -98,14 +109,14 @@ static Value createConstantAllBitsSet(Location loc, Type srcType, Type dstType,
 /// Creates `llvm.mlir.constant` with a floating-point scalar or vector value.
 static Value createFPConstant(Location loc, Type srcType, Type dstType,
                               PatternRewriter &rewriter, double value) {
-  if (auto vecType = srcType.dyn_cast<VectorType>()) {
-    auto floatType = vecType.getElementType().cast<FloatType>();
+  if (auto vecType = dyn_cast<VectorType>(srcType)) {
+    auto floatType = cast<FloatType>(vecType.getElementType());
     return rewriter.create<LLVM::ConstantOp>(
         loc, dstType,
         SplatElementsAttr::get(vecType,
                                rewriter.getFloatAttr(floatType, value)));
   }
-  auto floatType = srcType.cast<FloatType>();
+  auto floatType = cast<FloatType>(srcType);
   return rewriter.create<LLVM::ConstantOp>(
       loc, dstType, rewriter.getFloatAttr(floatType, value));
 }
@@ -157,7 +168,7 @@ static Value broadcast(Location loc, Value toBroadcast, unsigned numElements,
 static Value optionallyBroadcast(Location loc, Value value, Type srcType,
                                  LLVMTypeConverter &typeConverter,
                                  ConversionPatternRewriter &rewriter) {
-  if (auto vectorType = srcType.dyn_cast<VectorType>()) {
+  if (auto vectorType = dyn_cast<VectorType>(srcType)) {
     unsigned numElements = vectorType.getNumElements();
     return broadcast(loc, value, numElements, typeConverter, rewriter);
   }
@@ -184,16 +195,14 @@ static Value processCountOrOffset(Location loc, Value value, Type srcType,
 
 /// Converts SPIR-V struct with a regular (according to `VulkanLayoutUtils`)
 /// offset to LLVM struct. Otherwise, the conversion is not supported.
-static std::optional<Type>
-convertStructTypeWithOffset(spirv::StructType type,
-                            LLVMTypeConverter &converter) {
+static Type convertStructTypeWithOffset(spirv::StructType type,
+                                        LLVMTypeConverter &converter) {
   if (type != VulkanLayoutUtils::decorateType(type))
-    return std::nullopt;
+    return nullptr;
 
-  auto elementsVector = llvm::to_vector<8>(
-      llvm::map_range(type.getElementTypes(), [&](Type elementType) {
-        return converter.convertType(elementType);
-      }));
+  SmallVector<Type> elementsVector;
+  if (failed(converter.convertTypes(type.getElementTypes(), elementsVector)))
+    return nullptr;
   return LLVM::LLVMStructType::getLiteral(type.getContext(), elementsVector,
                                           /*isPacked=*/false);
 }
@@ -201,10 +210,9 @@ convertStructTypeWithOffset(spirv::StructType type,
 /// Converts SPIR-V struct with no offset to packed LLVM struct.
 static Type convertStructTypePacked(spirv::StructType type,
                                     LLVMTypeConverter &converter) {
-  auto elementsVector = llvm::to_vector<8>(
-      llvm::map_range(type.getElementTypes(), [&](Type elementType) {
-        return converter.convertType(elementType);
-      }));
+  SmallVector<Type> elementsVector;
+  if (failed(converter.convertTypes(type.getElementTypes(), elementsVector)))
+    return nullptr;
   return LLVM::LLVMStructType::getLiteral(type.getContext(), elementsVector,
                                           /*isPacked=*/true);
 }
@@ -251,7 +259,7 @@ static std::optional<Type> convertArrayType(spirv::ArrayType type,
                                             TypeConverter &converter) {
   unsigned stride = type.getArrayStride();
   Type elementType = type.getElementType();
-  auto sizeInBytes = elementType.cast<spirv::SPIRVType>().getSizeInBytes();
+  auto sizeInBytes = cast<spirv::SPIRVType>(elementType).getSizeInBytes();
   if (stride != 0 && (!sizeInBytes || *sizeInBytes != stride))
     return std::nullopt;
 
@@ -281,12 +289,12 @@ static std::optional<Type> convertRuntimeArrayType(spirv::RuntimeArrayType type,
 
 /// Converts SPIR-V struct to LLVM struct. There is no support of structs with
 /// member decorations. Also, only natural offset is supported.
-static std::optional<Type> convertStructType(spirv::StructType type,
-                                             LLVMTypeConverter &converter) {
+static Type convertStructType(spirv::StructType type,
+                              LLVMTypeConverter &converter) {
   SmallVector<spirv::StructType::MemberDecorationInfo, 4> memberDecorations;
   type.getMemberDecorations(memberDecorations);
   if (!memberDecorations.empty())
-    return std::nullopt;
+    return nullptr;
   if (type.hasOffset())
     return convertStructTypeWithOffset(type, converter);
   return convertStructTypePacked(type, converter);
@@ -319,10 +327,9 @@ public:
     indices.insert(indices.begin(), zero);
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, dstType,
-        typeConverter.convertType(op.getBasePtr()
-                                      .getType()
-                                      .cast<spirv::PointerType>()
-                                      .getPointeeType()),
+        typeConverter.convertType(
+            cast<spirv::PointerType>(op.getBasePtr().getType())
+                .getPointeeType()),
         adaptor.getBasePtr(), indices);
     return success();
   }
@@ -338,7 +345,8 @@ public:
     auto dstType = typeConverter.convertType(op.getPointer().getType());
     if (!dstType)
       return failure();
-    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(op, dstType, op.getVariable());
+    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(op, dstType,
+                                                   op.getVariable());
     return success();
   }
 };
@@ -396,7 +404,7 @@ public:
   matchAndRewrite(spirv::ConstantOp constOp, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto srcType = constOp.getType();
-    if (!srcType.isa<VectorType>() && !srcType.isIntOrFloat())
+    if (!isa<VectorType>(srcType) && !srcType.isIntOrFloat())
       return failure();
 
     auto dstType = typeConverter.convertType(srcType);
@@ -412,15 +420,15 @@ public:
         isUnsignedIntegerOrVector(srcType)) {
       auto signlessType = rewriter.getIntegerType(getBitWidth(srcType));
 
-      if (srcType.isa<VectorType>()) {
-        auto dstElementsAttr = constOp.getValue().cast<DenseIntElementsAttr>();
+      if (isa<VectorType>(srcType)) {
+        auto dstElementsAttr = cast<DenseIntElementsAttr>(constOp.getValue());
         rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
             constOp, dstType,
             dstElementsAttr.mapValues(
                 signlessType, [&](const APInt &value) { return value; }));
         return success();
       }
-      auto srcAttr = constOp.getValue().cast<IntegerAttr>();
+      auto srcAttr = cast<IntegerAttr>(constOp.getValue());
       auto dstAttr = rewriter.getIntegerAttr(signlessType, srcAttr.getValue());
       rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(constOp, dstType, dstAttr);
       return success();
@@ -453,17 +461,17 @@ public:
 
     // Create a constant that holds the size of the `Base`.
     IntegerType integerType;
-    if (auto vecType = srcType.dyn_cast<VectorType>())
-      integerType = vecType.getElementType().cast<IntegerType>();
+    if (auto vecType = dyn_cast<VectorType>(srcType))
+      integerType = cast<IntegerType>(vecType.getElementType());
     else
-      integerType = srcType.cast<IntegerType>();
+      integerType = cast<IntegerType>(srcType);
 
     auto baseSize = rewriter.getIntegerAttr(integerType, getBitWidth(srcType));
     Value size =
-        srcType.isa<VectorType>()
+        isa<VectorType>(srcType)
             ? rewriter.create<LLVM::ConstantOp>(
                   loc, dstType,
-                  SplatElementsAttr::get(srcType.cast<ShapedType>(), baseSize))
+                  SplatElementsAttr::get(cast<ShapedType>(srcType), baseSize))
             : rewriter.create<LLVM::ConstantOp>(loc, dstType, baseSize);
 
     // Shift `Base` left by [sizeof(Base) - (Count + Offset)], so that the bit
@@ -572,9 +580,9 @@ public:
       return failure();
 
     Type containerType = op.getComposite().getType();
-    if (containerType.isa<VectorType>()) {
+    if (isa<VectorType>(containerType)) {
       Location loc = op.getLoc();
-      IntegerAttr value = op.getIndices()[0].cast<IntegerAttr>();
+      IntegerAttr value = cast<IntegerAttr>(op.getIndices()[0]);
       Value index = createI32ConstantOf(loc, rewriter, value.getInt());
       rewriter.replaceOpWithNewOp<LLVM::ExtractElementOp>(
           op, dstType, adaptor.getComposite(), index);
@@ -582,7 +590,8 @@ public:
     }
 
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-        op, adaptor.getComposite(), LLVM::convertArrayToIndices(op.getIndices()));
+        op, adaptor.getComposite(),
+        LLVM::convertArrayToIndices(op.getIndices()));
     return success();
   }
 };
@@ -603,9 +612,9 @@ public:
       return failure();
 
     Type containerType = op.getComposite().getType();
-    if (containerType.isa<VectorType>()) {
+    if (isa<VectorType>(containerType)) {
       Location loc = op.getLoc();
-      IntegerAttr value = op.getIndices()[0].cast<IntegerAttr>();
+      IntegerAttr value = cast<IntegerAttr>(op.getIndices()[0]);
       Value index = createI32ConstantOf(loc, rewriter, value.getInt());
       rewriter.replaceOpWithNewOp<LLVM::InsertElementOp>(
           op, dstType, adaptor.getComposite(), adaptor.getObject(), index);
@@ -730,7 +739,7 @@ public:
     if (op.getInitializer())
       return failure();
 
-    auto srcType = op.getType().cast<spirv::PointerType>();
+    auto srcType = cast<spirv::PointerType>(op.getType());
     auto dstType = typeConverter.convertType(srcType.getPointeeType());
     if (!dstType)
       return failure();
@@ -944,12 +953,12 @@ public:
 
     Location loc = notOp.getLoc();
     IntegerAttr minusOne = minusOneIntegerAttribute(srcType, rewriter);
-    auto mask = srcType.template isa<VectorType>()
-                    ? rewriter.create<LLVM::ConstantOp>(
-                          loc, dstType,
-                          SplatElementsAttr::get(
-                              srcType.template cast<VectorType>(), minusOne))
-                    : rewriter.create<LLVM::ConstantOp>(loc, dstType, minusOne);
+    auto mask =
+        isa<VectorType>(srcType)
+            ? rewriter.create<LLVM::ConstantOp>(
+                  loc, dstType,
+                  SplatElementsAttr::get(cast<VectorType>(srcType), minusOne))
+            : rewriter.create<LLVM::ConstantOp>(loc, dstType, minusOne);
     rewriter.template replaceOpWithNewOp<LLVM::XOrOp>(notOp, dstType,
                                                       notOp.getOperand(), mask);
     return success();
@@ -1146,7 +1155,8 @@ public:
     Block *falseBlock = condBrOp.getFalseBlock();
     rewriter.setInsertionPointToEnd(currentBlock);
     rewriter.create<LLVM::CondBrOp>(loc, condBrOp.getCondition(), trueBlock,
-                                    condBrOp.getTrueTargetOperands(), falseBlock,
+                                    condBrOp.getTrueTargetOperands(),
+                                    falseBlock,
                                     condBrOp.getFalseTargetOperands());
 
     rewriter.inlineRegionBefore(op.getBody(), continueBlock);
@@ -1181,15 +1191,30 @@ public:
       return success();
     }
 
+    std::optional<uint64_t> dstTypeWidth =
+        getIntegerOrVectorElementWidth(dstType);
+    std::optional<uint64_t> op2TypeWidth =
+        getIntegerOrVectorElementWidth(op2Type);
+
+    if (!dstTypeWidth || !op2TypeWidth)
+      return failure();
+
     Location loc = operation.getLoc();
     Value extended;
-    if (isUnsignedIntegerOrVector(op2Type)) {
-      extended = rewriter.template create<LLVM::ZExtOp>(loc, dstType,
-                                                        adaptor.getOperand2());
+    if (op2TypeWidth < dstTypeWidth) {
+      if (isUnsignedIntegerOrVector(op2Type)) {
+        extended = rewriter.template create<LLVM::ZExtOp>(
+            loc, dstType, adaptor.getOperand2());
+      } else {
+        extended = rewriter.template create<LLVM::SExtOp>(
+            loc, dstType, adaptor.getOperand2());
+      }
+    } else if (op2TypeWidth == dstTypeWidth) {
+      extended = adaptor.getOperand2();
     } else {
-      extended = rewriter.template create<LLVM::SExtOp>(loc, dstType,
-                                                        adaptor.getOperand2());
+      return failure();
     }
+
     Value result = rewriter.template create<LLVMOp>(
         loc, dstType, adaptor.getOperand1(), extended);
     rewriter.replaceOp(operation, result);
@@ -1259,9 +1284,9 @@ public:
                   ConversionPatternRewriter &rewriter) const override {
     auto srcType = varOp.getType();
     // Initialization is supported for scalars and vectors only.
-    auto pointerTo = srcType.cast<spirv::PointerType>().getPointeeType();
+    auto pointerTo = cast<spirv::PointerType>(srcType).getPointeeType();
     auto init = varOp.getInitializer();
-    if (init && !pointerTo.isIntOrFloat() && !pointerTo.isa<VectorType>())
+    if (init && !pointerTo.isIntOrFloat() && !isa<VectorType>(pointerTo))
       return failure();
 
     auto dstType = typeConverter.convertType(srcType);
@@ -1300,7 +1325,7 @@ public:
       return failure();
 
     if (typeConverter.useOpaquePointers() &&
-        dstType.isa<LLVM::LLVMPointerType>()) {
+        isa<LLVM::LLVMPointerType>(dstType)) {
       rewriter.replaceOp(bitcastOp, adaptor.getOperand());
       return success();
     }
@@ -1329,7 +1354,8 @@ public:
     TypeConverter::SignatureConversion signatureConverter(
         funcType.getNumInputs());
     auto llvmType = typeConverter.convertFunctionSignature(
-        funcType, /*isVariadic=*/false, signatureConverter);
+        funcType, /*isVariadic=*/false, /*useBarePtrCallConv=*/false,
+        signatureConverter);
     if (!llvmType)
       return failure();
 
@@ -1412,8 +1438,8 @@ public:
     auto components = adaptor.getComponents();
     auto vector1 = adaptor.getVector1();
     auto vector2 = adaptor.getVector2();
-    int vector1Size = vector1.getType().cast<VectorType>().getNumElements();
-    int vector2Size = vector2.getType().cast<VectorType>().getNumElements();
+    int vector1Size = cast<VectorType>(vector1.getType()).getNumElements();
+    int vector2Size = cast<VectorType>(vector2.getType()).getNumElements();
     if (vector1Size == vector2Size) {
       rewriter.replaceOpWithNewOp<LLVM::ShuffleVectorOp>(
           op, vector1, vector2,
@@ -1422,16 +1448,16 @@ public:
     }
 
     auto dstType = typeConverter.convertType(op.getType());
-    auto scalarType = dstType.cast<VectorType>().getElementType();
+    auto scalarType = cast<VectorType>(dstType).getElementType();
     auto componentsArray = components.getValue();
     auto *context = rewriter.getContext();
     auto llvmI32Type = IntegerType::get(context, 32);
     Value targetOp = rewriter.create<LLVM::UndefOp>(loc, dstType);
     for (unsigned i = 0; i < componentsArray.size(); i++) {
-      if (!componentsArray[i].isa<IntegerAttr>())
+      if (!isa<IntegerAttr>(componentsArray[i]))
         return op.emitError("unable to support non-constant component");
 
-      int indexVal = componentsArray[i].cast<IntegerAttr>().getInt();
+      int indexVal = cast<IntegerAttr>(componentsArray[i]).getInt();
       if (indexVal == -1)
         continue;
 

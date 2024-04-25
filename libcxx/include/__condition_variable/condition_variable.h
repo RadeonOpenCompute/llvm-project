@@ -15,12 +15,13 @@
 #include <__config>
 #include <__mutex/mutex.h>
 #include <__mutex/unique_lock.h>
+#include <__system_error/system_error.h>
 #include <__threading_support>
 #include <__type_traits/enable_if.h>
 #include <__type_traits/is_floating_point.h>
 #include <__utility/move.h>
+#include <limits>
 #include <ratio>
-#include <system_error>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -37,7 +38,7 @@ _LIBCPP_BEGIN_NAMESPACE_STD
 _LIBCPP_DECLARE_STRONG_ENUM(cv_status){no_timeout, timeout};
 _LIBCPP_DECLARE_STRONG_ENUM_EPILOG(cv_status)
 
-class _LIBCPP_TYPE_VIS condition_variable {
+class _LIBCPP_EXPORTED_FROM_ABI condition_variable {
   __libcpp_condvar_t __cv_ = _LIBCPP_CONDVAR_INITIALIZER;
 
 public:
@@ -82,11 +83,12 @@ private:
   void
   __do_timed_wait(unique_lock<mutex>& __lk, chrono::time_point<chrono::system_clock, chrono::nanoseconds>) _NOEXCEPT;
 #  if defined(_LIBCPP_HAS_COND_CLOCKWAIT)
-  void
+  _LIBCPP_HIDE_FROM_ABI void
   __do_timed_wait(unique_lock<mutex>& __lk, chrono::time_point<chrono::steady_clock, chrono::nanoseconds>) _NOEXCEPT;
 #  endif
   template <class _Clock>
-  void __do_timed_wait(unique_lock<mutex>& __lk, chrono::time_point<_Clock, chrono::nanoseconds>) _NOEXCEPT;
+  _LIBCPP_HIDE_FROM_ABI void
+  __do_timed_wait(unique_lock<mutex>& __lk, chrono::time_point<_Clock, chrono::nanoseconds>) _NOEXCEPT;
 };
 #endif // !_LIBCPP_HAS_NO_THREADS
 

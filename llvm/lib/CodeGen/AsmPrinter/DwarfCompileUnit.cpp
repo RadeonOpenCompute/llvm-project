@@ -26,6 +26,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
@@ -203,7 +204,7 @@ DIE *DwarfCompileUnit::getOrCreateGlobalVariableDIE(
 
 DIE *DwarfCompileUnit::getOrCreateGlobalVariableDIE(
     const DILifetime &Lifetime,
-    const DenseMap<DIFragment *, const GlobalVariable *> &GVFragmentMap) {
+    const DwarfDebug::GVFragmentMapTy &GVFragmentMap) {
 
   const DIGlobalVariable *GV = dyn_cast<DIGlobalVariable>(Lifetime.getObject());
 
@@ -349,7 +350,7 @@ void DwarfCompileUnit::addLocationAttribute(
       // 16-bit platforms like MSP430 and AVR take this path, so sink this
       // assert to platforms that use it.
       auto GetPointerSizedFormAndOp = [this]() {
-        unsigned PointerSize = Asm->getDataLayout().getPointerSize();
+        unsigned PointerSize = Asm->MAI->getCodePointerSize();
         assert((PointerSize == 4 || PointerSize == 8) &&
                "Add support for other sizes if necessary");
         struct FormAndOp {
@@ -461,7 +462,7 @@ void DwarfCompileUnit::addLocationAttribute(
 
 void DwarfCompileUnit::addLocationAttribute(
     DIE *VariableDIE, const DIGlobalVariable *GV, const DILifetime &Lifetime,
-    const DenseMap<DIFragment *, const GlobalVariable *> &GVFragmentMap) {
+    const DwarfDebug::GVFragmentMapTy &GVFragmentMap) {
   // FIXME: Determine when this is appropriate, considering the existing
   // implementation.
   bool AddToAccelTable = true;
@@ -504,7 +505,7 @@ DIE *DwarfCompileUnit::getOrCreateCommonBlock(
 
 DIE *DwarfCompileUnit::getOrCreateCommonBlock(
     const DICommonBlock *CB, const DILifetime &Lifetime,
-    const DenseMap<DIFragment *, const GlobalVariable *> &GVFragmentMap) {
+    const DwarfDebug::GVFragmentMapTy &GVFragmentMap) {
   // Check for pre-existence.
   if (DIE *NDie = getDIE(CB))
     return NDie;
@@ -657,6 +658,11 @@ DIE &DwarfCompileUnit::updateSubprogramScopeDIEImpl(const DISubprogram *SP,
     case TargetFrameLowering::DwarfFrameBase::CFA: {
       DIELoc *Loc = new (DIEValueAllocator) DIELoc;
       addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_call_frame_cfa);
+      if (FrameBase.Location.Offset != 0) {
+        addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_consts);
+        addSInt(*Loc, dwarf::DW_FORM_sdata, FrameBase.Location.Offset);
+        addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_plus);
+      }
       addBlock(*SPDie, dwarf::DW_AT_frame_base, Loc);
       break;
     }
@@ -815,7 +821,7 @@ DIE *DwarfCompileUnit::constructInlinedScopeDIE(LexicalScope *Scope,
   auto *InlinedSP = getDISubprogram(DS);
   // Find the subprogram's DwarfCompileUnit in the SPMap in case the subprogram
   // was inlined from another compile unit.
-  DIE *OriginDIE = getAbstractSPDies()[InlinedSP];
+  DIE *OriginDIE = getAbstractScopeDIEs()[InlinedSP];
   assert(OriginDIE && "Unable to find original DIE for an inlined subprogram.");
 
   auto ScopeDIE = DIE::get(DIEValueAllocator, dwarf::DW_TAG_inlined_subroutine);
@@ -847,10 +853,20 @@ DIE *DwarfCompileUnit::constructInlinedScopeDIE(LexicalScope *Scope,
 DIE *DwarfCompileUnit::constructLexicalScopeDIE(LexicalScope *Scope) {
   if (DD->isLexicalScopeDIENull(Scope))
     return nullptr;
+  const auto *DS = Scope->getScopeNode();
 
   auto ScopeDIE = DIE::get(DIEValueAllocator, dwarf::DW_TAG_lexical_block);
-  if (Scope->isAbstractScope())
+  if (Scope->isAbstractScope()) {
+    assert(!getAbstractScopeDIEs().count(DS) &&
+           "Abstract DIE for this scope exists!");
+    getAbstractScopeDIEs()[DS] = ScopeDIE;
     return ScopeDIE;
+  }
+  if (!Scope->getInlinedAt()) {
+    assert(!LexicalBlockDIEs.count(DS) &&
+           "Concrete out-of-line DIE for this scope exists!");
+    LexicalBlockDIEs[DS] = ScopeDIE;
+  }
 
   attachRangesOrLowHighPC(*ScopeDIE, Scope->getRanges());
 
@@ -1101,29 +1117,29 @@ static SmallVector<const DIVariable *, 2> dependencies(DbgVariable *Var) {
   for (auto *El : Array->getElements()) {
     if (auto *Subrange = dyn_cast<DISubrange>(El)) {
       if (auto Count = Subrange->getCount())
-        if (auto *Dependency = Count.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(Count))
           Result.push_back(Dependency);
       if (auto LB = Subrange->getLowerBound())
-        if (auto *Dependency = LB.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(LB))
           Result.push_back(Dependency);
       if (auto UB = Subrange->getUpperBound())
-        if (auto *Dependency = UB.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(UB))
           Result.push_back(Dependency);
       if (auto ST = Subrange->getStride())
-        if (auto *Dependency = ST.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(ST))
           Result.push_back(Dependency);
     } else if (auto *GenericSubrange = dyn_cast<DIGenericSubrange>(El)) {
       if (auto Count = GenericSubrange->getCount())
-        if (auto *Dependency = Count.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(Count))
           Result.push_back(Dependency);
       if (auto LB = GenericSubrange->getLowerBound())
-        if (auto *Dependency = LB.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(LB))
           Result.push_back(Dependency);
       if (auto UB = GenericSubrange->getUpperBound())
-        if (auto *Dependency = UB.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(UB))
           Result.push_back(Dependency);
       if (auto ST = GenericSubrange->getStride())
-        if (auto *Dependency = ST.dyn_cast<DIVariable *>())
+        if (auto *Dependency = dyn_cast_if_present<DIVariable *>(ST))
           Result.push_back(Dependency);
     }
   }
@@ -1234,35 +1250,35 @@ DIE *DwarfCompileUnit::createAndAddScopeChildren(LexicalScope *Scope,
   for (DbgVariable *DV : Locals)
     ScopeDIE.addChild(constructVariableDIE(*DV, *Scope, ObjectPointer));
 
-  // Emit imported entities (skipped in gmlt-like data).
-  if (!includeMinimalInlineScopes()) {
-    for (const auto *IE : ImportedEntities[Scope->getScopeNode()])
-      ScopeDIE.addChild(constructImportedEntityDIE(cast<DIImportedEntity>(IE)));
-  }
-
   // Emit labels.
   for (DbgLabel *DL : DU->getScopeLabels().lookup(Scope))
     ScopeDIE.addChild(constructLabelDIE(*DL, *Scope));
 
+  // Track other local entities (skipped in gmlt-like data).
+  // This creates mapping between CU and a set of local declarations that
+  // should be emitted for subprograms in this CU.
+  if (!includeMinimalInlineScopes() && !Scope->getInlinedAt()) {
+    auto &LocalDecls = DD->getLocalDeclsForScope(Scope->getScopeNode());
+    DeferredLocalDecls.insert(LocalDecls.begin(), LocalDecls.end());
+  }
+
   // Emit inner lexical scopes.
-  auto needToEmitLexicalScope = [this](LexicalScope *LS) {
-    if (isa<DISubprogram>(LS->getScopeNode()))
-      return true;
-    auto Vars = DU->getScopeVariables().lookup(LS);
+  auto skipLexicalScope = [this](LexicalScope *S) -> bool {
+    if (isa<DISubprogram>(S->getScopeNode()))
+      return false;
+    auto Vars = DU->getScopeVariables().lookup(S);
     if (!Vars.Args.empty() || !Vars.Locals.empty())
-      return true;
-    if (!includeMinimalInlineScopes() &&
-        !ImportedEntities[LS->getScopeNode()].empty())
-      return true;
-    return false;
+      return false;
+    return includeMinimalInlineScopes() ||
+           DD->getLocalDeclsForScope(S->getScopeNode()).empty();
   };
   for (LexicalScope *LS : Scope->getChildren()) {
     // If the lexical block doesn't have non-scope children, skip
     // its emission and put its children directly to the parent scope.
-    if (needToEmitLexicalScope(LS))
-      constructScopeDIE(LS, ScopeDIE);
-    else
+    if (skipLexicalScope(LS))
       createAndAddScopeChildren(LS, ScopeDIE);
+    else
+      constructScopeDIE(LS, ScopeDIE);
   }
 
   return ObjectPointer;
@@ -1270,11 +1286,9 @@ DIE *DwarfCompileUnit::createAndAddScopeChildren(LexicalScope *Scope,
 
 void DwarfCompileUnit::constructAbstractSubprogramScopeDIE(
     LexicalScope *Scope) {
-  DIE *&AbsDef = getAbstractSPDies()[Scope->getScopeNode()];
-  if (AbsDef)
-    return;
-
   auto *SP = cast<DISubprogram>(Scope->getScopeNode());
+  if (getAbstractScopeDIEs().count(SP))
+    return;
 
   DIE *ContextDIE;
   DwarfCompileUnit *ContextCU = this;
@@ -1298,14 +1312,19 @@ void DwarfCompileUnit::constructAbstractSubprogramScopeDIE(
 
   // Passing null as the associated node because the abstract definition
   // shouldn't be found by lookup.
-  AbsDef = &ContextCU->createAndAddDIE(dwarf::DW_TAG_subprogram, *ContextDIE, nullptr);
-  ContextCU->applySubprogramAttributesToDefinition(SP, *AbsDef);
-  ContextCU->addSInt(*AbsDef, dwarf::DW_AT_inline,
+  DIE &AbsDef = ContextCU->createAndAddDIE(dwarf::DW_TAG_subprogram,
+                                           *ContextDIE, nullptr);
+
+  // Store the DIE before creating children.
+  ContextCU->getAbstractScopeDIEs()[SP] = &AbsDef;
+
+  ContextCU->applySubprogramAttributesToDefinition(SP, AbsDef);
+  ContextCU->addSInt(AbsDef, dwarf::DW_AT_inline,
                      DD->getDwarfVersion() <= 4 ? std::optional<dwarf::Form>()
                                                 : dwarf::DW_FORM_implicit_const,
                      dwarf::DW_INL_inlined);
-  if (DIE *ObjectPointer = ContextCU->createAndAddScopeChildren(Scope, *AbsDef))
-    ContextCU->addDIEEntry(*AbsDef, dwarf::DW_AT_object_pointer, *ObjectPointer);
+  if (DIE *ObjectPointer = ContextCU->createAndAddScopeChildren(Scope, AbsDef))
+    ContextCU->addDIEEntry(AbsDef, dwarf::DW_AT_object_pointer, *ObjectPointer);
 }
 
 bool DwarfCompileUnit::useGNUAnalogForDwarf5Feature() const {
@@ -1449,12 +1468,20 @@ DIE *DwarfCompileUnit::constructImportedEntityDIE(
     EntityDie = getOrCreateNameSpace(NS);
   else if (auto *M = dyn_cast<DIModule>(Entity))
     EntityDie = getOrCreateModule(M);
-  else if (auto *SP = dyn_cast<DISubprogram>(Entity))
-    EntityDie = getOrCreateSubprogramDIE(SP);
-  else if (auto *T = dyn_cast<DIType>(Entity))
+  else if (auto *SP = dyn_cast<DISubprogram>(Entity)) {
+    // If there is an abstract subprogram, refer to it. Note that this assumes
+    // that all the abstract subprograms have been already created (which is
+    // correct until imported entities get emitted in DwarfDebug::endModule()).
+    if (auto *AbsSPDie = getAbstractScopeDIEs().lookup(SP))
+      EntityDie = AbsSPDie;
+    else
+      EntityDie = getOrCreateSubprogramDIE(SP);
+  } else if (auto *T = dyn_cast<DIType>(Entity))
     EntityDie = getOrCreateTypeDIE(T);
   else if (auto *GV = dyn_cast<DIGlobalVariable>(Entity))
     EntityDie = getOrCreateGlobalVariableDIE(GV, {});
+  else if (auto *IE = dyn_cast<DIImportedEntity>(Entity))
+    EntityDie = getOrCreateImportedEntityDIE(IE);
   else
     EntityDie = getDIE(Entity);
   assert(EntityDie);
@@ -1485,9 +1512,24 @@ DIE *DwarfCompileUnit::constructImportedEntityDIE(
   return IMDie;
 }
 
+DIE *DwarfCompileUnit::getOrCreateImportedEntityDIE(
+    const DIImportedEntity *IE) {
+
+  // Check for pre-existence.
+  if (DIE *Die = getDIE(IE))
+    return Die;
+
+  DIE *ContextDIE = getOrCreateContextDIE(IE->getScope());
+  assert(ContextDIE && "Empty scope for the imported entity!");
+
+  DIE *IMDie = constructImportedEntityDIE(IE);
+  ContextDIE->addChild(IMDie);
+  return IMDie;
+}
+
 void DwarfCompileUnit::finishSubprogramDefinition(const DISubprogram *SP) {
   DIE *D = getDIE(SP);
-  if (DIE *AbsSPDIE = getAbstractSPDies().lookup(SP)) {
+  if (DIE *AbsSPDIE = getAbstractScopeDIEs().lookup(SP)) {
     if (D)
       // If this subprogram has an abstract definition, reference that
       addDIEEntry(*D, dwarf::DW_AT_abstract_origin, *AbsSPDIE);
@@ -1569,6 +1611,8 @@ bool DwarfCompileUnit::hasDwarfPubSections() const {
     // generated for things like Gold's gdb_index generation.
   case DICompileUnit::DebugNameTableKind::GNU:
     return true;
+  case DICompileUnit::DebugNameTableKind::Apple:
+    return false;
   case DICompileUnit::DebugNameTableKind::Default:
     return DD->tuneForGDB() && !includeMinimalInlineScopes() &&
            !CUNode->isDebugDirectivesOnly() &&
@@ -1788,4 +1832,30 @@ void DwarfCompileUnit::createBaseTypeDIEs() {
 
     Btr.Die = &Die;
   }
+}
+
+DIE *DwarfCompileUnit::getLexicalBlockDIE(const DILexicalBlock *LB) {
+  // Assume if there is an abstract tree all the DIEs are already emitted.
+  bool isAbstract = getAbstractScopeDIEs().count(LB->getSubprogram());
+  if (isAbstract && getAbstractScopeDIEs().count(LB))
+    return getAbstractScopeDIEs()[LB];
+  assert(!isAbstract && "Missed lexical block DIE in abstract tree!");
+
+  // Return a concrete DIE if it exists or nullptr otherwise.
+  return LexicalBlockDIEs.lookup(LB);
+}
+
+DIE *DwarfCompileUnit::getOrCreateContextDIE(const DIScope *Context) {
+  if (isa_and_nonnull<DILocalScope>(Context)) {
+    if (auto *LFScope = dyn_cast<DILexicalBlockFile>(Context))
+      Context = LFScope->getNonLexicalBlockFileScope();
+    if (auto *LScope = dyn_cast<DILexicalBlock>(Context))
+      return getLexicalBlockDIE(LScope);
+
+    // Otherwise the context must be a DISubprogram.
+    auto *SPScope = cast<DISubprogram>(Context);
+    if (getAbstractScopeDIEs().count(SPScope))
+      return getAbstractScopeDIEs()[SPScope];
+  }
+  return DwarfUnit::getOrCreateContextDIE(Context);
 }

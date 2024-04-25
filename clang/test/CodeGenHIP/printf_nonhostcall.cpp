@@ -248,7 +248,7 @@ __device__ unsigned long n = 30;
 __device__ float f1 = 3.14f;
 __device__ double f2 = 2.71828;
 __device__ _Float16 f3 = 2.71;
-__device__ __bf16 f4;
+__device__ __bf16 f4 = 3.142;
 __device__ _BitInt(55) Int55 = 31;
 __device__ _BitInt(44) Int44 = 312;
 __device__ _BitInt(128) Int128 = 45637;

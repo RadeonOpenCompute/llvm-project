@@ -18,6 +18,19 @@ function(add_math_entrypoint_object name)
     return()
   endif()
 
+  # The GPU optionally depends on vendor libraries. If we emitted one of these
+  # entrypoints it means the user requested it and we should use it instead.
+  get_fq_target_name("${LIBC_TARGET_ARCHITECTURE}.vendor.${name}" fq_vendor_specific_target_name)
+  if(TARGET ${fq_vendor_specific_target_name})
+    add_entrypoint_object(
+      ${name}
+      ALIAS
+      DEPENDS
+        .${LIBC_TARGET_ARCHITECTURE}.vendor.${name}
+    )
+    return()
+  endif()
+
   get_fq_target_name("generic.${name}" fq_generic_target_name)
   if(TARGET ${fq_generic_target_name})
     add_entrypoint_object(
@@ -43,7 +56,6 @@ endfunction()
 add_math_entrypoint_object(acosf)
 add_math_entrypoint_object(acoshf)
 
-add_math_entrypoint_object(asin)
 add_math_entrypoint_object(asinf)
 add_math_entrypoint_object(asinhf)
 
@@ -62,6 +74,8 @@ add_math_entrypoint_object(copysignl)
 add_math_entrypoint_object(cos)
 add_math_entrypoint_object(cosf)
 add_math_entrypoint_object(coshf)
+
+add_math_entrypoint_object(erff)
 
 add_math_entrypoint_object(expf)
 
@@ -115,10 +129,13 @@ add_math_entrypoint_object(ldexpl)
 add_math_entrypoint_object(log10)
 add_math_entrypoint_object(log10f)
 
+add_math_entrypoint_object(log1p)
 add_math_entrypoint_object(log1pf)
 
+add_math_entrypoint_object(log2)
 add_math_entrypoint_object(log2f)
 
+add_math_entrypoint_object(log)
 add_math_entrypoint_object(logf)
 
 add_math_entrypoint_object(logb)
@@ -152,8 +169,6 @@ add_math_entrypoint_object(nearbyintl)
 add_math_entrypoint_object(nextafter)
 add_math_entrypoint_object(nextafterf)
 add_math_entrypoint_object(nextafterl)
-
-add_math_entrypoint_object(pow)
 
 add_math_entrypoint_object(remainder)
 add_math_entrypoint_object(remainderf)

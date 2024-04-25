@@ -115,6 +115,8 @@ void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
                         "--no-undefined",
                         "-shared",
                         "-plugin-opt=-amdgpu-internalize-symbols"};
+  if (Args.hasArg(options::OPT_hipstdpar))
+    LldArgs.push_back("-plugin-opt=-amdgpu-enable-hipstdpar");
 
   auto &TC = getToolChain();
   auto &D = TC.getDriver();
@@ -142,11 +144,6 @@ void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
   if (IsThinLTO)
     LldArgs.push_back(Args.MakeArgString("-plugin-opt=-force-import-all"));
 
-  for (const Arg *A : Args.filtered(options::OPT_mllvm)) {
-    LldArgs.push_back(
-        Args.MakeArgString(Twine("-plugin-opt=") + A->getValue(0)));
-  }
-
   if (Arg *A = Args.getLastArgNoClaim(options::OPT_g_Group))
     if (!A->getOption().matches(options::OPT_g0) &&
         !A->getOption().matches(options::OPT_ggdb0))
@@ -170,7 +167,14 @@ void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
   LldArgs.push_back("--whole-archive");
 
   for (auto *Arg : Args.filtered(options::OPT_Xoffload_linker)) {
-    LldArgs.push_back(Arg->getValue(1));
+    StringRef ArgVal = Arg->getValue(1);
+    auto SplitArg = ArgVal.split("-mllvm=");
+    if (!SplitArg.second.empty()) {
+      LldArgs.push_back(
+          Args.MakeArgString(Twine("-plugin-opt=") + SplitArg.second));
+    } else {
+      LldArgs.push_back(Args.MakeArgString(ArgVal));
+    }
     Arg->claim();
   }
 
@@ -258,13 +262,15 @@ void HIPAMDToolChain::addClangTargetOptions(
 
   CC1Args.push_back("-fcuda-is-device");
 
-  if (DriverArgs.hasFlag(options::OPT_fcuda_approx_transcendentals,
+if (DriverArgs.hasFlag(options::OPT_fcuda_approx_transcendentals,
                          options::OPT_fno_cuda_approx_transcendentals, false))
     CC1Args.push_back("-fcuda-approx-transcendentals");
 
   if (!DriverArgs.hasFlag(options::OPT_fgpu_rdc, options::OPT_fno_gpu_rdc,
                           false))
     CC1Args.append({"-mllvm", "-amdgpu-internalize-symbols"});
+  if (DriverArgs.hasArgNoClaim(options::OPT_hipstdpar))
+    CC1Args.append({"-mllvm", "-amdgpu-enable-hipstdpar"});
 
   StringRef MaxThreadsPerBlock =
       DriverArgs.getLastArgValue(options::OPT_gpu_max_threads_per_block_EQ);

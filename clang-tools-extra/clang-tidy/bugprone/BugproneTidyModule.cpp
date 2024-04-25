@@ -36,8 +36,10 @@
 #include "MisplacedPointerArithmeticInAllocCheck.h"
 #include "MisplacedWideningCastCheck.h"
 #include "MoveForwardingReferenceCheck.h"
+#include "MultipleNewInOneExpressionCheck.h"
 #include "MultipleStatementMacroCheck.h"
 #include "NoEscapeCheck.h"
+#include "NonZeroEnumToBoolConversionCheck.h"
 #include "NotNullTerminatedResultCheck.h"
 #include "ParentVirtualCallCheck.h"
 #include "PosixReturnCheck.h"
@@ -63,6 +65,7 @@
 #include "SuspiciousSemicolonCheck.h"
 #include "SuspiciousStringCompareCheck.h"
 #include "SwappedArgumentsCheck.h"
+#include "SwitchMissingDefaultCaseCheck.h"
 #include "TerminatingContinueCheck.h"
 #include "ThrowKeywordMissingCheck.h"
 #include "TooSmallLoopVariableCheck.h"
@@ -71,6 +74,7 @@
 #include "UndelegatedConstructorCheck.h"
 #include "UnhandledExceptionAtNewCheck.h"
 #include "UnhandledSelfAssignmentCheck.h"
+#include "UniquePtrArrayMismatchCheck.h"
 #include "UnsafeFunctionsCheck.h"
 #include "UnusedRaiiCheck.h"
 #include "UnusedReturnValueCheck.h"
@@ -113,6 +117,8 @@ public:
         "bugprone-implicit-widening-of-multiplication-result");
     CheckFactories.registerCheck<InaccurateEraseCheck>(
         "bugprone-inaccurate-erase");
+    CheckFactories.registerCheck<SwitchMissingDefaultCaseCheck>(
+        "bugprone-switch-missing-default-case");
     CheckFactories.registerCheck<IncorrectRoundingsCheck>(
         "bugprone-incorrect-roundings");
     CheckFactories.registerCheck<InfiniteLoopCheck>("bugprone-infinite-loop");
@@ -132,6 +138,8 @@ public:
         "bugprone-misplaced-widening-cast");
     CheckFactories.registerCheck<MoveForwardingReferenceCheck>(
         "bugprone-move-forwarding-reference");
+    CheckFactories.registerCheck<MultipleNewInOneExpressionCheck>(
+        "bugprone-multiple-new-in-one-expression");
     CheckFactories.registerCheck<MultipleStatementMacroCheck>(
         "bugprone-multiple-statement-macro");
     CheckFactories.registerCheck<RedundantBranchConditionCheck>(
@@ -139,6 +147,8 @@ public:
     CheckFactories.registerCheck<cppcoreguidelines::NarrowingConversionsCheck>(
         "bugprone-narrowing-conversions");
     CheckFactories.registerCheck<NoEscapeCheck>("bugprone-no-escape");
+    CheckFactories.registerCheck<NonZeroEnumToBoolConversionCheck>(
+        "bugprone-non-zero-enum-to-bool-conversion");
     CheckFactories.registerCheck<NotNullTerminatedResultCheck>(
         "bugprone-not-null-terminated-result");
     CheckFactories.registerCheck<ParentVirtualCallCheck>(
@@ -201,6 +211,8 @@ public:
         "bugprone-unhandled-self-assignment");
     CheckFactories.registerCheck<UnhandledExceptionAtNewCheck>(
         "bugprone-unhandled-exception-at-new");
+    CheckFactories.registerCheck<UniquePtrArrayMismatchCheck>(
+        "bugprone-unique-ptr-array-mismatch");
     CheckFactories.registerCheck<UnsafeFunctionsCheck>(
         "bugprone-unsafe-functions");
     CheckFactories.registerCheck<UnusedRaiiCheck>("bugprone-unused-raii");

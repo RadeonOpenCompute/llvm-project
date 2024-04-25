@@ -217,8 +217,6 @@ public:
       StringRef Name,
       llvm::SmallVectorImpl<StringRef> &Features) const override;
 
-  StringRef getCPUSpecificTuneName(StringRef Name) const override;
-
   std::optional<unsigned> getCPUCacheLineSize() const override;
 
   bool validateAsmConstraint(const char *&Name,
@@ -261,7 +259,7 @@ public:
                                    StringRef Constraint, unsigned Size) const;
 
   std::string convertConstraint(const char *&Constraint) const override;
-  const char *getClobbers() const override {
+  std::string_view getClobbers() const override {
     return "~{dirflag},~{fpsr},~{flags}";
   }
 
@@ -416,7 +414,6 @@ public:
     return getPointerWidthV(AddrSpace);
   }
 
-  const char *getBFloat16Mangling() const override { return "u6__bf16"; };
 };
 
 // X86-32 generic target

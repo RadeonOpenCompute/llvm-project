@@ -16,6 +16,7 @@
 
 #include "llvm/Transforms/Utils/AMDGPUEmitPrintf.h"
 #include "llvm/ADT/SparseBitVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/MD5.h"
@@ -415,6 +416,7 @@ callBufferedPrintfArgPush(IRBuilder<> &Builder, ArrayRef<Value *> Args,
       StoreInst *StBuff = Builder.CreateStore(toStore, PtrToStore);
       LLVM_DEBUG(dbgs() << "inserting store to printf buffer:" << *StBuff
                         << '\n');
+      (void)StBuff;
       PtrToStore = Builder.CreateConstInBoundsGEP1_32(
           Builder.getInt8Ty(), PtrToStore,
           M->getDataLayout().getTypeAllocSize(toStore->getType()),

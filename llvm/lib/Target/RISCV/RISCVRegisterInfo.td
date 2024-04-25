@@ -115,63 +115,62 @@ let RegAltNameIndices = [ABIRegAltName] in {
 
 def XLenVT : ValueTypeByHwMode<[RV32, RV64],
                                [i32,  i64]>;
+// Allow f64 in GPR for ZDINX on RV64.
+def XLenFVT : ValueTypeByHwMode<[RV64],
+                                [f64]>;
 def XLenRI : RegInfoByHwMode<
       [RV32,              RV64],
       [RegInfo<32,32,32>, RegInfo<64,64,64>]>;
 
+class GPRRegisterClass<dag regList>
+    : RegisterClass<"RISCV", [XLenVT, XLenFVT, i32], 32, regList> {
+  let RegInfos = XLenRI;
+}
+
 // The order of registers represents the preferred allocation sequence.
 // Registers are listed in the order caller-save, callee-save, specials.
-def GPR : RegisterClass<"RISCV", [XLenVT], 32, (add
-    (sequence "X%u", 10, 17),
-    (sequence "X%u", 5, 7),
-    (sequence "X%u", 28, 31),
-    (sequence "X%u", 8, 9),
-    (sequence "X%u", 18, 27),
-    (sequence "X%u", 0, 4)
-  )> {
-  let RegInfos = XLenRI;
-}
+def GPR : GPRRegisterClass<(add (sequence "X%u", 10, 17),
+                                (sequence "X%u", 5, 7),
+                                (sequence "X%u", 28, 31),
+                                (sequence "X%u", 8, 9),
+                                (sequence "X%u", 18, 27),
+                                (sequence "X%u", 0, 4))>;
 
-def GPRX0 : RegisterClass<"RISCV", [XLenVT], 32, (add X0)> {
-  let RegInfos = XLenRI;
-}
+def GPRX0 : GPRRegisterClass<(add X0)>;
 
-def GPRNoX0 : RegisterClass<"RISCV", [XLenVT], 32, (sub GPR, X0)> {
-  let RegInfos = XLenRI;
-}
+def GPRNoX0 : GPRRegisterClass<(sub GPR, X0)>;
 
-def GPRNoX0X2 : RegisterClass<"RISCV", [XLenVT], 32, (sub GPR, X0, X2)> {
-  let RegInfos = XLenRI;
-}
+def GPRNoX0X2 : GPRRegisterClass<(sub GPR, X0, X2)>;
 
 // Don't use X1 or X5 for JALR since that is a hint to pop the return address
 // stack on some microarchitectures. Also remove the reserved registers X0, X2,
 // X3, and X4 as it reduces the number of register classes that get synthesized
 // by tablegen.
-def GPRJALR : RegisterClass<"RISCV", [XLenVT], 32, (sub GPR, (sequence "X%u", 0, 5))> {
-  let RegInfos = XLenRI;
-}
+def GPRJALR : GPRRegisterClass<(sub GPR, (sequence "X%u", 0, 5))>;
 
-def GPRC : RegisterClass<"RISCV", [XLenVT], 32, (add
-    (sequence "X%u", 10, 15),
-    (sequence "X%u", 8, 9)
-  )> {
-  let RegInfos = XLenRI;
-}
+def GPRC : GPRRegisterClass<(add (sequence "X%u", 10, 15),
+                                 (sequence "X%u", 8, 9))>;
 
 // For indirect tail calls, we can't use callee-saved registers, as they are
 // restored to the saved value before the tail call, which would clobber a call
 // address. We shouldn't use x5 since that is a hint for to pop the return
 // address stack on some microarchitectures.
-def GPRTC : RegisterClass<"RISCV", [XLenVT], 32, (add
-    (sequence "X%u", 6, 7),
-    (sequence "X%u", 10, 17),
-    (sequence "X%u", 28, 31)
-  )> {
-  let RegInfos = XLenRI;
-}
+def GPRTC : GPRRegisterClass<(add (sequence "X%u", 6, 7),
+                                  (sequence "X%u", 10, 17),
+                                  (sequence "X%u", 28, 31))>;
 
-def SP : RegisterClass<"RISCV", [XLenVT], 32, (add X2)> {
+def SP : GPRRegisterClass<(add X2)>;
+
+// Saved Registers from s0 to s7, for C.MVA01S07 instruction in Zcmp extension
+def SR07 : GPRRegisterClass<(add (sequence "X%u", 8, 9),
+                                 (sequence "X%u", 18, 23))>;
+
+// Registers saveable by PUSH/POP instruction in Zcmp extension
+def PGPR : RegisterClass<"RISCV", [XLenVT], 32, (add
+    (sequence "X%u", 8, 9),
+    (sequence "X%u", 18, 27),
+    X1
+  )> {
   let RegInfos = XLenRI;
 }
 
@@ -225,7 +224,7 @@ let RegAltNameIndices = [ABIRegAltName] in {
 // meaning caller-save regs are listed before callee-save.
 // We start by allocating argument registers in reverse order since they are
 // compressible.
-def FPR16 : RegisterClass<"RISCV", [f16], 16, (add
+def FPR16 : RegisterClass<"RISCV", [f16, bf16], 16, (add
     (sequence "F%u_H", 15, 10), // fa5-fa0
     (sequence "F%u_H", 0, 7),   // ft0-f7
     (sequence "F%u_H", 16, 17), // fa6-fa7
@@ -334,9 +333,7 @@ defvar vbool32_t = nxv2i1;
 defvar vbool64_t = nxv1i1;
 
 // There is no need to define register classes for fractional LMUL.
-def LMULList {
-  list<int> m = [1, 2, 4, 8];
-}
+defvar LMULList = [1, 2, 4, 8];
 
 //===----------------------------------------------------------------------===//
 // Utility classes for segment load/store.
@@ -536,7 +533,6 @@ def VMV0 : RegisterClass<"RISCV", VMaskVTs, 64, (add V0)> {
 let RegInfos = XLenRI in {
 def GPRF16  : RegisterClass<"RISCV", [f16], 16, (add GPR)>;
 def GPRF32  : RegisterClass<"RISCV", [f32], 32, (add GPR)>;
-def GPRF64  : RegisterClass<"RISCV", [f64], 64, (add GPR)>;
 } // RegInfos = XLenRI
 
 let RegAltNameIndices = [ABIRegAltName] in {
@@ -568,7 +564,7 @@ def VM : VReg<VMaskVTs,
            (add (sequence "V%u", 8, 31),
                 (sequence "V%u", 0, 7)), 1>;
 
-foreach m = LMULList.m in {
+foreach m = LMULList in {
   foreach nf = NFList<m>.L in {
     def "VRN" # nf # "M" # m # "NoV0": VReg<[untyped],
                                (add !cast<RegisterTuples>("VN" # nf # "M" # m # "NoV0")),

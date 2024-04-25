@@ -302,6 +302,7 @@ public:
     NxSuccess,
     NxNonSPMD,
     NxOptionDisabled,
+    NxOptionDisabledOrHasCall,
     NxUnsupportedDirective,
     NxUnsupportedSplitDirective,
     NxNoStmt,
@@ -355,22 +356,40 @@ public:
     XteamRedVarInfo(const Expr *E, Address A, size_t Pos)
         : RedVarExpr{E}, RedVarAddr{A}, ArgPos{Pos} {}
     XteamRedVarInfo() = delete;
+
+    /// Reduction variable expression, populated during initial analysis
     const Expr *RedVarExpr;
+    /// Address of local reduction variable used in device codegen.
     Address RedVarAddr;
+    /// Argument position for the corresponding metadata in the outlined
+    /// signature, populated during signature generation. Used for device
+    /// codegen only.
     size_t ArgPos;
   };
+
   using XteamRedVarMap = llvm::DenseMap<const VarDecl *, XteamRedVarInfo>;
+  using XteamRedVarVecTy = llvm::SmallVector<const VarDecl *>;
+
   struct XteamRedKernelInfo {
     XteamRedKernelInfo(llvm::Value *TSI, llvm::Value *NT, int BlkSz,
-                       OptKernelNestDirectives Dirs, XteamRedVarMap RVM)
+                       OptKernelNestDirectives Dirs, XteamRedVarMap RVM,
+                       XteamRedVarVecTy RVV)
         : ThreadStartIndex{TSI}, NumTeams{NT}, BlockSize{BlkSz},
-          XteamNestDirs{Dirs}, XteamRedVars{RVM} {}
+          XteamNestDirs{Dirs}, XteamRedVars{RVM}, XteamOrderedRedVar{RVV} {}
 
+    /// Start index of every thread used in device codegen.
     llvm::Value *ThreadStartIndex;
+    /// Number of teams used in device codegen.
     llvm::Value *NumTeams;
+    /// Number of threads in a block, populated during device codegen.
     int BlockSize;
+    /// Nested directives, generated during analysis in both host/device
+    /// codegen.
     OptKernelNestDirectives XteamNestDirs;
+    /// Map from reduction variable to metadata, populated during analysis.
     XteamRedVarMap XteamRedVars;
+    /// Vector of reduction variables in the same order they appear in the AST
+    XteamRedVarVecTy XteamOrderedRedVar;
   };
   using XteamRedKernelMap = llvm::DenseMap<const Stmt *, XteamRedKernelInfo>;
 
@@ -679,8 +698,6 @@ private:
   MetadataTypeMap MetadataIdMap;
   MetadataTypeMap VirtualMetadataIdMap;
   MetadataTypeMap GeneralizedMetadataIdMap;
-
-  llvm::DenseMap<const llvm::Constant *, llvm::GlobalVariable *> RTTIProxyMap;
 
   // Helps squashing blocks of TopLevelStmtDecl into a single llvm::Function
   // when used with -fincremental-extensions.
@@ -1365,6 +1382,8 @@ public:
   /// function which relies on particular fast-math attributes for correctness.
   /// It's up to you to ensure that this is safe.
   void addDefaultFunctionDefinitionAttributes(llvm::Function &F);
+  void mergeDefaultFunctionDefinitionAttributes(llvm::Function &F,
+                                                bool WillInternalize);
 
   /// Like the overload taking a `Function &`, but intended specifically
   /// for frontends that want to build on Clang's target-configuration logic.
@@ -1594,9 +1613,6 @@ public:
   std::vector<const CXXRecordDecl *>
   getMostBaseClasses(const CXXRecordDecl *RD);
 
-  llvm::GlobalVariable *
-  GetOrCreateRTTIProxyGlobalVariable(llvm::Constant *Addr);
-
   /// Get the declaration of std::terminate for the platform.
   llvm::FunctionCallee getTerminateFn();
 
@@ -1640,6 +1656,12 @@ public:
   /// does not define separate macros via the -cc1 options.
   void printPostfixForExternalizedDecl(llvm::raw_ostream &OS,
                                        const Decl *D) const;
+
+  /// Under debug mode, print status of target teams loop transformation,
+  /// which should be either '#distribute' or '#parallel for'
+  void emitTargetTeamsLoopCodegenStatus(std::string StatusMsg,
+                                        const OMPExecutableDirective &D,
+                                        bool IsDevice);
 
   /// Add metadata for all nested directives for optimized kernel codegen.
   void addOptKernelNestMap(const OptKernelNestDirectives &NestDirs);
@@ -1702,6 +1724,8 @@ public:
   /// construct, there are no intermediate statements. Used for a combined
   /// construct
   NoLoopXteamErr checkAndSetNoLoopKernel(const OMPExecutableDirective &D);
+  /// Determine if 'teams loop' can be emitted using 'parallel for'.
+  bool TeamsLoopCanBeParallelFor(const OMPExecutableDirective &D);
 
   /// Given a top-level target construct for no-loop codegen, get the
   /// intermediate OpenMP constructs
@@ -1793,6 +1817,11 @@ public:
   XteamRedVarMap &getXteamRedVarMap(const Stmt *S) {
     assert(isXteamRedKernel(S));
     return XteamRedKernels.find(S)->second.XteamRedVars;
+  }
+
+  XteamRedVarVecTy &getXteamOrderedRedVar(const Stmt *S) {
+    assert(isXteamRedKernel(S));
+    return XteamRedKernels.find(S)->second.XteamOrderedRedVar;
   }
 
   llvm::Value *getXteamRedThreadStartIndex(const Stmt *S) {
@@ -1891,7 +1920,8 @@ private:
                         ForDefinition_t IsForDefinition = NotForDefinition);
 
   bool GetCPUAndFeaturesAttributes(GlobalDecl GD,
-                                   llvm::AttrBuilder &AttrBuilder);
+                                   llvm::AttrBuilder &AttrBuilder,
+                                   bool SetTargetFeatures = true);
   void setNonAliasAttributes(GlobalDecl GD, llvm::GlobalObject *GO);
 
   /// Set function attributes for a function declaration.
@@ -2021,7 +2051,7 @@ private:
 
   /// Emit the module flag metadata used to pass options controlling the
   /// the backend to LLVM.
-  void EmitBackendOptionsMetadata(const CodeGenOptions CodeGenOpts);
+  void EmitBackendOptionsMetadata(const CodeGenOptions &CodeGenOpts);
 
   /// Emits OpenCL specific Metadata e.g. OpenCL version.
   void EmitOpenCLMetadata();
@@ -2044,6 +2074,12 @@ private:
   /// function.
   void SimplifyPersonality();
 
+  /// Helper function for getDefaultFunctionAttributes. Builds a set of function
+  /// attributes which can be simply added to a function.
+  void getTrivialDefaultFunctionAttributes(StringRef Name, bool HasOptnone,
+                                           bool AttrOnCallSite,
+                                           llvm::AttrBuilder &FuncAttrs);
+
   /// Helper function for ConstructAttributeList and
   /// addDefaultFunctionDefinitionAttributes.  Builds a set of function
   /// attributes to add to a function with the given properties.
@@ -2065,16 +2101,17 @@ private:
                                       OptKernelNestDirectives *NestDirs);
 
   /// Top level checker for no-loop on the for statement
-  NoLoopXteamErr getNoLoopForStmtStatus(const OMPExecutableDirective &,
-                                        const Stmt *);
+  std::pair<NoLoopXteamErr, bool>
+  getNoLoopForStmtStatus(const OMPExecutableDirective &, const Stmt *);
 
   // Compute the block size used by optimized kernels.
   int computeOptKernelBlockSize(const OptKernelNestDirectives &NestDirs,
                                 bool isXteamRed);
 
   /// Top level checker for xteam reduction of the loop
-  NoLoopXteamErr getXteamRedForStmtStatus(const OMPExecutableDirective &,
-                                          const Stmt *, const XteamRedVarMap &);
+  std::pair<NoLoopXteamErr, bool>
+  getXteamRedForStmtStatus(const OMPExecutableDirective &, const Stmt *,
+                           const XteamRedVarMap &);
 
   /// Are clauses on a combined OpenMP construct compatible with no-loop
   /// codegen?
@@ -2087,7 +2124,8 @@ private:
   getXteamRedStatusForClauses(const OptKernelNestDirectives &NestDirs);
 
   /// Collect the reduction variables that may satisfy Xteam criteria
-  std::pair<NoLoopXteamErr, CodeGenModule::XteamRedVarMap>
+  std::pair<NoLoopXteamErr, std::pair<CodeGenModule::XteamRedVarMap,
+                                      CodeGenModule::XteamRedVarVecTy>>
   collectXteamRedVars(const OptKernelNestDirectives &NestDirs);
 };
 

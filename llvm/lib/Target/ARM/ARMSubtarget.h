@@ -305,8 +305,6 @@ public:
   bool GETTER() const { return ATTRIBUTE; }
 #include "ARMGenSubtargetInfo.inc"
 
-  void computeIssueWidth();
-
   /// @{
   /// These functions are obsolete, please consider adding subtarget features
   /// or properties instead of calling them.
@@ -348,7 +346,7 @@ public:
   bool useSjLjEH() const { return UseSjLjEH; }
   bool hasBaseDSP() const {
     if (isThumb())
-      return hasDSP();
+      return hasThumb2() && hasDSP();
     else
       return hasV5TEOps();
   }
@@ -403,6 +401,10 @@ public:
   }
 
   bool isTargetHardFloat() const;
+
+  bool isReadTPSoft() const {
+    return !(isReadTPTPIDRURW() || isReadTPTPIDRURO() || isReadTPTPIDRPRW());
+  }
 
   bool isTargetAndroid() const { return TargetTriple.isAndroid(); }
 
@@ -495,6 +497,11 @@ public:
   /// stack frame on entry to the function and which must be maintained by every
   /// function for this subtarget.
   Align getStackAlignment() const { return stackAlignment; }
+
+  // Returns the required alignment for LDRD/STRD instructions
+  Align getDualLoadStoreAlignment() const {
+    return Align(hasV7Ops() || allowsUnalignedMem() ? 4 : 8);
+  }
 
   unsigned getMaxInterleaveFactor() const { return MaxInterleaveFactor; }
 

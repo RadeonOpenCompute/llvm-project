@@ -4,7 +4,7 @@
 
 
 // RUN: %clang_cc1 -triple amdgcn-amd-amdhsa \
-// RUN:     -fcuda-is-device -mcode-object-version=5 -emit-llvm -o - -x hip %s \
+// RUN:     -fcuda-is-device -emit-llvm -o - -x hip %s \
 // RUN:     | FileCheck -check-prefix=COV5 %s
 
 #include "Inputs/cuda.h"

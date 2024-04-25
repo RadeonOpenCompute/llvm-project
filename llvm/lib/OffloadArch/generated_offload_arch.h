@@ -30,8 +30,6 @@ typedef enum {
   AOT_GFX908,
   AOT_GFX90A,
   AOT_GFX90C,
-  AOT_GFX940,
-  AOT_GFX941,
   AOT_SM_30,
   AOT_SM_35,
   AOT_SM_50,
@@ -41,7 +39,6 @@ typedef enum {
 } AOT_OFFLOADARCH;
 typedef enum {
   AOT_CN_ALDEBARAN,
-  AOT_CN_AQUA_VANJARAM,
   AOT_CN_ARCTURUS,
   AOT_CN_BEIGE_GOBY,
   AOT_CN_CARRIZO,
@@ -98,6 +95,11 @@ struct AOT_OFFLOADARCH_TO_STRING{
   const char* offloadarch;
 };
 
+struct AOT_OFFLOADARCH_TO_CODENAME_ENTRY{
+  const char* offloadarch;
+  const char* codename;
+};
+
 struct AOT_TABLE_ENTRY{
     uint16_t vendorid;
     uint16_t devid;
@@ -106,7 +108,6 @@ struct AOT_TABLE_ENTRY{
 };
 extern const AOT_CODENAME_ID_TO_STRING AOT_CODENAMES[] =  {
   {AOT_CN_ALDEBARAN, "ALDEBARAN"},
-  {AOT_CN_AQUA_VANJARAM, "AQUA_VANJARAM"},
   {AOT_CN_ARCTURUS, "ARCTURUS"},
   {AOT_CN_BEIGE_GOBY, "BEIGE_GOBY"},
   {AOT_CN_CARRIZO, "CARRIZO"},
@@ -180,8 +181,6 @@ extern const AOT_OFFLOADARCH_TO_STRING AOT_OFFLOADARCHS[] =  {
   {AOT_GFX908, "gfx908"},
   {AOT_GFX90A, "gfx90a"},
   {AOT_GFX90C, "gfx90c"},
-  {AOT_GFX940, "gfx940"},
-  {AOT_GFX941, "gfx941"},
   {AOT_SM_30, "sm_30"},
   {AOT_SM_35, "sm_35"},
   {AOT_SM_50, "sm_50"},
@@ -189,10 +188,36 @@ extern const AOT_OFFLOADARCH_TO_STRING AOT_OFFLOADARCHS[] =  {
   {AOT_SM_61, "sm_61"},
   {AOT_SM_70, "sm_70"},
 };
+extern const AOT_OFFLOADARCH_TO_CODENAME_ENTRY AOT_AMD_OFFLOADARCH_TO_CODENAME_TABLE[] = {
+{ "gfx1010", "NAVI10" },
+{ "gfx1011", "NAVI12" },
+{ "gfx1012", "NAVI14" },
+{ "gfx1013", "CYAN_SKILLFISH" },
+{ "gfx1030", "SIENNA_CICHLID" },
+{ "gfx1031", "NAVY_FLOUNDER" },
+{ "gfx1032", "DIMGREY_CAVEFISH" },
+{ "gfx1033", "VANGOGH" },
+{ "gfx1034", "BEIGE_GOBY" },
+{ "gfx1035", "REMBRANDT" },
+{ "gfx1036", "RAPHAEL" },
+{ "gfx1100", "PLUM_BONITO" },
+{ "gfx1101", "WHEAT_NAS" },
+{ "gfx1102", "HOTPINK_BONEFISH" },
+{ "gfx1103", "PINK_SARDINE" },
+{ "gfx700", "SPECTRE" },
+{ "gfx701", "HAWAII" },
+{ "gfx801", "CARRIZO" },
+{ "gfx802", "TONGA" },
+{ "gfx803", "FIJI" },
+{ "gfx900", "VEGA10" },
+{ "gfx902", "RAVEN" },
+{ "gfx904", "VEGA12" },
+{ "gfx906", "VEGA20" },
+{ "gfx908", "ARCTURUS" },
+{ "gfx90a", "ALDEBARAN" },
+{ "gfx90c", "RENOIR" },
+};
 extern const AOT_TABLE_ENTRY AOT_TABLE[] = {
-{ 0x1002, 0x0061, AOT_CN_AQUA_VANJARAM, AOT_GFX940 },
-{ 0x1002, 0x0062, AOT_CN_AQUA_VANJARAM, AOT_GFX940 },
-{ 0x1002, 0x74a1, AOT_CN_AQUA_VANJARAM, AOT_GFX941 },
 { 0x1002, 0x1304, AOT_CN_SPECTRE, AOT_GFX700 },
 { 0x1002, 0x1305, AOT_CN_SPECTRE, AOT_GFX700 },
 { 0x1002, 0x1306, AOT_CN_SPECTRE, AOT_GFX700 },
@@ -370,8 +395,6 @@ extern const AOT_TABLE_ENTRY AOT_TABLE[] = {
 { 0x1002, 0x7423, AOT_CN_BEIGE_GOBY, AOT_GFX1034 },
 { 0x1002, 0x743F, AOT_CN_BEIGE_GOBY, AOT_GFX1034 },
 { 0x1002, 0x744C, AOT_CN_PLUM_BONITO, AOT_GFX1100 },
-{ 0x1002, 0x74a0, AOT_CN_AQUA_VANJARAM, AOT_GFX940 },
-{ 0x1002, 0x74a1, AOT_CN_AQUA_VANJARAM, AOT_GFX941 },
 { 0x1002, 0x9870, AOT_CN_CARRIZO, AOT_GFX801 },
 { 0x1002, 0x9874, AOT_CN_CARRIZO, AOT_GFX801 },
 { 0x1002, 0x9875, AOT_CN_CARRIZO, AOT_GFX801 },

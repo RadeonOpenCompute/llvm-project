@@ -13,7 +13,7 @@
 #include <__config>
 #include <__fwd/get.h>
 #include <__fwd/tuple.h>
-#include <__tuple_dir/tuple_indices.h>
+#include <__tuple/tuple_indices.h>
 #include <__type_traits/decay.h>
 #include <__type_traits/dependent_type.h>
 #include <__type_traits/enable_if.h>
@@ -30,6 +30,9 @@
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
 #endif
+
+_LIBCPP_PUSH_MACROS
+#include <__undef_macros>
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
@@ -173,5 +176,7 @@ void swap(__compressed_pair<_T1, _T2>& __x, __compressed_pair<_T1, _T2>& __y)
 }
 
 _LIBCPP_END_NAMESPACE_STD
+
+_LIBCPP_POP_MACROS
 
 #endif // _LIBCPP___MEMORY_COMPRESSED_PAIR_H

@@ -125,6 +125,8 @@ class LLVM_LIBRARY_VISIBILITY ClangAs : public Tool {
 public:
   ClangAs(const ToolChain &TC)
       : Tool("clang::as", "clang integrated assembler", TC) {}
+  void AddLoongArchTargetArgs(const llvm::opt::ArgList &Args,
+                              llvm::opt::ArgStringList &CmdArgs) const;
   void AddMIPSTargetArgs(const llvm::opt::ArgList &Args,
                          llvm::opt::ArgStringList &CmdArgs) const;
   void AddX86TargetArgs(const llvm::opt::ArgList &Args,
@@ -198,6 +200,11 @@ public:
                     const InputInfo &Output, const InputInfoList &Inputs,
                     const llvm::opt::ArgList &TCArgs,
                     const char *LinkingOutput) const override;
+  void ConstructOpaqueJob(Compilation &C, const JobAction &JA,
+                          const InputInfo &Output, const InputInfoList &Inputs,
+                          const llvm::opt::ArgList &TCArgs,
+                          const llvm::Triple &TheTriple,
+                          const char *LinkingOutput) const;
 };
 
 enum class DwarfFissionKind { None, Split, Single };

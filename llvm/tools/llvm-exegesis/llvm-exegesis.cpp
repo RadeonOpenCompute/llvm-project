@@ -15,6 +15,7 @@
 #include "lib/BenchmarkResult.h"
 #include "lib/BenchmarkRunner.h"
 #include "lib/Clustering.h"
+#include "lib/CodeTemplate.h"
 #include "lib/Error.h"
 #include "lib/LlvmState.h"
 #include "lib/PerfHelper.h"
@@ -140,6 +141,12 @@ static cl::opt<exegesis::BenchmarkPhaseSelectorE> BenchmarkPhaseSelector(
             "(default)")),
     cl::init(exegesis::BenchmarkPhaseSelectorE::Measure));
 
+static cl::opt<bool>
+    UseDummyPerfCounters("use-dummy-perf-counters",
+                         cl::desc("Do not read real performance counters, use "
+                                  "dummy values (for testing)"),
+                         cl::cat(BenchmarkOptions), cl::init(false));
+
 static cl::opt<unsigned>
     NumRepetitions("num-repetitions",
                    cl::desc("number of time to repeat the asm snippet"),
@@ -236,11 +243,24 @@ static cl::opt<std::string>
          cl::desc("Target a specific cpu type (-mcpu=help for details)"),
          cl::value_desc("cpu-name"), cl::cat(Options), cl::init("native"));
 
-static cl::opt<bool> DumpObjectToDisk(
-    "dump-object-to-disk",
-    cl::desc("dumps the generated benchmark object to disk "
-             "and prints a message to access it (default = false)"),
-    cl::cat(BenchmarkOptions), cl::init(false));
+static cl::opt<std::string>
+    DumpObjectToDisk("dump-object-to-disk",
+                     cl::desc("dumps the generated benchmark object to disk "
+                              "and prints a message to access it"),
+                     cl::ValueOptional, cl::cat(BenchmarkOptions));
+
+static cl::opt<BenchmarkRunner::ExecutionModeE> ExecutionMode(
+    "execution-mode",
+    cl::desc("Selects the execution mode to use for running snippets"),
+    cl::cat(BenchmarkOptions),
+    cl::values(clEnumValN(BenchmarkRunner::ExecutionModeE::InProcess,
+                          "inprocess",
+                          "Executes the snippets within the same process"),
+               clEnumValN(BenchmarkRunner::ExecutionModeE::SubProcess,
+                          "subprocess",
+                          "Spawns a subprocess for each snippet execution, "
+                          "allows for the use of memory annotations")),
+    cl::init(BenchmarkRunner::ExecutionModeE::InProcess));
 
 static ExitOnError ExitOnErr("llvm-exegesis error: ");
 
@@ -375,8 +395,11 @@ static void runBenchmarkConfigurations(
          Repetitors) {
       auto RC = ExitOnErr(Runner.getRunnableConfiguration(
           Conf, NumRepetitions, LoopBodySize, *Repetitor));
+      std::optional<StringRef> DumpFile;
+      if (DumpObjectToDisk.getNumOccurrences())
+        DumpFile = DumpObjectToDisk;
       AllResults.emplace_back(
-          ExitOnErr(Runner.runConfiguration(std::move(RC), DumpObjectToDisk)));
+          ExitOnErr(Runner.runConfiguration(std::move(RC), DumpFile)));
     }
     Benchmark &Result = AllResults.front();
 
@@ -412,16 +435,24 @@ static void runBenchmarkConfigurations(
       }
     }
 
+    // With dummy counters, measurements are rather meaningless,
+    // so drop them altogether.
+    if (UseDummyPerfCounters)
+      Result.Measurements.clear();
+
     ExitOnFileError(BenchmarkFile, Result.writeYamlTo(State, Ostr));
   }
 }
 
 void benchmarkMain() {
-  if (BenchmarkPhaseSelector == BenchmarkPhaseSelectorE::Measure) {
+  if (BenchmarkPhaseSelector == BenchmarkPhaseSelectorE::Measure &&
+      !UseDummyPerfCounters) {
 #ifndef HAVE_LIBPFM
     ExitWithError(
-        "benchmarking unavailable, LLVM was built without libpfm. You can pass "
-        "--skip-measurements to skip the actual benchmarking.");
+        "benchmarking unavailable, LLVM was built without libpfm. You can "
+        "pass --benchmark-phase=... to skip the actual benchmarking or "
+        "--use-dummy-perf-counters to not query the kernel for real event "
+        "counts.");
 #else
     if (exegesis::pfm::pfmInitialize())
       ExitWithError("cannot initialize libpfm");
@@ -432,7 +463,8 @@ void benchmarkMain() {
   InitializeAllAsmParsers();
   InitializeAllExegesisTargets();
 
-  const LLVMState State = ExitOnErr(LLVMState::Create(TripleName, MCPU));
+  const LLVMState State =
+      ExitOnErr(LLVMState::Create(TripleName, MCPU, "", UseDummyPerfCounters));
 
   // Preliminary check to ensure features needed for requested
   // benchmark mode are present on target CPU and/or OS.
@@ -441,7 +473,8 @@ void benchmarkMain() {
 
   const std::unique_ptr<BenchmarkRunner> Runner =
       ExitOnErr(State.getExegesisTarget().createBenchmarkRunner(
-          BenchmarkMode, State, BenchmarkPhaseSelector, ResultAggMode));
+          BenchmarkMode, State, BenchmarkPhaseSelector, ExecutionMode,
+          ResultAggMode));
   if (!Runner) {
     ExitWithError("cannot create benchmark runner");
   }
@@ -489,6 +522,13 @@ void benchmarkMain() {
     }
   } else {
     Configurations = ExitOnErr(readSnippets(State, SnippetsFile));
+    for (const auto &Configuration : Configurations) {
+      if (ExecutionMode != BenchmarkRunner::ExecutionModeE::SubProcess &&
+          (Configuration.Key.MemoryMappings.size() != 0 ||
+           Configuration.Key.MemoryValues.size() != 0))
+        ExitWithError("Memory annotations are only supported in subprocess "
+                      "execution mode");
+    }
   }
 
   if (NumRepetitions == 0) {

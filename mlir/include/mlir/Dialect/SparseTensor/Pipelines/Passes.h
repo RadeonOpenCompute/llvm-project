@@ -122,9 +122,24 @@ struct SparseCompilerOptions
            "dialect"),
       init(false)};
 
+  /// These options are used to enable GPU code generation.
+  PassOptions::Option<std::string> gpuTriple{*this, "gpu-triple",
+                                             desc("GPU target triple")};
+  PassOptions::Option<std::string> gpuChip{*this, "gpu-chip",
+                                           desc("GPU target architecture")};
+  PassOptions::Option<std::string> gpuFeatures{*this, "gpu-features",
+                                               desc("GPU target features")};
+
+  /// This option is used to enable GPU library generation.
+  PassOptions::Option<bool> enableGPULibgen{
+      *this, "enable-gpu-libgen",
+      desc("Enables GPU acceleration by means of direct library calls (like "
+           "cuSPARSE)")};
+
   /// Projects out the options for `createSparsificationPass`.
   SparsificationOptions sparsificationOptions() const {
-    return SparsificationOptions(parallelization, enableIndexReduction);
+    return SparsificationOptions(parallelization, enableIndexReduction,
+                                 enableGPULibgen, enableRuntimeLibrary);
   }
 
   /// Projects out the options for `createSparseTensorConversionPass`.

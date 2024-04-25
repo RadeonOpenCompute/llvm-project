@@ -36,6 +36,24 @@ define void @abs_v8i16(ptr %x) {
 }
 declare <8 x i16> @llvm.abs.v8i16(<8 x i16>, i1)
 
+define void @abs_v6i16(ptr %x) {
+; CHECK-LABEL: abs_v6i16:
+; CHECK:       # %bb.0:
+; CHECK-NEXT:    vsetivli zero, 6, e16, m1, ta, ma
+; CHECK-NEXT:    vle16.v v8, (a0)
+; CHECK-NEXT:    vsetivli zero, 8, e16, m1, ta, ma
+; CHECK-NEXT:    vrsub.vi v9, v8, 0
+; CHECK-NEXT:    vmax.vv v8, v8, v9
+; CHECK-NEXT:    vsetivli zero, 6, e16, m1, ta, ma
+; CHECK-NEXT:    vse16.v v8, (a0)
+; CHECK-NEXT:    ret
+  %a = load <6 x i16>, ptr %x
+  %b = call <6 x i16> @llvm.abs.v6i16(<6 x i16> %a, i1 false)
+  store <6 x i16> %b, ptr %x
+  ret void
+}
+declare <6 x i16> @llvm.abs.v6i16(<6 x i16>, i1)
+
 define void @abs_v4i32(ptr %x) {
 ; CHECK-LABEL: abs_v4i32:
 ; CHECK:       # %bb.0:

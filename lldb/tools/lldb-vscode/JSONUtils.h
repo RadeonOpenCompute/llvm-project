@@ -232,13 +232,21 @@ void AppendBreakpoint(
 ///     provided by the setBreakpoints request are returned to the IDE as a
 ///     fallback.
 ///
+/// \param[in] request_column
+///     An optional column to use when creating the resulting "Breakpoint" object.
+///     It is used if the breakpoint has no valid locations.
+///     It is useful to ensure the same column
+///     provided by the setBreakpoints request are returned to the IDE as a
+///     fallback.
+///
 /// \return
 ///     A "Breakpoint" JSON object with that follows the formal JSON
 ///     definition outlined by Microsoft.
 llvm::json::Value
 CreateBreakpoint(lldb::SBBreakpoint &bp,
                  std::optional<llvm::StringRef> request_path = std::nullopt,
-                 std::optional<uint32_t> request_line = std::nullopt);
+                 std::optional<uint32_t> request_line = std::nullopt,
+                 std::optional<uint32_t> request_column = std::nullopt);
 
 /// Converts a LLDB module to a VS Code DAP module for use in "modules" events.
 ///
@@ -479,13 +487,19 @@ llvm::json::Value CreateCompileUnit(lldb::SBCompileUnit unit);
 /// \param[in] comm_file
 ///     The fifo file used to communicate the with the target launcher.
 ///
+/// \param[in] debugger_pid
+///     The PID of the lldb-vscode instance that will attach to the target. The
+///     launcher uses it on Linux tell the kernel that it should allow the
+///     debugger process to attach.
+///
 /// \return
 ///     A "runInTerminal" JSON object that follows the specification outlined by
 ///     Microsoft.
 llvm::json::Object
 CreateRunInTerminalReverseRequest(const llvm::json::Object &launch_request,
                                   llvm::StringRef debug_adaptor_path,
-                                  llvm::StringRef comm_file);
+                                  llvm::StringRef comm_file,
+                                  lldb::pid_t debugger_pid);
 
 /// Create a "Terminated" JSON object that contains statistics
 ///

@@ -304,7 +304,6 @@ EXTERN void __tgt_target_data_update_mapper(ident_t *Loc, int64_t DeviceId,
                                             map_var_info_t *ArgNames,
                                             void **ArgMappers) {
   TIMESCOPE_WITH_IDENT(Loc);
-  void *CodePtr = nullptr;
 
 #ifdef OMPT_SUPPORT
   OMPTInvokeWrapper IWrapper(OMPT_GET_RETURN_ADDRESS(0),
@@ -551,6 +550,12 @@ EXTERN void __tgt_set_info_flag(uint32_t NewInfoLevel) {
 }
 
 EXTERN int __tgt_print_device_info(int64_t DeviceId) {
+  // Make sure the device is ready.
+  if (!deviceIsReady(DeviceId)) {
+    DP("Device %" PRId64 " is not ready\n", DeviceId);
+    return OMP_TGT_FAIL;
+  }
+
   return PM->Devices[DeviceId]->printDeviceInfo(
       PM->Devices[DeviceId]->RTLDeviceID);
 }

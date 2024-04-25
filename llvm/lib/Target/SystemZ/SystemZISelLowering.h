@@ -1,4 +1,3 @@
-
 //===-- SystemZISelLowering.h - SystemZ DAG lowering interface --*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -283,6 +282,16 @@ enum NodeType : unsigned {
   // Operand 0: the value to test
   // Operand 1: the bit mask
   TDC,
+
+  // z/OS XPLINK ADA Entry
+  // Wraps a TargetGlobalAddress that should be loaded from a function's
+  // AssociatedData Area (ADA). Tha ADA is passed to the function by the
+  // caller in the XPLink ABI defined register R5.
+  // Operand 0: the GlobalValue/External Symbol
+  // Operand 1: the ADA register
+  // Operand 2: the offset (0 for the first and 8 for the second element in the
+  // function descriptor)
+  ADA_ENTRY,
 
   // Strict variants of scalar floating-point comparisons.
   // Quiet and signaling versions.
@@ -658,7 +667,7 @@ private:
   SDValue lowerSDIVREM(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerUDIVREM(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerXALUO(SDValue Op, SelectionDAG &DAG) const;
-  SDValue lowerADDSUBCARRY(SDValue Op, SelectionDAG &DAG) const;
+  SDValue lowerUADDSUBO_CARRY(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerBITCAST(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerOR(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerCTPOP(SDValue Op, SelectionDAG &DAG) const;

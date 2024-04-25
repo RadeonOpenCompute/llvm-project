@@ -104,6 +104,7 @@ bool AMDGPUResourceUsageAnalysis::runOnModule(Module &M) {
 
   MachineModuleInfo &MMI = getAnalysis<MachineModuleInfoWrapperPass>().getMMI();
   const TargetMachine &TM = TPC->getTM<TargetMachine>();
+  const MCSubtargetInfo &STI = *TM.getMCSubtargetInfo();
   bool HasIndirectCall = false;
 
   CallGraph CG = CallGraph(M);
@@ -111,7 +112,8 @@ bool AMDGPUResourceUsageAnalysis::runOnModule(Module &M) {
 
   // By default, for code object v5 and later, track only the minimum scratch
   // size
-  if (AMDGPU::getCodeObjectVersion(M) >= AMDGPU::AMDHSA_COV5) {
+  if (AMDGPU::getCodeObjectVersion(M) >= AMDGPU::AMDHSA_COV5 ||
+      STI.getTargetTriple().getOS() == Triple::AMDPAL) {
     if (!AssumedStackSizeForDynamicSizeObjects.getNumOccurrences())
       AssumedStackSizeForDynamicSizeObjects = 0;
     if (!AssumedStackSizeForExternalCall.getNumOccurrences())
@@ -149,9 +151,16 @@ bool AMDGPUResourceUsageAnalysis::runOnModule(Module &M) {
 
     SIFunctionResourceInfo &Info = CI.first->second;
     MachineFunction *MF = MMI.getMachineFunction(*F);
-    assert(MF && "function must have been generated already");
-    Info = analyzeResourceUsage(*MF, TM);
-    HasIndirectCall |= Info.HasIndirectCall;
+    // We can only analyze resource usage of functions for which there exists a
+    // machinefunction equivalent. These may not exist as the (codegen) passes
+    // prior to this one are run in CGSCC order which will bypass any local
+    // functions that aren't called.
+    assert((MF || TPC->requiresCodeGenSCCOrder()) &&
+           "function must have been generated already");
+    if (MF) {
+      Info = analyzeResourceUsage(*MF, TM);
+      HasIndirectCall |= Info.HasIndirectCall;
+    }
   }
 
   if (HasIndirectCall)

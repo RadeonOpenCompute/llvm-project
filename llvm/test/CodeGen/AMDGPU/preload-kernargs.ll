@@ -3621,10 +3621,10 @@ define amdgpu_kernel void @v3f32_preload_arg(ptr addrspace(1) nocapture %out, <3
 ; PRELOAD-2-NEXT:    s_nop 0
 ; PRELOAD-2-NEXT:    s_nop 0
 ; PRELOAD-2-NEXT:  ; %bb.0:
+; PRELOAD-2-NEXT:    v_mov_b32_e32 v3, 0
 ; PRELOAD-2-NEXT:    v_mov_b32_e32 v0, s6
 ; PRELOAD-2-NEXT:    v_mov_b32_e32 v1, s7
 ; PRELOAD-2-NEXT:    v_mov_b32_e32 v2, s8
-; PRELOAD-2-NEXT:    v_mov_b32_e32 v3, 0
 ; PRELOAD-2-NEXT:    global_store_dwordx3 v3, v[0:2], s[2:3] sc0 sc1
 ; PRELOAD-2-NEXT:    s_endpgm
 ;
@@ -3694,10 +3694,10 @@ define amdgpu_kernel void @v3f32_preload_arg(ptr addrspace(1) nocapture %out, <3
 ; PRELOAD-4-NEXT:    s_nop 0
 ; PRELOAD-4-NEXT:    s_nop 0
 ; PRELOAD-4-NEXT:  ; %bb.0:
+; PRELOAD-4-NEXT:    v_mov_b32_e32 v3, 0
 ; PRELOAD-4-NEXT:    v_mov_b32_e32 v0, s6
 ; PRELOAD-4-NEXT:    v_mov_b32_e32 v1, s7
 ; PRELOAD-4-NEXT:    v_mov_b32_e32 v2, s8
-; PRELOAD-4-NEXT:    v_mov_b32_e32 v3, 0
 ; PRELOAD-4-NEXT:    global_store_dwordx3 v3, v[0:2], s[2:3] sc0 sc1
 ; PRELOAD-4-NEXT:    s_endpgm
 ;
@@ -3767,10 +3767,10 @@ define amdgpu_kernel void @v3f32_preload_arg(ptr addrspace(1) nocapture %out, <3
 ; PRELOAD-8-NEXT:    s_nop 0
 ; PRELOAD-8-NEXT:    s_nop 0
 ; PRELOAD-8-NEXT:  ; %bb.0:
+; PRELOAD-8-NEXT:    v_mov_b32_e32 v3, 0
 ; PRELOAD-8-NEXT:    v_mov_b32_e32 v0, s6
 ; PRELOAD-8-NEXT:    v_mov_b32_e32 v1, s7
 ; PRELOAD-8-NEXT:    v_mov_b32_e32 v2, s8
-; PRELOAD-8-NEXT:    v_mov_b32_e32 v3, 0
 ; PRELOAD-8-NEXT:    global_store_dwordx3 v3, v[0:2], s[2:3] sc0 sc1
 ; PRELOAD-8-NEXT:    s_endpgm
   store <3 x float> %in, ptr addrspace(1) %out, align 4

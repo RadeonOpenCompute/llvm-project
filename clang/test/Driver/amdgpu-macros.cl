@@ -126,6 +126,8 @@
 // RUN: %clang -E -dM -target amdgcn -mcpu=gfx1101 %s 2>&1 | FileCheck --check-prefixes=ARCH-GCN,FAST_FMAF %s -DWAVEFRONT_SIZE=32 -DCPU=gfx1101 -DFAMILY=GFX11
 // RUN: %clang -E -dM -target amdgcn -mcpu=gfx1102 %s 2>&1 | FileCheck --check-prefixes=ARCH-GCN,FAST_FMAF %s -DWAVEFRONT_SIZE=32 -DCPU=gfx1102 -DFAMILY=GFX11
 // RUN: %clang -E -dM -target amdgcn -mcpu=gfx1103 %s 2>&1 | FileCheck --check-prefixes=ARCH-GCN,FAST_FMAF %s -DWAVEFRONT_SIZE=32 -DCPU=gfx1103 -DFAMILY=GFX11
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx1150 %s 2>&1 | FileCheck --check-prefixes=ARCH-GCN,FAST_FMAF %s -DWAVEFRONT_SIZE=32 -DCPU=gfx1150 -DFAMILY=GFX11
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx1151 %s 2>&1 | FileCheck --check-prefixes=ARCH-GCN,FAST_FMAF %s -DWAVEFRONT_SIZE=32 -DCPU=gfx1151 -DFAMILY=GFX11
 
 // ARCH-GCN-DAG: #define FP_FAST_FMA 1
 
@@ -158,3 +160,19 @@
 // RUN:   -mwavefrontsize64 %s 2>&1 | FileCheck --check-prefix=WAVE64 %s
 // WAVE64-DAG: #define __AMDGCN_WAVEFRONT_SIZE 64
 // WAVE32-DAG: #define __AMDGCN_WAVEFRONT_SIZE 32
+
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx906 \
+// RUN:   %s 2>&1 | FileCheck --check-prefix=CUMODE-ON %s
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx906 -mcumode \
+// RUN:   %s 2>&1 | FileCheck --check-prefix=CUMODE-ON %s
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx906 -mno-cumode \
+// RUN:   %s 2>&1 | FileCheck --check-prefixes=CUMODE-ON,WARN-CUMODE %s
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx1030 \
+// RUN:   %s 2>&1 | FileCheck --check-prefix=CUMODE-OFF %s
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx1030 -mcumode \
+// RUN:   %s 2>&1 | FileCheck --check-prefix=CUMODE-ON %s
+// RUN: %clang -E -dM -target amdgcn -mcpu=gfx1030 -mno-cumode \
+// RUN:   %s 2>&1 | FileCheck --check-prefix=CUMODE-OFF %s
+// WARN-CUMODE-DAG: warning: ignoring '-mno-cumode' option as it is not currently supported for processor 'gfx906' [-Woption-ignored]
+// CUMODE-ON-DAG: #define __AMDGCN_CUMODE__ 1
+// CUMODE-OFF-DAG: #define __AMDGCN_CUMODE__ 0

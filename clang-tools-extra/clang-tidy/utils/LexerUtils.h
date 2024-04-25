@@ -85,6 +85,10 @@ SourceLocation findNextAnyTokenKind(SourceLocation Start,
   }
 }
 
+std::optional<Token>
+findNextTokenIncludingComments(SourceLocation Start, const SourceManager &SM,
+                               const LangOptions &LangOpts);
+
 // Finds next token that's not a comment.
 std::optional<Token> findNextTokenSkippingComments(SourceLocation Start,
                                                    const SourceManager &SM,
@@ -111,6 +115,11 @@ std::optional<Token> getQualifyingToken(tok::TokenKind TK,
 /// See implementation for exceptions.
 SourceLocation getUnifiedEndLoc(const Stmt &S, const SourceManager &SM,
                                 const LangOptions &LangOpts);
+
+/// For a given FunctionDecl returns the location where you would need to place
+/// the noexcept specifier.
+SourceLocation getLocationForNoexceptSpecifier(const FunctionDecl *FuncDecl,
+                                               const SourceManager &SM);
 
 } // namespace tidy::utils::lexer
 } // namespace clang

@@ -81,8 +81,11 @@ public:
   bool hasBREAK() const { return m_hasBREAK; }
   bool hasTinyEncoding() const { return m_hasTinyEncoding; }
   bool hasMemMappedGPR() const { return m_hasMemMappedGPR; }
+  bool hasLowByteFirst() const { return m_hasLowByteFirst; }
 
   uint8_t getIORegisterOffset() const { return hasMemMappedGPR() ? 0x20 : 0x0; }
+
+  bool enableSubRegLiveness() const override { return true; }
 
   /// Gets the ELF architecture for the e_flags field
   /// of an ELF object file.
@@ -134,6 +137,7 @@ private:
   bool m_supportsMultiplication = false;
   bool m_hasBREAK = false;
   bool m_hasTinyEncoding = false;
+  bool m_hasLowByteFirst = false;
   bool m_hasMemMappedGPR = false;
 
   // Dummy member, used by FeatureSet's. We cannot have a SubtargetFeature with

@@ -26,13 +26,10 @@
 namespace llvm {
 
 class BasicBlock;
-class DominatorTree;
 class Function;
-class Instruction;
 class Module;
 class TargetLoweringBase;
 class TargetMachine;
-class Type;
 
 class StackProtector : public FunctionPass {
 private:
@@ -49,8 +46,8 @@ private:
   const TargetLoweringBase *TLI = nullptr;
   Triple Trip;
 
-  Function *F;
-  Module *M;
+  Function *F = nullptr;
+  Module *M = nullptr;
 
   std::optional<DomTreeUpdater> DTU;
 

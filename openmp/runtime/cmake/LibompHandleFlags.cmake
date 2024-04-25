@@ -80,7 +80,6 @@ endfunction()
 # Assembler flags
 function(libomp_get_asmflags asmflags)
   set(asmflags_local)
-  libomp_append(asmflags_local "-x assembler-with-cpp" LIBOMP_HAVE_X_ASSEMBLER_WITH_CPP_FLAG)
   # Architectural assembler flags
   if(${IA32})
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -107,7 +106,7 @@ function(libomp_get_ldflags ldflags)
     IF_DEFINED CMAKE_C_OSX_COMPATIBILITY_VERSION_FLAG)
   libomp_append(ldflags_local -Wl,--as-needed LIBOMP_HAVE_AS_NEEDED_FLAG)
   libomp_append(ldflags_local "-Wl,--version-script=${LIBOMP_SRC_DIR}/exports_so.txt" LIBOMP_HAVE_VERSION_SCRIPT_FLAG)
-  libomp_check_linker_flag("-Wl,--undefined-version" LIBOMP_HAVE_UNDEFINED_VERSION_FLAG)  # FIXME issue #58858
+  libomp_append(ldflags_local "-Wl,--undefined-version" LIBOMP_HAVE_UNDEFINED_VERSION_FLAG)  # FIXME issue #58858
   libomp_append(ldflags_local -static-libgcc LIBOMP_HAVE_STATIC_LIBGCC_FLAG)
   libomp_append(ldflags_local -Wl,-z,noexecstack LIBOMP_HAVE_Z_NOEXECSTACK_FLAG)
   libomp_append(ldflags_local -no-intel-extensions LIBOMP_HAVE_NO_INTEL_EXTENSIONS_FLAG)

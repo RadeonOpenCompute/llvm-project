@@ -1,7 +1,7 @@
-// RUN: %clang_cc1 -fexperimental-new-constant-interpreter -std=c++11 -verify %s
-// RUN: %clang_cc1 -fexperimental-new-constant-interpreter -std=c++20 -verify %s
-// RUN: %clang_cc1 -std=c++11 -verify=ref %s
-// RUN: %clang_cc1 -std=c++20 -verify=ref %s
+// RUN: %clang_cc1 -fexperimental-new-constant-interpreter -fms-extensions -std=c++11 -verify %s
+// RUN: %clang_cc1 -fexperimental-new-constant-interpreter -fms-extensions -std=c++20 -verify %s
+// RUN: %clang_cc1 -std=c++11 -fms-extensions -verify=ref %s
+// RUN: %clang_cc1 -std=c++20 -fms-extensions -verify=ref %s
 
 #define INT_MIN (~__INT_MAX__)
 #define INT_MAX __INT_MAX__
@@ -80,6 +80,12 @@ static_assert(~255 == -256, "");
 static_assert(~INT_MIN == INT_MAX, "");
 static_assert(~INT_MAX == INT_MIN, "");
 
+static_assert(-(1 << 31), ""); // expected-error {{not an integral constant expression}} \
+                               // expected-note {{outside the range of representable values}} \
+                               // ref-error {{not an integral constant expression}} \
+                               // ref-note {{outside the range of representable values}} \
+
+
 enum E {};
 constexpr E e = static_cast<E>(0);
 static_assert(~e == -1, "");
@@ -100,6 +106,19 @@ constexpr int gimme(int k) {
   return k;
 }
 static_assert(gimme(5) == 5, "");
+
+namespace PointerToBool {
+
+  constexpr void *N = nullptr;
+  constexpr bool B = N;
+  static_assert(!B, "");
+  static_assert(!N, "");
+
+  constexpr float F = 1.0;
+  constexpr const float *FP = &F;
+  static_assert(FP, "");
+  static_assert(!!FP, "");
+}
 
 namespace SizeOf {
   constexpr int soint = sizeof(int);
@@ -443,14 +462,36 @@ namespace IncDec {
   }
   static_assert(incBool(), "");
 
+  template<typename T, bool Inc>
   constexpr int uninit() {
-    int a;
-    ++a; // ref-note {{increment of uninitialized}} \
-         // FIXME: Should also be rejected by new interpreter
+    T a;
+    if constexpr (Inc)
+      ++a; // ref-note 2{{increment of uninitialized}} \
+           // expected-note 2{{increment of uninitialized}}
+    else
+      --a; // ref-note 2{{decrement of uninitialized}} \
+           // expected-note 2{{decrement of uninitialized}}
     return 1;
   }
-  static_assert(uninit(), ""); // ref-error {{not an integral constant expression}} \
-                               // ref-note {{in call to 'uninit()'}}
+  static_assert(uninit<int, true>(), ""); // ref-error {{not an integral constant expression}} \
+                                          // ref-note {{in call to 'uninit()'}} \
+                                          // expected-error {{not an integral constant expression}} \
+                                          // expected-note {{in call to 'uninit()'}}
+
+  static_assert(uninit<int, false>(), ""); // ref-error {{not an integral constant expression}} \
+                                           // ref-note {{in call to 'uninit()'}} \
+                                           // expected-error {{not an integral constant expression}} \
+                                           // expected-note {{in call to 'uninit()'}}
+
+  static_assert(uninit<float, true>(), ""); // ref-error {{not an integral constant expression}} \
+                                            // ref-note {{in call to 'uninit()'}} \
+                                            // expected-error {{not an integral constant expression}} \
+                                            // expected-note {{in call to 'uninit()'}}
+
+  static_assert(uninit<float, false>(), ""); // ref-error {{not an integral constant expression}} \
+                                             // ref-note {{in call to 'uninit()'}} \
+                                             // expected-error {{not an integral constant expression}} \
+                                             // expected-note {{in call to 'uninit()'}}
 
   constexpr int OverFlow() { // ref-error {{never produces a constant expression}} \
                              // expected-error {{never produces a constant expression}}
@@ -706,6 +747,23 @@ namespace IncDec {
              // ref-note {{cannot refer to element -1 of array of 3 elements}}
     return *p;
   }
+
+  /// This used to leave a 0 on the stack instead of the previous
+  /// value of a.
+  constexpr int bug1Inc() {
+    int a = 3;
+    int b = a++;
+    return b;
+  }
+  static_assert(bug1Inc() == 3);
+
+  constexpr int bug1Dec() {
+    int a = 3;
+    int b = a--;
+    return b;
+  }
+  static_assert(bug1Dec() == 3);
+
 };
 #endif
 
@@ -778,4 +836,41 @@ constexpr int ignoredDecls() {
   return F{12}.a;
 }
 static_assert(ignoredDecls() == 12, "");
+
+struct A{};
+constexpr int ignoredExprs() {
+  (void)(1 / 2);
+  A a;
+  a; // expected-warning {{unused}} \
+     // ref-warning {{unused}}
+  (void)a;
+  (a); // expected-warning {{unused}} \
+       // ref-warning {{unused}}
+
+  return 0;
+}
+
 #endif
+
+namespace PredefinedExprs {
+#if __cplusplus >= 201402L
+  template<typename CharT>
+  constexpr bool strings_match(const CharT *str1, const CharT *str2) {
+    while (*str1 && *str2) {
+      if (*str1++ != *str2++)
+        return false;
+    };
+
+    return *str1 == *str2;
+  }
+
+  void foo() {
+    static_assert(strings_match(__FUNCSIG__, "void __cdecl PredefinedExprs::foo(void)"), "");
+    static_assert(strings_match(L__FUNCSIG__, L"void __cdecl PredefinedExprs::foo(void)"), "");
+    static_assert(strings_match(L__FUNCTION__, L"foo"), "");
+    static_assert(strings_match(__FUNCTION__, "foo"), "");
+    static_assert(strings_match(__func__, "foo"), "");
+    static_assert(strings_match(__PRETTY_FUNCTION__, "void PredefinedExprs::foo()"), "");
+  }
+#endif
+}

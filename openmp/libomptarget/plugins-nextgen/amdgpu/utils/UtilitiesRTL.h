@@ -26,6 +26,8 @@
 
 #include "llvm/Support/YAMLTraits.h"
 
+#include "elf_common.h"
+
 namespace llvm {
 namespace omp {
 namespace target {
@@ -77,6 +79,13 @@ enum COV_OFFSETS : uint32_t {
 
   // 128 KB
   PER_DEVICE_PREALLOC_SIZE = 131072
+};
+
+enum XnackBuildMode : short {
+  XNACK_UNSUPPORTED = -1,
+  XNACK_MINUS = 0,
+  XNACK_PLUS = 1,
+  XNACK_ANY = 2
 };
 
 /// Parse a TargetID to get processor arch and feature map.
@@ -167,6 +176,71 @@ bool isImageCompatibleWithEnv(const __tgt_image_info *Info,
   return true;
 }
 
+// Check target image for XNACK mode (XNACK+, XNACK-ANY, XNACK-)
+[[nodiscard]] XnackBuildMode
+extractXnackModeFromBinary(const __tgt_device_image *TgtImage) {
+  assert((TgtImage != nullptr) && "TgtImage is nullptr.");
+  u_int16_t EFlags = elf_get_eflags(TgtImage);
+
+  unsigned XnackFlags = EFlags & ELF::EF_AMDGPU_FEATURE_XNACK_V4;
+
+  switch (XnackFlags) {
+  case ELF::EF_AMDGPU_FEATURE_XNACK_ON_V4:
+    return XnackBuildMode::XNACK_PLUS;
+  case ELF::EF_AMDGPU_FEATURE_XNACK_ANY_V4:
+    return XnackBuildMode::XNACK_ANY;
+  case ELF::EF_AMDGPU_FEATURE_XNACK_OFF_V4:
+    return XnackBuildMode::XNACK_MINUS;
+  case ELF::EF_AMDGPU_FEATURE_XNACK_UNSUPPORTED_V4:
+    return XnackBuildMode::XNACK_UNSUPPORTED;
+  default:
+    FAILURE_MESSAGE("Unknown XNACK flag!\n");
+  }
+  return XNACK_MINUS;
+}
+
+bool IsXnackEnabledViaKernelParam() {
+
+  ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrError =
+      MemoryBuffer::getFileAsStream("/proc/cmdline");
+
+  if (std::error_code ErrorCode = FileOrError.getError()) {
+    FAILURE_MESSAGE("Cannot open /proc/cmdline : %s\n",
+                    ErrorCode.message().c_str());
+    return false;
+  }
+
+  StringRef FileContent = (FileOrError.get())->getBuffer();
+
+  StringRef RefString("amdgpu.noretry=");
+  int SizeOfRefString = RefString.size();
+
+  size_t Pos = FileContent.find_insensitive(RefString);
+  // Is noretry defined?
+  if (Pos != StringRef::npos) {
+    bool NoRetryValue = FileContent[Pos + SizeOfRefString] - '0';
+    // is noretry set to 0
+    if (!NoRetryValue)
+      return true;
+  }
+
+  return false;
+}
+
+void checkImageCompatibilityWithSystemXnackMode(__tgt_device_image *TgtImage,
+                                                bool IsXnackEnabled) {
+  XnackBuildMode ImageXnackMode = utils::extractXnackModeFromBinary(TgtImage);
+  if ((IsXnackEnabled && !ImageXnackMode)) {
+    FAILURE_MESSAGE(
+        "Image is not compatible with current XNACK mode! XNACK is enabled "
+        "on the system but image was compiled with xnack-.\n");
+  } else if (!IsXnackEnabled && (ImageXnackMode == 1)) {
+    FAILURE_MESSAGE("Image is not compatible with current XNACK mode! "
+                    "XNACK is disabled on the system. However, the image "
+                    "requires xnack+.\n");
+  }
+}
+
 struct KernelMetaDataTy {
   uint64_t KernelObject;
   uint32_t GroupSegmentList;
@@ -192,13 +266,13 @@ public:
 
   /// Process ELF note to read AMDGPU metadata from respective information
   /// fields.
-  Error processNote(const object::ELF64LE::Note &Note) {
+  Error processNote(const object::ELF64LE::Note &Note, size_t Align) {
     if (Note.getName() != "AMDGPU")
       return Error::success(); // We are not interested in other things
 
     assert(Note.getType() == ELF::NT_AMDGPU_METADATA &&
            "Parse AMDGPU MetaData");
-    auto Desc = Note.getDesc();
+    auto Desc = Note.getDesc(Align);
     StringRef MsgPackString =
         StringRef(reinterpret_cast<const char *>(Desc.data()), Desc.size());
     msgpack::Document MsgPackDoc;
@@ -352,7 +426,7 @@ Error readAMDGPUMetaDataFromImage(MemoryBufferRef MemBuffer,
       if (Err)
         return Err;
       // Fills the KernelInfoTabel entries in the reader
-      if ((Err = Reader.processNote(N)))
+      if ((Err = Reader.processNote(N, S.sh_addralign)))
         return Err;
     }
   }

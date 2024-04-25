@@ -19,6 +19,7 @@
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Frontend/Utils.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCAsmBackend.h"
@@ -97,7 +98,7 @@ struct AssemblerInvocation {
   std::string DwarfDebugFlags;
   std::string DwarfDebugProducer;
   std::string DebugCompilationDir;
-  std::map<const std::string, const std::string> DebugPrefixMap;
+  llvm::SmallVector<std::pair<std::string, std::string>, 0> DebugPrefixMap;
   llvm::DebugCompressionType CompressDebugSections =
       llvm::DebugCompressionType::None;
   std::string MainFileName;
@@ -142,6 +143,10 @@ struct AssemblerInvocation {
   /// Whether to emit DWARF unwind info.
   EmitDwarfUnwindType EmitDwarfUnwind;
 
+  // Whether to emit compact-unwind for non-canonical entries.
+  // Note: maybe overriden by other constraints.
+  unsigned EmitCompactUnwindNonCanonical : 1;
+
   /// The name of the relocation model to use.
   std::string RelocationModel;
 
@@ -181,6 +186,7 @@ public:
     DwarfVersion = 0;
     EmbedBitcode = 0;
     EmitDwarfUnwind = EmitDwarfUnwindType::Default;
+    EmitCompactUnwindNonCanonical = false;
   }
 
   static bool CreateFromArgs(AssemblerInvocation &Res,
@@ -275,8 +281,7 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
 
   for (const auto &Arg : Args.getAllArgValues(OPT_fdebug_prefix_map_EQ)) {
     auto Split = StringRef(Arg).split('=');
-    Opts.DebugPrefixMap.insert(
-        {std::string(Split.first), std::string(Split.second)});
+    Opts.DebugPrefixMap.emplace_back(Split.first, Split.second);
   }
 
   // Frontend Options
@@ -349,6 +354,9 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
             .Case("default", EmitDwarfUnwindType::Default);
   }
 
+  Opts.EmitCompactUnwindNonCanonical =
+      Args.hasArg(OPT_femit_compact_unwind_non_canonical);
+
   Opts.AsSecureLogFile = Args.getLastArgValue(OPT_as_secure_log_file);
 
   return Success;
@@ -402,6 +410,7 @@ static bool ExecuteAssemblerImpl(AssemblerInvocation &Opts,
 
   MCTargetOptions MCOptions;
   MCOptions.EmitDwarfUnwind = Opts.EmitDwarfUnwind;
+  MCOptions.EmitCompactUnwindNonCanonical = Opts.EmitCompactUnwindNonCanonical;
   MCOptions.AsSecureLogFile = Opts.AsSecureLogFile;
 
   std::unique_ptr<MCAsmInfo> MAI(

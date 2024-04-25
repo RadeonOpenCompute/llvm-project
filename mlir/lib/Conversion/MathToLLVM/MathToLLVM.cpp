@@ -77,26 +77,22 @@ struct IntOpWithFlagLowering : public ConvertOpToLLVMPattern<MathOp> {
 
     auto loc = op.getLoc();
     auto resultType = op.getResult().getType();
-    auto boolZero = rewriter.getBoolAttr(false);
 
-    if (!operandType.template isa<LLVM::LLVMArrayType>()) {
-      LLVM::ConstantOp zero = rewriter.create<LLVM::ConstantOp>(loc, boolZero);
+    if (!isa<LLVM::LLVMArrayType>(operandType)) {
       rewriter.replaceOpWithNewOp<LLVMOp>(op, resultType, adaptor.getOperand(),
-                                          zero);
+                                          false);
       return success();
     }
 
-    auto vectorType = resultType.template dyn_cast<VectorType>();
+    auto vectorType = dyn_cast<VectorType>(resultType);
     if (!vectorType)
       return failure();
 
     return LLVM::detail::handleMultidimensionalVectors(
         op.getOperation(), adaptor.getOperands(), *this->getTypeConverter(),
         [&](Type llvm1DVectorTy, ValueRange operands) {
-          LLVM::ConstantOp zero =
-              rewriter.create<LLVM::ConstantOp>(loc, boolZero);
           return rewriter.create<LLVMOp>(loc, llvm1DVectorTy, operands[0],
-                                         zero);
+                                         false);
         },
         rewriter);
   }
@@ -105,7 +101,8 @@ struct IntOpWithFlagLowering : public ConvertOpToLLVMPattern<MathOp> {
 using CountLeadingZerosOpLowering =
     IntOpWithFlagLowering<math::CountLeadingZerosOp, LLVM::CountLeadingZerosOp>;
 using CountTrailingZerosOpLowering =
-    IntOpWithFlagLowering<math::CountTrailingZerosOp, LLVM::CountTrailingZerosOp>;
+    IntOpWithFlagLowering<math::CountTrailingZerosOp,
+                          LLVM::CountTrailingZerosOp>;
 using AbsIOpLowering = IntOpWithFlagLowering<math::AbsIOp, LLVM::AbsOp>;
 
 // A `expm1` is converted into `exp - 1`.
@@ -122,17 +119,17 @@ struct ExpM1OpLowering : public ConvertOpToLLVMPattern<math::ExpM1Op> {
 
     auto loc = op.getLoc();
     auto resultType = op.getResult().getType();
-    auto floatType = getElementTypeOrSelf(resultType).cast<FloatType>();
+    auto floatType = cast<FloatType>(getElementTypeOrSelf(resultType));
     auto floatOne = rewriter.getFloatAttr(floatType, 1.0);
     ConvertFastMath<math::ExpM1Op, LLVM::ExpOp> expAttrs(op);
     ConvertFastMath<math::ExpM1Op, LLVM::FSubOp> subAttrs(op);
 
-    if (!operandType.isa<LLVM::LLVMArrayType>()) {
+    if (!isa<LLVM::LLVMArrayType>(operandType)) {
       LLVM::ConstantOp one;
       if (LLVM::isCompatibleVectorType(operandType)) {
         one = rewriter.create<LLVM::ConstantOp>(
             loc, operandType,
-            SplatElementsAttr::get(resultType.cast<ShapedType>(), floatOne));
+            SplatElementsAttr::get(cast<ShapedType>(resultType), floatOne));
       } else {
         one = rewriter.create<LLVM::ConstantOp>(loc, operandType, floatOne);
       }
@@ -143,7 +140,7 @@ struct ExpM1OpLowering : public ConvertOpToLLVMPattern<math::ExpM1Op> {
       return success();
     }
 
-    auto vectorType = resultType.dyn_cast<VectorType>();
+    auto vectorType = dyn_cast<VectorType>(resultType);
     if (!vectorType)
       return rewriter.notifyMatchFailure(op, "expected vector result type");
 
@@ -180,17 +177,17 @@ struct Log1pOpLowering : public ConvertOpToLLVMPattern<math::Log1pOp> {
 
     auto loc = op.getLoc();
     auto resultType = op.getResult().getType();
-    auto floatType = getElementTypeOrSelf(resultType).cast<FloatType>();
+    auto floatType = cast<FloatType>(getElementTypeOrSelf(resultType));
     auto floatOne = rewriter.getFloatAttr(floatType, 1.0);
     ConvertFastMath<math::Log1pOp, LLVM::FAddOp> addAttrs(op);
     ConvertFastMath<math::Log1pOp, LLVM::LogOp> logAttrs(op);
 
-    if (!operandType.isa<LLVM::LLVMArrayType>()) {
+    if (!isa<LLVM::LLVMArrayType>(operandType)) {
       LLVM::ConstantOp one =
           LLVM::isCompatibleVectorType(operandType)
               ? rewriter.create<LLVM::ConstantOp>(
                     loc, operandType,
-                    SplatElementsAttr::get(resultType.cast<ShapedType>(),
+                    SplatElementsAttr::get(cast<ShapedType>(resultType),
                                            floatOne))
               : rewriter.create<LLVM::ConstantOp>(loc, operandType, floatOne);
 
@@ -202,7 +199,7 @@ struct Log1pOpLowering : public ConvertOpToLLVMPattern<math::Log1pOp> {
       return success();
     }
 
-    auto vectorType = resultType.dyn_cast<VectorType>();
+    auto vectorType = dyn_cast<VectorType>(resultType);
     if (!vectorType)
       return rewriter.notifyMatchFailure(op, "expected vector result type");
 
@@ -240,17 +237,17 @@ struct RsqrtOpLowering : public ConvertOpToLLVMPattern<math::RsqrtOp> {
 
     auto loc = op.getLoc();
     auto resultType = op.getResult().getType();
-    auto floatType = getElementTypeOrSelf(resultType).cast<FloatType>();
+    auto floatType = cast<FloatType>(getElementTypeOrSelf(resultType));
     auto floatOne = rewriter.getFloatAttr(floatType, 1.0);
     ConvertFastMath<math::RsqrtOp, LLVM::SqrtOp> sqrtAttrs(op);
     ConvertFastMath<math::RsqrtOp, LLVM::FDivOp> divAttrs(op);
 
-    if (!operandType.isa<LLVM::LLVMArrayType>()) {
+    if (!isa<LLVM::LLVMArrayType>(operandType)) {
       LLVM::ConstantOp one;
       if (LLVM::isCompatibleVectorType(operandType)) {
         one = rewriter.create<LLVM::ConstantOp>(
             loc, operandType,
-            SplatElementsAttr::get(resultType.cast<ShapedType>(), floatOne));
+            SplatElementsAttr::get(cast<ShapedType>(resultType), floatOne));
       } else {
         one = rewriter.create<LLVM::ConstantOp>(loc, operandType, floatOne);
       }
@@ -261,7 +258,7 @@ struct RsqrtOpLowering : public ConvertOpToLLVMPattern<math::RsqrtOp> {
       return success();
     }
 
-    auto vectorType = resultType.dyn_cast<VectorType>();
+    auto vectorType = dyn_cast<VectorType>(resultType);
     if (!vectorType)
       return failure();
 

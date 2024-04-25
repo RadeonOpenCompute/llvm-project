@@ -102,7 +102,7 @@ static OpFoldResult getBoundedTileSize(OpBuilder &b, Location loc,
   bindSymbols(b.getContext(), s0, s1);
   AffineMap minMap = AffineMap::get(1, 2, {s0, s1 - d0}, b.getContext());
   Value size = getValueOrCreateConstantIndexOp(b, loc, loopRange.size);
-  return makeComposedFoldedAffineMin(
+  return affine::makeComposedFoldedAffineMin(
       b, loc, minMap, SmallVector<OpFoldResult>{iv, tileSize, size});
 }
 
@@ -419,13 +419,14 @@ mlir::scf::tileReductionUsingScf(RewriterBase &b,
         op, "don't support ops with multiple results for now");
   SmallVector<utils::IteratorType> iterators =
       tilingInterfaceOp.getLoopIteratorTypes();
+
   int64_t numReductionDims = llvm::count(
       tilingInterfaceOp.getLoopIteratorTypes(), utils::IteratorType::reduction);
   if (numReductionDims != 1)
     return b.notifyMatchFailure(
         op, "only support ops with one reduction dimension.");
   int reductionDim;
-  for (auto &[idx, iteratorType] :
+  for (auto [idx, iteratorType] :
        llvm::enumerate(tilingInterfaceOp.getLoopIteratorTypes())) {
     if (iteratorType == utils::IteratorType::reduction) {
       reductionDim = idx;
@@ -455,7 +456,7 @@ mlir::scf::tileReductionUsingScf(RewriterBase &b,
   SmallVector<OpFoldResult> resultSizesList;
   for (size_t i = 0; i < offsets.size(); i++)
     resultSizesList.push_back(
-        b.createOrFold<tensor::DimOp>(loc, parallelOp->getResult(0), i));
+        tensor::getMixedSize(b, loc, parallelOp->getResult(0), i));
   SmallVector<OpFoldResult> outOffsets(offsets.size(), b.getIndexAttr(0));
   SmallVector<Value> replacements = yieldTiledValues(
       b, (*identityTensor)->getResults(), parallelOp->getResults(), outOffsets,
@@ -496,7 +497,7 @@ getUntiledProducerFromSliceSource(OpOperand *source,
                                   ArrayRef<scf::ForOp> loops) {
   std::optional<OpOperand *> destinationIterArg;
   auto loopIt = loops.rbegin();
-  while (auto iterArg = source->get().dyn_cast<BlockArgument>()) {
+  while (auto iterArg = dyn_cast<BlockArgument>(source->get())) {
     scf::ForOp loop = *loopIt;
     if (iterArg.getOwner()->getParentOp() != loop)
       break;
@@ -505,7 +506,7 @@ getUntiledProducerFromSliceSource(OpOperand *source,
   }
   if (loopIt == loops.rend())
     destinationIterArg = source;
-  return {source->get().dyn_cast<OpResult>(), destinationIterArg};
+  return {dyn_cast<OpResult>(source->get()), destinationIterArg};
 }
 
 /// Implementation of fusing producer of a single slice by computing the

@@ -13,8 +13,8 @@ machineFunctionInfo:
 body:             |
   bb.0:
     ; GCN-LABEL: name: subreg_copy
-    ; GCN: dead undef %0.sub3:vreg_128_align2 = PRED_COPY undef %0.sub1, implicit $exec
+    ; GCN: dead undef %0.sub3:vreg_128_align2 = COPY undef %0.sub1, implicit $exec
     ; GCN-NEXT: SI_RETURN
-    dead undef %0.sub3:vreg_128_align2 = PRED_COPY undef %0.sub1
+    dead undef %0.sub3:vreg_128_align2 = COPY undef %0.sub1
     SI_RETURN
 ...

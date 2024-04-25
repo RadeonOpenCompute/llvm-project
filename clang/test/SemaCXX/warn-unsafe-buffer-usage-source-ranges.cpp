@@ -1,6 +1,6 @@
-// RUN: %clang_cc1 -Wno-everything -Wunsafe-buffer-usage -fdiagnostics-print-source-range-info %s 2>&1 | FileCheck %s
-
-// XFAIL: *
+// RUN: %clang_cc1 -Wno-everything -Wunsafe-buffer-usage \
+// RUN:            -fsafe-buffer-usage-suggestions \
+// RUN:            -fdiagnostics-print-source-range-info %s 2>&1 | FileCheck %s
 
 void foo(int i) {
   int * ptr;

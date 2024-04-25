@@ -19,8 +19,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/DynamicLibrary.h"
 
-#include "omptarget.h"
-
 #include <list>
 #include <map>
 #include <mutex>
@@ -39,7 +37,11 @@ struct RTLInfoTy {
   typedef int32_t(is_data_exchangable_ty)(int32_t, int32_t);
   typedef int32_t(number_of_devices_ty)();
   typedef bool(has_apu_device_ty)();
-  typedef bool(has_gfx90a_device_ty)();
+  typedef bool(has_USM_capable_dGPU_ty)();
+  typedef bool(are_allocations_for_maps_on_apus_disabled_ty)();
+  typedef bool(requested_prepopulate_gpu_page_table_ty)();
+  typedef bool(is_no_maps_check_ty)();
+  typedef bool(is_fine_grained_memory_enabled_ty)();
   typedef int32_t(init_device_ty)(int32_t);
   typedef int32_t(deinit_device_ty)(int32_t);
   typedef int32_t(number_of_team_procs_ty)(int32_t);
@@ -73,6 +75,7 @@ struct RTLInfoTy {
   typedef int32_t(sync_event_ty)(int32_t, void *);
   typedef int32_t(destroy_event_ty)(int32_t, void *);
   typedef int(set_coarse_grain_mem_region_ty)(int32_t, void *, int64_t);
+  typedef int(prepopulate_page_table_ty)(int32_t, void *, int64_t);
   typedef int32_t(query_coarse_grain_mem_region_ty)(int32_t, void *, int64_t);
   typedef int32_t(enable_access_to_all_agents_ty)(void *, int32_t);
   typedef int32_t(release_async_info_ty)(int32_t, __tgt_async_info *);
@@ -83,6 +86,8 @@ struct RTLInfoTy {
   typedef int32_t(data_unlock_ty)(int32_t, void *);
   typedef int32_t(data_notify_mapped_ty)(int32_t, void *, int64_t);
   typedef int32_t(data_notify_unmapped_ty)(int32_t, void *);
+  typedef int32_t(activate_record_replay_ty)(int32_t, uint64_t, bool, bool);
+  typedef void(set_up_env_ty)(void);
 
   int32_t Idx = -1;             // RTL index, index is the number of devices
                                 // of other RTLs that were registered before,
@@ -104,7 +109,13 @@ struct RTLInfoTy {
   is_data_exchangable_ty *is_data_exchangable = nullptr;
   number_of_devices_ty *number_of_devices = nullptr;
   has_apu_device_ty *has_apu_device = nullptr;
-  has_gfx90a_device_ty *has_gfx90a_device = nullptr;
+  has_USM_capable_dGPU_ty *has_USM_capable_dGPU = nullptr;
+  are_allocations_for_maps_on_apus_disabled_ty
+      *are_allocations_for_maps_on_apus_disabled = nullptr;
+  requested_prepopulate_gpu_page_table_ty
+      *requested_prepopulate_gpu_page_table = nullptr;
+  is_no_maps_check_ty *is_no_maps_check = nullptr;
+  is_fine_grained_memory_enabled_ty *is_fine_grained_memory_enabled = nullptr;
   init_device_ty *init_device = nullptr;
   deinit_device_ty *deinit_device = nullptr;
   number_of_team_procs_ty *number_of_team_procs = nullptr;
@@ -138,10 +149,13 @@ struct RTLInfoTy {
   data_lock_ty *data_lock = nullptr;
   data_unlock_ty *data_unlock = nullptr;
   set_coarse_grain_mem_region_ty *set_coarse_grain_mem_region = nullptr;
+  prepopulate_page_table_ty *prepopulate_page_table = nullptr;
   query_coarse_grain_mem_region_ty *query_coarse_grain_mem_region = nullptr;
   enable_access_to_all_agents_ty *enable_access_to_all_agents = nullptr;
   data_notify_mapped_ty *data_notify_mapped = nullptr;
   data_notify_unmapped_ty *data_notify_unmapped = nullptr;
+  activate_record_replay_ty *activate_record_replay = nullptr;
+  set_up_env_ty *set_up_env = nullptr;
 
   // Are there images associated with this RTL.
   bool IsUsed = false;
@@ -164,22 +178,6 @@ struct RTLsTy {
   llvm::SmallVector<RTLInfoTy *> UsedRTLs;
 
   int64_t RequiresFlags = OMP_REQ_UNDEFINED;
-
-  // Set by OMPX_DISABLE_MAPS environment variable.
-  // When active (default value), maps are ignored by the runtime
-  bool NoUSMMapChecks = true;
-
-  bool IsAPUDevice = false;
-  bool IsGfx90aDevice = false;
-
-  // Set by OMPX_DISABLE_USM_MAPS environment variable.
-  // If set, fine graned memory is used for maps instead of coarse grained.
-  bool EnableFineGrainedMemory = false;
-
-  // Set by OMPX_APU_MAPS environment variable.
-  // If set, maps cause no copy operations. USM is used instead. Allocated
-  // memory remains coarse grained.
-  bool DisableAllocationsForMapsOnApus = false;
 
   explicit RTLsTy() = default;
 
@@ -206,19 +204,6 @@ struct RTLsTy {
       "sm_35",  "sm_50",  "sm_60",  "sm_70",  "sm_61"};
   // Return whether the current system supports omp_get_target_memory_space
   bool SystemSupportManagedMemory();
-
-  void disableAPUMapsForUSM(int64_t RequiresFlags);
-
-  // List of pointers to be allocated when running in USM mode
-  // std::vector<const void *> HostPtrsRequireAlloc;
-  llvm::SmallPtrSet<const void *, 32> HostPtrsRequireAlloc;
-
-  /// returns if a pointer requires allocation in USM mode
-  bool requiresAllocForGlobal(const void *HstPtr);
-  /// Mark pointer for allocation in USM mode
-  void markHostPtrForRequiresAlloc(const void *HstPtr);
-  /// FIXME: Not implemented yet
-  void deMarkHostPtrForRequiresAlloc(const void *HstPtr);
 
 private:
   static bool attemptLoadRTL(const std::string &RTLName, RTLInfoTy &RTL);

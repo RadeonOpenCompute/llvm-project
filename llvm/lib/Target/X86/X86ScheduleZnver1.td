@@ -228,7 +228,6 @@ defm : ZnWriteResPair<WritePOPCNT,         [ZnALU], 1>;
 
 // Treat misc copies as a move.
 def : InstRW<[WriteMove], (instrs COPY)>;
-def : InstRW<[WriteMove], (instrs PRED_COPY)>;
 
 // BMI1 BEXTR, BMI2 BZHI
 defm : ZnWriteResPair<WriteBEXTR, [ZnALU], 1, [1], 1, 4, 1>;
@@ -1315,14 +1314,6 @@ def : SchedAlias<WriteDPPD,   ZnWriteMicrocoded>;
 
 // x,m,i.
 def : SchedAlias<WriteDPPDLd, ZnWriteMicrocoded>;
-
-//-- Other instructions --//
-
-// VZEROUPPER.
-def : InstRW<[WriteMicrocoded], (instrs VZEROUPPER)>;
-
-// VZEROALL.
-def : InstRW<[WriteMicrocoded], (instrs VZEROALL)>;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Dependency breaking instructions.

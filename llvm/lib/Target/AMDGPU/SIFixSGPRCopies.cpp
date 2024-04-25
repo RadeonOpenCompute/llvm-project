@@ -311,16 +311,15 @@ static bool foldVGPRCopyIntoRegSequence(MachineInstr &MI,
 
     Register TmpReg = MRI.createVirtualRegister(NewSrcRC);
 
-    BuildMI(*MI.getParent(), &MI, MI.getDebugLoc(),
-            TII->get(TII->getCopyOpcode()), TmpReg)
+    BuildMI(*MI.getParent(), &MI, MI.getDebugLoc(), TII->get(AMDGPU::COPY),
+            TmpReg)
         .add(MI.getOperand(I));
 
     if (IsAGPR) {
       const TargetRegisterClass *NewSrcRC = TRI->getEquivalentAGPRClass(SrcRC);
       Register TmpAReg = MRI.createVirtualRegister(NewSrcRC);
-      unsigned Opc = NewSrcRC == &AMDGPU::AGPR_32RegClass
-                         ? AMDGPU::V_ACCVGPR_WRITE_B32_e64
-                         : TII->getCopyOpcode();
+      unsigned Opc = NewSrcRC == &AMDGPU::AGPR_32RegClass ?
+        AMDGPU::V_ACCVGPR_WRITE_B32_e64 : AMDGPU::COPY;
       BuildMI(*MI.getParent(), &MI, MI.getDebugLoc(), TII->get(Opc),
             TmpAReg)
         .addReg(TmpReg, RegState::Kill);
@@ -339,7 +338,7 @@ static bool isSafeToFoldImmIntoCopy(const MachineInstr *Copy,
                                     const SIInstrInfo *TII,
                                     unsigned &SMovOp,
                                     int64_t &Imm) {
-  if (!Copy->isCopy())
+  if (Copy->getOpcode() != AMDGPU::COPY)
     return false;
 
   if (!MoveImm->isMoveImmediate())
@@ -619,7 +618,6 @@ bool SIFixSGPRCopies::runOnMachineFunction(MachineFunction &MF) {
       default:
         continue;
       case AMDGPU::COPY:
-      case AMDGPU::PRED_COPY:
       case AMDGPU::WQM:
       case AMDGPU::STRICT_WQM:
       case AMDGPU::SOFT_WQM:
@@ -664,9 +662,11 @@ bool SIFixSGPRCopies::runOnMachineFunction(MachineFunction &MF) {
                              : MBB;
               MachineBasicBlock::iterator PointToInsertCopy =
                   MI.isPHI() ? BlockToInsertCopy->getFirstInstrTerminator() : I;
-              MachineInstr *NewCopy = TII->buildCopy(
-                  *BlockToInsertCopy, PointToInsertCopy,
-                  PointToInsertCopy->getDebugLoc(), NewDst, MO.getReg());
+              MachineInstr *NewCopy =
+                  BuildMI(*BlockToInsertCopy, PointToInsertCopy,
+                          PointToInsertCopy->getDebugLoc(),
+                          TII->get(AMDGPU::COPY), NewDst)
+                      .addReg(MO.getReg());
               MO.setReg(NewDst);
               analyzeVGPRToSGPRCopy(NewCopy);
             }
@@ -734,7 +734,7 @@ bool SIFixSGPRCopies::runOnMachineFunction(MachineFunction &MF) {
             // Haven't managed to resolve by replacing an SGPR with an immediate
             // Move src1 to be in M0
             BuildMI(*MI.getParent(), MI, MI.getDebugLoc(),
-                    TII->get(TII->getCopyOpcode()), AMDGPU::M0)
+                    TII->get(AMDGPU::COPY), AMDGPU::M0)
                 .add(Src1);
             Src1.ChangeToRegister(AMDGPU::M0, false);
           }
@@ -869,7 +869,9 @@ bool SIFixSGPRCopies::lowerSpecialCase(MachineInstr &MI,
     return true;
   }
   if (!SrcReg.isVirtual() || TRI->isAGPR(*MRI, SrcReg)) {
-    TII->moveToVALU(MI, MDT);
+    SIInstrWorklist worklist;
+    worklist.insert(&MI);
+    TII->moveToVALU(worklist, MDT);
     return true;
   }
 
@@ -991,6 +993,10 @@ void SIFixSGPRCopies::lowerVGPR2SGPRCopies(MachineFunction &MF) {
       LoweringWorklist.push_back(C.second.ID);
   }
 
+  // Store all the V2S copy instructions that need to be moved to VALU
+  // in the Copies worklist.
+  SIInstrWorklist Copies;
+
   while (!LoweringWorklist.empty()) {
     unsigned CurID = LoweringWorklist.pop_back_val();
     auto CurInfoIt = V2SCopies.find(CurID);
@@ -1013,9 +1019,12 @@ void SIFixSGPRCopies::lowerVGPR2SGPRCopies(MachineFunction &MF) {
       LLVM_DEBUG(dbgs() << "V2S copy " << *C.Copy
                         << " is being turned to VALU\n");
       V2SCopies.erase(C.ID);
-      TII->moveToVALU(*C.Copy, MDT);
+      Copies.insert(C.Copy);
     }
   }
+
+  TII->moveToVALU(Copies, MDT);
+  Copies.clear();
 
   // Now do actual lowering
   for (auto C : V2SCopies) {
@@ -1084,8 +1093,9 @@ void SIFixSGPRCopies::fixSCCCopies(MachineFunction &MF) {
                     SCCCopy)
                 .addImm(-1)
                 .addImm(0);
-        I = TII->buildCopy(*MI.getParent(), std::next(I), I->getDebugLoc(),
-                           DstReg, SCCCopy);
+        I = BuildMI(*MI.getParent(), std::next(I), I->getDebugLoc(),
+                    TII->get(AMDGPU::COPY), DstReg)
+                .addReg(SCCCopy);
         MI.eraseFromParent();
         continue;
       }

@@ -120,10 +120,12 @@ foreach(archname ${HOSTRPC_ARCHS})
    if (${archname} STREQUAL "amdgcn")
       set(triple "amdgcn-amd-amdhsa")
       set(mcpus ${amdgpu_mcpus})
+      set(abi_nums "400" "500")
    endif()
    if (${archname} STREQUAL "nvptx")
       set(triple "nvptx64-nvidia-cuda")
       set(mcpus ${nvptx_mcpus})
+      set(abi_nums "nvptx")
    endif()
 
 
@@ -141,13 +143,22 @@ foreach(archname ${HOSTRPC_ARCHS})
       COMMAND ${opencl_cmd} ${ocl_atomics_cl_filename} -o ${ocl_atomics_cl_bc}
       DEPENDS ${ocl_atomics_cl_filename})
    endif()
-
+   
+ foreach(abi_num ${abi_nums})
+   if("${abi_num}" STREQUAL "400")
+     set(clang_abi_opt "-mcode-object-version=4")
+   elseif("${abi_num}" STREQUAL "500")
+     set(clang_abi_opt "-mcode-object-version=5")
+   else()
+     set(clang_abi_opt "")
+   endif()
    foreach(mcpu ${mcpus})
       if (${archname} STREQUAL "amdgcn")
          set(openmp_device_args 
 	      -I../../runtime/src  # to pickup omp.h, we may need a dependency
 	      -I${ROCDL_INC_OCLC} -O${optimization_level}
 	      -fopenmp -fopenmp-cuda-mode -mllvm -openmp-opt-disable 
+	      ${clang_abi_opt}
 	      -std=c++17 -fvisibility=hidden 
 	      -fopenmp-targets=${triple} -Xopenmp-target=${triple} -march=${mcpu}
 	      -c -emit-llvm --offload-device-only -nogpulib)
@@ -163,13 +174,13 @@ foreach(archname ${HOSTRPC_ARCHS})
 	      -Wno-unknown-cuda-version)
       endif()
 
-      set(bc_filename "hostexec-stubs-${archname}-${mcpu}.bc")
+      set(bc_filename "hostexec-stubs-${abi_num}-${mcpu}.bc")
       add_custom_target(${bc_filename}
          COMMAND ${CLANG_TOOL} ${openmp_device_args} ${hostexec_stubs_filename} -o ${bc_filename}
          DEPENDS ${hostexec_stubs_filename} ${h_file} ${internal_h_file}
          COMMENT "Built file ${bc_filename}")
 
-      set(hostexec_invoke_cpp_bc "hostexec-invoke-${archname}-${mcpu}.bc")
+      set(hostexec_invoke_cpp_bc "hostexec-invoke-${abi_num}-${mcpu}.bc")
       add_custom_target(${hostexec_invoke_cpp_bc}
          COMMAND ${CLANG_TOOL} ${openmp_device_args} ${invoke_cpp_file_name} -o ${hostexec_invoke_cpp_bc}
 	 DEPENDS ${invoke_cpp_file_name}
@@ -178,7 +189,7 @@ foreach(archname ${HOSTRPC_ARCHS})
       if (${archname} STREQUAL "amdgcn")
 
          #  amdgcn needs to compile and link in ocl_atomics
-         set(invoke_resolved_bc "invoked_resolved-${archname}-${mcpu}.bc")
+         set(invoke_resolved_bc "invoked_resolved-${abi_num}-${mcpu}.bc")
          add_custom_target(${invoke_resolved_bc}
             COMMAND ${LINK_TOOL} ${hostexec_invoke_cpp_bc} --internalize --only-needed ${ocl_atomics_cl_bc} -o ${invoke_resolved_bc}
 	    DEPENDS ${hostexec_invoke_cpp_bc} ${ocl_atomics_cl_bc}
@@ -190,7 +201,7 @@ foreach(archname ${HOSTRPC_ARCHS})
          set(invoke_resolved_bc ${hostexec_invoke_cpp_bc})
       endif()
 
-      set(libhostexec-bc "libhostexec-${archname}-${mcpu}.bc")
+      set(libhostexec-bc "libhostexec-${abi_num}-${mcpu}.bc")
       add_custom_target(${libhostexec-bc}
          COMMAND ${LINK_TOOL} ${bc_filename} --internalize --only-needed ${invoke_resolved_bc} -o ${libhostexec-bc}
 	 DEPENDS ${invoke_resolved_bc} ${bc_filename} 
@@ -205,8 +216,8 @@ foreach(archname ${HOSTRPC_ARCHS})
       endif()
       install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${libhostexec-bc} DESTINATION ${DEVEL_PACKAGE}${OPENMP_INSTALL_LIBDIR}/libdevice)
    endforeach() # end for each mcpu
+ endforeach() # end foreach abi_num
 
 endforeach() # end foreach archs
-set(_version_dir 17.0.0)
-install(FILES ${h_file} DESTINATION ${DEVEL_PACKAGE}lib/clang/${_version_dir}/include)
+install(FILES ${h_file} DESTINATION ${DEVEL_PACKAGE}lib/clang/${LLVM_VERSION_MAJOR}/include)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/disable_dynamic_devmem.ll" DESTINATION ${DEVEL_PACKAGE}${OPENMP_INSTALL_LIBDIR})

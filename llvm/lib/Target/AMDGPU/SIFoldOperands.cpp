@@ -272,8 +272,9 @@ bool SIFoldOperands::updateOperand(FoldCandidate &Fold) const {
     MachineInstr *Inst32 = TII->buildShrunkInst(*MI, Op32);
 
     if (HaveNonDbgCarryUse) {
-      TII->buildCopy(*MBB, MI, MI->getDebugLoc(), Dst1.getReg(), AMDGPU::VCC,
-                     RegState::Kill);
+      BuildMI(*MBB, MI, MI->getDebugLoc(), TII->get(AMDGPU::COPY),
+              Dst1.getReg())
+        .addReg(AMDGPU::VCC, RegState::Kill);
     }
 
     // Keep the old instruction around to avoid breaking iterators, but
@@ -600,20 +601,23 @@ void SIFoldOperands::foldOperand(
     Register RegSeqDstReg = UseMI->getOperand(0).getReg();
     unsigned RegSeqDstSubReg = UseMI->getOperand(UseOpIdx + 1).getImm();
 
-    for (auto &RSUse : make_early_inc_range(MRI->use_nodbg_operands(RegSeqDstReg))) {
-      MachineInstr *RSUseMI = RSUse.getParent();
+    // Grab the use operands first
+    SmallVector<MachineOperand *, 4> UsesToProcess;
+    for (auto &Use : MRI->use_nodbg_operands(RegSeqDstReg))
+      UsesToProcess.push_back(&Use);
+    for (auto *RSUse : UsesToProcess) {
+      MachineInstr *RSUseMI = RSUse->getParent();
 
       if (tryToFoldACImm(UseMI->getOperand(0), RSUseMI,
-                         RSUseMI->getOperandNo(&RSUse), FoldList))
+                         RSUseMI->getOperandNo(RSUse), FoldList))
         continue;
 
-      if (RSUse.getSubReg() != RegSeqDstSubReg)
+      if (RSUse->getSubReg() != RegSeqDstSubReg)
         continue;
 
-      foldOperand(OpToFold, RSUseMI, RSUseMI->getOperandNo(&RSUse), FoldList,
+      foldOperand(OpToFold, RSUseMI, RSUseMI->getOperandNo(RSUse), FoldList,
                   CopiesToReplace);
     }
-
     return;
   }
 
@@ -701,7 +705,7 @@ void SIFoldOperands::foldOperand(
     // copy to a MOV.
 
     unsigned MovOp = TII->getMovOpcode(DestRC);
-    if (MovOp == AMDGPU::COPY || MovOp == AMDGPU::PRED_COPY)
+    if (MovOp == AMDGPU::COPY)
       return;
 
     UseMI->setDesc(TII->get(MovOp));
@@ -781,8 +785,7 @@ void SIFoldOperands::foldOperand(
               CopyToVGPR = Src;
             } else {
               auto Tmp = MRI->createVirtualRegister(&AMDGPU::AGPR_32RegClass);
-              BuildMI(MBB, UseMI, DL, TII->get(TII->getCopyOpcode()), Tmp)
-                  .add(*Def);
+              BuildMI(MBB, UseMI, DL, TII->get(AMDGPU::COPY), Tmp).add(*Def);
               B.addReg(Tmp);
             }
           }
@@ -793,8 +796,7 @@ void SIFoldOperands::foldOperand(
               Vgpr = VGPRCopies[CopyToVGPR];
             } else {
               Vgpr = MRI->createVirtualRegister(&AMDGPU::VGPR_32RegClass);
-              BuildMI(MBB, UseMI, DL, TII->get(TII->getCopyOpcode()), Vgpr)
-                  .add(*Def);
+              BuildMI(MBB, UseMI, DL, TII->get(AMDGPU::COPY), Vgpr).add(*Def);
               VGPRCopies[CopyToVGPR] = Vgpr;
             }
             auto Tmp = MRI->createVirtualRegister(&AMDGPU::AGPR_32RegClass);
@@ -861,7 +863,7 @@ void SIFoldOperands::foldOperand(
         // %sgpr1 = V_READFIRSTLANE_B32 %vgpr
         // =>
         // %sgpr1 = COPY %sgpr0
-        UseMI->setDesc(TII->get(TII->getCopyOpcode()));
+        UseMI->setDesc(TII->get(AMDGPU::COPY));
         UseMI->getOperand(1).setReg(OpToFold.getReg());
         UseMI->getOperand(1).setSubReg(OpToFold.getSubReg());
         UseMI->getOperand(1).setIsKill(false);
@@ -909,11 +911,10 @@ void SIFoldOperands::foldOperand(
       TRI->getRegClass(FoldDesc.operands()[0].RegClass);
 
   // Split 64-bit constants into 32-bits for folding.
-  if (UseOp.getSubReg() && AMDGPU::getRegBitWidth(FoldRC->getID()) == 64) {
+  if (UseOp.getSubReg() && AMDGPU::getRegBitWidth(*FoldRC) == 64) {
     Register UseReg = UseOp.getReg();
     const TargetRegisterClass *UseRC = MRI->getRegClass(UseReg);
-
-    if (AMDGPU::getRegBitWidth(UseRC->getID()) != 64)
+    if (AMDGPU::getRegBitWidth(*UseRC) != 64)
       return;
 
     APInt Imm(64, OpToFold.getImm());
@@ -1093,7 +1094,7 @@ bool SIFoldOperands::tryConstantFoldOp(MachineInstr *MI) const {
     if (Src1Val == 0) {
       // y = or x, 0 => y = copy x
       MI->removeOperand(Src1Idx);
-      mutateCopyOp(*MI, TII->get(TII->getCopyOpcode()));
+      mutateCopyOp(*MI, TII->get(AMDGPU::COPY));
     } else if (Src1Val == -1) {
       // y = or x, -1 => y = v_mov_b32 -1
       MI->removeOperand(Src1Idx);
@@ -1113,7 +1114,7 @@ bool SIFoldOperands::tryConstantFoldOp(MachineInstr *MI) const {
     } else if (Src1Val == -1) {
       // y = and x, -1 => y = copy x
       MI->removeOperand(Src1Idx);
-      mutateCopyOp(*MI, TII->get(TII->getCopyOpcode()));
+      mutateCopyOp(*MI, TII->get(AMDGPU::COPY));
     } else
       return false;
 
@@ -1125,7 +1126,7 @@ bool SIFoldOperands::tryConstantFoldOp(MachineInstr *MI) const {
     if (Src1Val == 0) {
       // y = xor x, 0 => y = copy x
       MI->removeOperand(Src1Idx);
-      mutateCopyOp(*MI, TII->get(TII->getCopyOpcode()));
+      mutateCopyOp(*MI, TII->get(AMDGPU::COPY));
       return true;
     }
   }
@@ -1159,7 +1160,7 @@ bool SIFoldOperands::tryFoldCndMask(MachineInstr &MI) const {
 
   LLVM_DEBUG(dbgs() << "Folded " << MI << " into ");
   auto &NewDesc =
-      TII->get(Src0->isReg() ? TII->getCopyOpcode() : getMovOpc(false));
+      TII->get(Src0->isReg() ? (unsigned)AMDGPU::COPY : getMovOpc(false));
   int Src2Idx = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::src2);
   if (Src2Idx != -1)
     MI.removeOperand(Src2Idx);
@@ -1758,7 +1759,7 @@ bool SIFoldOperands::tryFoldPhiAGPR(MachineInstr &PHI) {
     MachineBasicBlock *InsertMBB = nullptr;
 
     // Look at the def of Reg, ignoring all copies.
-    unsigned CopyOpc = TII->getCopyOpcode();
+    unsigned CopyOpc = AMDGPU::COPY;
     if (MachineInstr *Def = MRI->getVRegDef(Reg)) {
 
       // Look at pre-existing COPY instructions from ARC: Steal the operand. If
@@ -1809,7 +1810,7 @@ bool SIFoldOperands::tryFoldPhiAGPR(MachineInstr &PHI) {
   // usually be folded out later.
   MachineBasicBlock *MBB = PHI.getParent();
   BuildMI(*MBB, MBB->getFirstNonPHI(), PHI.getDebugLoc(),
-          TII->get(TII->getCopyOpcode()), PhiOut)
+          TII->get(AMDGPU::COPY), PhiOut)
       .addReg(NewReg);
 
   LLVM_DEBUG(dbgs() << "  Done: Folded " << PHI);
@@ -1951,7 +1952,7 @@ bool SIFoldOperands::tryOptimizeAGPRPhis(MachineBasicBlock &MBB) {
     // Copy back to an AGPR and use that instead of the AGPR subreg in all MOs.
     Register TempAGPR = MRI->createVirtualRegister(ARC);
     BuildMI(*DefMBB, ++VGPRCopy->getIterator(), Def->getDebugLoc(),
-            TII->get(TII->getCopyOpcode()), TempAGPR)
+            TII->get(AMDGPU::COPY), TempAGPR)
         .addReg(TempVGPR);
 
     LLVM_DEBUG(dbgs() << "Caching AGPR into VGPR: " << *VGPRCopy);

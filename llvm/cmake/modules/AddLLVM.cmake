@@ -1029,6 +1029,10 @@ macro(add_llvm_executable name)
     target_link_libraries(${name} PRIVATE ${LLVM_PTHREAD_LIB})
   endif()
 
+  if(HAVE_LLVM_LIBC)
+    target_link_libraries(${name} PRIVATE llvmlibc)
+  endif()
+
   llvm_codesign(${name} ENTITLEMENTS ${ARG_ENTITLEMENTS} BUNDLE_PATH ${ARG_BUNDLE_PATH})
 endmacro(add_llvm_executable name)
 
@@ -1246,10 +1250,18 @@ function(export_executable_symbols target)
     else()
       set(mangling itanium)
     endif()
+    get_host_tool_path(llvm-nm LLVM_NM llvm_nm_exe llvm_nm_target)
+    get_host_tool_path(llvm-readobj LLVM_READOBJ llvm_readobj_exe llvm_readobj_target)
     add_custom_command(OUTPUT ${exported_symbol_file}
-                       COMMAND "${Python3_EXECUTABLE}" ${LLVM_MAIN_SRC_DIR}/utils/extract_symbols.py ${LLVM_EXTRACT_SYMBOLS_FLAGS} --mangling=${mangling} ${static_libs} -o ${exported_symbol_file}
+                       COMMAND "${Python3_EXECUTABLE}"
+                         ${LLVM_MAIN_SRC_DIR}/utils/extract_symbols.py
+                         --mangling=${mangling} ${static_libs}
+                         -o ${exported_symbol_file}
+                         --nm=${llvm_nm_exe}
+                         --readobj=${llvm_readobj_exe}
                        WORKING_DIRECTORY ${LLVM_LIBRARY_OUTPUT_INTDIR}
-                       DEPENDS ${LLVM_MAIN_SRC_DIR}/utils/extract_symbols.py ${static_libs}
+                       DEPENDS ${LLVM_MAIN_SRC_DIR}/utils/extract_symbols.py
+                         ${static_libs} ${llvm_nm_target} ${llvm_readobj_target}
                        VERBATIM
                        COMMENT "Generating export list for ${target}")
     add_llvm_symbol_exports( ${target} ${exported_symbol_file} )
@@ -1597,6 +1609,8 @@ function(add_unittest test_suite test_name)
                     LINK_FLAGS " -Wl,-mllvm,-O0")
     endif()
   endif()
+
+  target_link_options(${test_name} PRIVATE "${LLVM_UNITTEST_LINK_FLAGS}")
 
   set(outdir ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR})
   set_output_directory(${test_name} BINARY_DIR ${outdir} LIBRARY_DIR ${outdir})
@@ -2113,7 +2127,7 @@ function(llvm_install_symlink project name dest)
   if (NOT LLVM_ENABLE_IDE AND NOT ARG_ALWAYS_GENERATE)
     add_llvm_install_targets(install-${name}
                              DEPENDS ${name} ${dest}
-                             COMPONENT ${name}
+                             COMPONENT ${component}
                              SYMLINK ${dest})
   endif()
 endfunction()
@@ -2338,7 +2352,8 @@ function(llvm_setup_rpath name)
     # FIXME: update this when there is better solution.
     set(_install_rpath "${LLVM_LIBRARY_OUTPUT_INTDIR}" "${CMAKE_INSTALL_PREFIX}/lib${LLVM_LIBDIR_SUFFIX}" ${extra_libdir})
   elseif(UNIX)
-    set(_install_rpath "\$ORIGIN/../lib${LLVM_LIBDIR_SUFFIX}" ${extra_libdir})
+    set(_build_rpath "\$ORIGIN/../lib${LLVM_LIBDIR_SUFFIX}" ${extra_libdir})
+    set(_install_rpath "\$ORIGIN/../lib${LLVM_LIBDIR_SUFFIX}")
     if(${CMAKE_SYSTEM_NAME} MATCHES "(FreeBSD|DragonFly)")
       set_property(TARGET ${name} APPEND_STRING PROPERTY
                    LINK_FLAGS " -Wl,-z,origin ")
@@ -2352,9 +2367,16 @@ function(llvm_setup_rpath name)
     return()
   endif()
 
-  # Enable BUILD_WITH_INSTALL_RPATH unless CMAKE_BUILD_RPATH is set.
+  # Enable BUILD_WITH_INSTALL_RPATH unless CMAKE_BUILD_RPATH is set and not
+  # building for macOS or AIX, as those platforms seemingly require it.
+  # On AIX, the tool chain doesn't support modifying rpaths/libpaths for XCOFF
+  # on install at the moment, so BUILD_WITH_INSTALL_RPATH is required.
   if("${CMAKE_BUILD_RPATH}" STREQUAL "")
-    set_property(TARGET ${name} PROPERTY BUILD_WITH_INSTALL_RPATH ON)
+    if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin|AIX")
+      set_property(TARGET ${name} PROPERTY BUILD_WITH_INSTALL_RPATH ON)
+    else()
+      set_property(TARGET ${name} APPEND PROPERTY BUILD_RPATH "${_build_rpath}")
+    endif()
   endif()
 
   set_target_properties(${name} PROPERTIES
@@ -2415,8 +2437,8 @@ function(find_first_existing_vc_file path out_var)
   endif()
 endfunction()
 
-function(setup_host_tool tool_name setting_name exe_var_name target_var_name)
-  set(${setting_name}_DEFAULT "${tool_name}")
+function(get_host_tool_path tool_name setting_name exe_var_name target_var_name)
+  set(${setting_name}_DEFAULT "")
 
   if(LLVM_NATIVE_TOOL_DIR)
     if(EXISTS "${LLVM_NATIVE_TOOL_DIR}/${tool_name}${LLVM_HOST_EXECUTABLE_SUFFIX}")
@@ -2427,11 +2449,11 @@ function(setup_host_tool tool_name setting_name exe_var_name target_var_name)
   set(${setting_name} "${${setting_name}_DEFAULT}" CACHE
     STRING "Host ${tool_name} executable. Saves building if cross-compiling.")
 
-  if(NOT ${setting_name} STREQUAL "${tool_name}")
+  if(${setting_name})
     set(exe_name ${${setting_name}})
-    set(target_name ${${setting_name}})
+    set(target_name "")
   elseif(LLVM_USE_HOST_TOOLS)
-    build_native_tool(${tool_name} exe_name DEPENDS ${tool_name})
+    get_native_tool_path(${tool_name} exe_name)
     set(target_name ${exe_name})
   else()
     set(exe_name $<TARGET_FILE:${tool_name}>)
@@ -2439,4 +2461,23 @@ function(setup_host_tool tool_name setting_name exe_var_name target_var_name)
   endif()
   set(${exe_var_name} "${exe_name}" CACHE STRING "")
   set(${target_var_name} "${target_name}" CACHE STRING "")
+endfunction()
+
+function(setup_host_tool tool_name setting_name exe_var_name target_var_name)
+  get_host_tool_path(${tool_name} ${setting_name} ${exe_var_name} ${target_var_name})
+  # Set up a native tool build if necessary
+  if(LLVM_USE_HOST_TOOLS AND NOT ${setting_name})
+    build_native_tool(${tool_name} exe_name DEPENDS ${tool_name})
+    add_custom_target(${target_var_name} DEPENDS ${exe_name})
+  endif()
+endfunction()
+
+# Adds the unittests folder if gtest is available.
+function(llvm_add_unittests tests_added)
+  if (EXISTS ${LLVM_THIRD_PARTY_DIR}/unittest/googletest/include/gtest/gtest.h)
+    add_subdirectory(unittests)
+    set(${tests_added} ON PARENT_SCOPE)
+  else()
+    message(WARNING "gtest not found, unittests will not be available")
+  endif()
 endfunction()

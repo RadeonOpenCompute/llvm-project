@@ -34,8 +34,8 @@ return()
 endif()
 
 # libhsakmt.a
-find_library ( HSAKMT_LIB libhsakmt.a REQURIED HINTS ${CMAKE_INSTALL_PREFIX} PATHS /opt/rocm)
-get_filename_component ( HSAKMT_LIB_PATH ${HSAKMT_LIB} DIRECTORY )
+find_library (HSAKMT_LIB libhsakmt.a REQURIED HINTS ${CMAKE_INSTALL_PREFIX} PATHS /opt/rocm)
+get_filename_component(HSAKMT_LIB_PATH ${HSAKMT_LIB} DIRECTORY)
 link_directories (${HSAKMT_LIB_PATH})
 
 # lib_drm_amdgpu

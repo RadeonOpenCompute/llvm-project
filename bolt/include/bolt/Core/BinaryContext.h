@@ -29,7 +29,6 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCObjectWriter.h"
-#include "llvm/MC/MCPseudoProbe.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
@@ -59,7 +58,6 @@ using namespace object;
 namespace bolt {
 
 class BinaryFunction;
-class ExecutableFileMemoryManager;
 
 /// Information on loadable part of the file.
 struct SegmentInfo {
@@ -312,10 +310,6 @@ public:
   using FilteredBinaryDataConstIterator =
       FilterIterator<binary_data_const_iterator>;
   using FilteredBinaryDataIterator = FilterIterator<binary_data_iterator>;
-
-  /// Memory manager for sections and segments. Used to communicate with ORC
-  /// among other things.
-  std::shared_ptr<ExecutableFileMemoryManager> EFMM;
 
   StringRef getFilename() const { return Filename; }
   void setFilename(StringRef Name) { Filename = std::string(Name); }
@@ -678,19 +672,9 @@ public:
   /// List of functions that always trap.
   std::vector<const BinaryFunction *> TrappedFunctions;
 
-  /// Map SDT locations to SDT markers info
-  std::unordered_map<uint64_t, SDTMarkerInfo> SDTMarkers;
-
-  /// Map linux kernel program locations/instructions to their pointers in
-  /// special linux kernel sections
-  std::unordered_map<uint64_t, std::vector<LKInstructionMarkerInfo>> LKMarkers;
-
   /// List of external addresses in the code that are not a function start
   /// and are referenced from BinaryFunction.
   std::list<std::pair<BinaryFunction *, uint64_t>> InterproceduralReferences;
-
-  /// PseudoProbe decoder
-  MCPseudoProbeDecoder ProbeDecoder;
 
   /// DWARF encoding. Available encoding types defined in BinaryFormat/Dwarf.h
   /// enum Constants, e.g. DW_EH_PE_omit.
@@ -726,6 +710,8 @@ public:
     return TheTriple->getArch() == llvm::Triple::x86 ||
            TheTriple->getArch() == llvm::Triple::x86_64;
   }
+
+  bool isRISCV() const { return TheTriple->getArch() == llvm::Triple::riscv64; }
 
   // AArch64-specific functions to check if symbol is used to delimit
   // code/data in .text. Code is marked by $x, data by $d.
@@ -845,13 +831,11 @@ public:
   /// Return BinaryData for the given \p Name or nullptr if no
   /// global symbol with that name exists.
   const BinaryData *getBinaryDataByName(StringRef Name) const {
-    auto Itr = GlobalSymbols.find(Name);
-    return Itr != GlobalSymbols.end() ? Itr->second : nullptr;
+    return GlobalSymbols.lookup(Name);
   }
 
   BinaryData *getBinaryDataByName(StringRef Name) {
-    auto Itr = GlobalSymbols.find(Name);
-    return Itr != GlobalSymbols.end() ? Itr->second : nullptr;
+    return GlobalSymbols.lookup(Name);
   }
 
   /// Return registered PLT entry BinaryData with the given \p Name
@@ -1165,7 +1149,7 @@ public:
 
   /// Return a dynamic relocation registered at a given \p Address, or nullptr
   /// if there is no dynamic relocation at such address.
-  const Relocation *getDynamicRelocationAt(uint64_t Address);
+  const Relocation *getDynamicRelocationAt(uint64_t Address) const;
 
   /// Remove registered relocation at a given \p Address.
   bool removeRelocationAt(uint64_t Address);
@@ -1227,8 +1211,7 @@ public:
       Emitter = this->MCE.get();
     SmallString<256> Code;
     SmallVector<MCFixup, 4> Fixups;
-    raw_svector_ostream VecOS(Code);
-    Emitter->encodeInstruction(Inst, VecOS, Fixups, *STI);
+    Emitter->encodeInstruction(Inst, Code, Fixups, *STI);
     return Code.size();
   }
 

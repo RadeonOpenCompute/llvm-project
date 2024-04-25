@@ -300,6 +300,20 @@ void ASTDeclWriter::Visit(Decl *D) {
     Record.AddVarDeclInit(VD);
   }
 
+  // And similarly for FieldDecls. We already serialized whether there is a
+  // default member initializer.
+  if (auto *FD = dyn_cast<FieldDecl>(D)) {
+    if (FD->hasInClassInitializer()) {
+      if (Expr *Init = FD->getInClassInitializer()) {
+        Record.push_back(1);
+        Record.AddStmt(Init);
+      } else {
+        Record.push_back(0);
+        // Initializer has not been instantiated yet.
+      }
+    }
+  }
+
   // If this declaration is also a DeclContext, write blocks for the
   // declarations that lexically stored inside its context and those
   // declarations that are visible from its context.
@@ -566,7 +580,7 @@ void ASTDeclWriter::VisitDeclaratorDecl(DeclaratorDecl *D) {
 }
 
 void ASTDeclWriter::VisitFunctionDecl(FunctionDecl *D) {
-  static_assert(DeclContext::NumFunctionDeclBits == 29,
+  static_assert(DeclContext::NumFunctionDeclBits == 30,
                 "You need to update the serializer after you change the "
                 "FunctionDeclBits");
 
@@ -716,7 +730,7 @@ void ASTDeclWriter::VisitCXXDeductionGuideDecl(CXXDeductionGuideDecl *D) {
   addExplicitSpecifier(D->getExplicitSpecifier(), Record);
   Record.AddDeclRef(D->Ctor);
   VisitFunctionDecl(D);
-  Record.push_back(D->isCopyDeductionCandidate());
+  Record.push_back(static_cast<unsigned char>(D->getDeductionCandidateKind()));
   Code = serialization::DECL_CXX_DEDUCTION_GUIDE;
 }
 
@@ -967,14 +981,11 @@ void ASTDeclWriter::VisitFieldDecl(FieldDecl *D) {
   VisitDeclaratorDecl(D);
   Record.push_back(D->isMutable());
 
-  FieldDecl::InitStorageKind ISK = D->InitStorage.getInt();
-  Record.push_back(ISK);
-  if (ISK == FieldDecl::ISK_CapturedVLAType)
+  Record.push_back((D->StorageKind << 1) | D->BitField);
+  if (D->StorageKind == FieldDecl::ISK_CapturedVLAType)
     Record.AddTypeRef(QualType(D->getCapturedVLAType(), 0));
-  else if (ISK)
-    Record.AddStmt(D->getInClassInitializer());
-
-  Record.AddStmt(D->getBitWidth());
+  else if (D->BitField)
+    Record.AddStmt(D->getBitWidth());
 
   if (!D->getDeclName())
     Record.AddDeclRef(Context.getInstantiatedFromUnnamedFieldDecl(D));
@@ -1125,10 +1136,10 @@ void ASTDeclWriter::VisitVarDecl(VarDecl *D) {
       !D->isConstexpr() &&
       !D->isInitCapture() &&
       !D->isPreviousDeclInSameBlockScope() &&
-      !D->hasAttr<BlocksAttr>() &&
       !D->isEscapingByref() &&
       !HasDeducedType &&
       D->getStorageDuration() != SD_Static &&
+      !D->getDescribedVarTemplate() &&
       !D->getMemberSpecializationInfo())
     AbbrevToUse = Writer.getDeclVarAbbrev();
 
@@ -1484,7 +1495,7 @@ void ASTDeclWriter::VisitCXXMethodDecl(CXXMethodDecl *D) {
 }
 
 void ASTDeclWriter::VisitCXXConstructorDecl(CXXConstructorDecl *D) {
-  static_assert(DeclContext::NumCXXConstructorDeclBits == 22,
+  static_assert(DeclContext::NumCXXConstructorDeclBits == 21,
                 "You need to update the serializer after you change the "
                 "CXXConstructorDeclBits");
 
@@ -2044,7 +2055,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // TSIType
   // FieldDecl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // isMutable
-  Abv->Add(BitCodeAbbrevOp(0));                       // InitStyle
+  Abv->Add(BitCodeAbbrevOp(0));                       // StorageKind
   // Type Source Info
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Array));
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // TypeLoc
@@ -2233,8 +2244,8 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(0));                       // InitStyle
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // isARCPseudoStrong
   Abv->Add(BitCodeAbbrevOp(0));                       // Linkage
-  Abv->Add(BitCodeAbbrevOp(0));                       // HasInit
-  Abv->Add(BitCodeAbbrevOp(0));                   // HasMemberSpecializationInfo
+  Abv->Add(BitCodeAbbrevOp(0));                       // ModulesCodegen
+  Abv->Add(BitCodeAbbrevOp(0));                       // VarKind (local enum)
   // ParmVarDecl
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); // IsObjCMethodParameter
   Abv->Add(BitCodeAbbrevOp(0));                       // ScopeDepth
@@ -2323,8 +2334,8 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(0));                         // EscapingByref
   Abv->Add(BitCodeAbbrevOp(0));                         // HasDeducedType
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); // Linkage
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 3)); // HasConstant*
-  Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 2)); // VarKind (local enum)
+  Abv->Add(BitCodeAbbrevOp(0));                         // ModulesCodeGen
+  Abv->Add(BitCodeAbbrevOp(0));                         // VarKind (local enum)
   // Type Source Info
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Array));
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // TypeLoc
@@ -2414,6 +2425,7 @@ void ASTWriter::WriteDeclAbbrevs() {
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 1)); //HadMultipleCandidates
   Abv->Add(BitCodeAbbrevOp(0)); // RefersToEnclosingVariableOrCapture
   Abv->Add(BitCodeAbbrevOp(0)); // NonOdrUseReason
+  Abv->Add(BitCodeAbbrevOp(0)); // IsImmediateEscalating
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // DeclRef
   Abv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 6)); // Location
   DeclRefExprAbbrev = Stream.EmitAbbrev(std::move(Abv));
@@ -2489,7 +2501,20 @@ void ASTWriter::WriteDeclAbbrevs() {
 /// relatively painless since they would presumably only do it for top-level
 /// decls.
 static bool isRequiredDecl(const Decl *D, ASTContext &Context,
-                           bool WritingModule) {
+                           Module *WritingModule) {
+  // Named modules have different semantics than header modules. Every named
+  // module units owns a translation unit. So the importer of named modules
+  // doesn't need to deserilize everything ahead of time.
+  if (WritingModule && WritingModule->isModulePurview()) {
+    // The PragmaCommentDecl and PragmaDetectMismatchDecl are MSVC's extension.
+    // And the behavior of MSVC for such cases will leak this to the module
+    // users. Given pragma is not a standard thing, the compiler has the space
+    // to do their own decision. Let's follow MSVC here.
+    if (isa<PragmaCommentDecl, PragmaDetectMismatchDecl>(D))
+      return true;
+    return false;
+  }
+
   // An ObjCMethodDecl is never considered as "required" because its
   // implementation container always is.
 

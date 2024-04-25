@@ -495,7 +495,7 @@ public:
 
     c->ntools = ntools;
     auto *t = reinterpret_cast<build_tool_version *>(&c[1]);
-    t->tool = TOOL_LD;
+    t->tool = TOOL_LLD;
     t->version = encodeVersion(VersionTuple(
         LLVM_VERSION_MAJOR, LLVM_VERSION_MINOR, LLVM_VERSION_PATCH));
   }
@@ -674,11 +674,21 @@ void Writer::scanRelocations() {
 
     for (auto it = isec->relocs.begin(); it != isec->relocs.end(); ++it) {
       lld::macho::Reloc &r = *it;
+
+      // Canonicalize the referent so that later accesses in Writer won't
+      // have to worry about it.
+      if (auto *referentIsec = r.referent.dyn_cast<InputSection *>())
+        r.referent = referentIsec->canonical();
+
       if (target->hasAttr(r.type, RelocAttrBits::SUBTRAHEND)) {
         // Skip over the following UNSIGNED relocation -- it's just there as the
         // minuend, and doesn't have the usual UNSIGNED semantics. We don't want
         // to emit rebase opcodes for it.
-        it++;
+        ++it;
+        // Canonicalize the referent so that later accesses in Writer won't
+        // have to worry about it.
+        if (auto *referentIsec = it->referent.dyn_cast<InputSection *>())
+          it->referent = referentIsec->canonical();
         continue;
       }
       if (auto *sym = r.referent.dyn_cast<Symbol *>()) {
@@ -688,11 +698,6 @@ void Writer::scanRelocations() {
         if (!isa<Undefined>(sym) && validateSymbolRelocation(sym, isec, r))
           prepareSymbolRelocation(sym, isec, r);
       } else {
-        // Canonicalize the referent so that later accesses in Writer won't
-        // have to worry about it. Perhaps we should do this for Defined::isec
-        // too...
-        auto *referentIsec = r.referent.get<InputSection *>();
-        r.referent = referentIsec->canonical();
         if (!r.pcrel) {
           if (config->emitChainedFixups)
             in.chainedFixups->addRebase(isec, r.offset);
@@ -731,7 +736,7 @@ void Writer::scanSymbols() {
       dysym->getFile()->refState =
           std::max(dysym->getFile()->refState, dysym->getRefState());
     } else if (isa<Undefined>(sym)) {
-      if (sym->getName().startswith(ObjCStubsSection::symbolPrefix))
+      if (sym->getName().starts_with(ObjCStubsSection::symbolPrefix))
         in.objcStubs->addEntry(sym);
     }
   }
@@ -978,8 +983,6 @@ template <class LP> void Writer::createOutputSections() {
     dataInCodeSection = make<DataInCodeSection>();
   if (config->emitFunctionStarts)
     functionStartsSection = make<FunctionStartsSection>();
-  if (config->emitBitcodeBundle)
-    make<BitcodeBundleSection>();
 
   switch (config->outputType) {
   case MH_EXECUTE:
@@ -1060,7 +1063,7 @@ void Writer::finalizeAddresses() {
       if (!osec->isNeeded())
         continue;
       // Other kinds of OutputSections have already been finalized.
-      if (auto concatOsec = dyn_cast<ConcatOutputSection>(osec))
+      if (auto *concatOsec = dyn_cast<ConcatOutputSection>(osec))
         concatOsec->finalizeContents();
     }
   }
@@ -1187,14 +1190,14 @@ void Writer::writeUuid() {
   threadFutures.reserve(chunks.size());
   for (size_t i = 0; i < chunks.size(); ++i)
     threadFutures.emplace_back(threadPool.async(
-        [&](size_t j) { hashes[j] = xxHash64(chunks[j]); }, i));
+        [&](size_t j) { hashes[j] = xxh3_64bits(chunks[j]); }, i));
   for (std::shared_future<void> &future : threadFutures)
     future.wait();
   // Append the output filename so that identical binaries with different names
   // don't get the same UUID.
-  hashes[chunks.size()] = xxHash64(sys::path::filename(config->finalOutput));
-  uint64_t digest = xxHash64({reinterpret_cast<uint8_t *>(hashes.data()),
-                              hashes.size() * sizeof(uint64_t)});
+  hashes[chunks.size()] = xxh3_64bits(sys::path::filename(config->finalOutput));
+  uint64_t digest = xxh3_64bits({reinterpret_cast<uint8_t *>(hashes.data()),
+                                 hashes.size() * sizeof(uint64_t)});
   uuidCommand->writeUuid(digest);
 }
 

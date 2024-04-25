@@ -13,8 +13,8 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/Passes.h"
-#include "llvm/IR/DebugInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/PassRegistry.h"
@@ -84,7 +84,7 @@ private:
   std::unique_ptr<LDVImpl> InstrRefImpl;
   std::unique_ptr<LDVImpl> VarLocImpl;
   std::unique_ptr<LDVImpl> HeterogeneousImpl;
-  TargetPassConfig *TPC;
+  TargetPassConfig *TPC = nullptr;
   MachineDominatorTree MDT;
 };
 } // namespace

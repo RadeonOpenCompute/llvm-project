@@ -26,9 +26,18 @@ namespace mlir {
 // Type Converter
 //===----------------------------------------------------------------------===//
 
+/// How sub-byte values are storaged in memory.
+enum class SPIRVSubByteTypeStorage {
+  /// Sub-byte values are tightly packed without any padding, e.g., 4xi2 -> i8.
+  Packed,
+};
+
 struct SPIRVConversionOptions {
   /// The number of bits to store a boolean value.
   unsigned boolNumBits{8};
+
+  /// How sub-byte values are storaged in memory.
+  SPIRVSubByteTypeStorage subByteTypeStorage{SPIRVSubByteTypeStorage::Packed};
 
   /// Whether to emulate narrower scalar types with 32-bit scalar types if not
   /// supported by the target.
@@ -131,8 +140,13 @@ class AccessChainOp;
 /// Returns the value for the given `builtin` variable. This function gets or
 /// inserts the global variable associated for the builtin within the nearest
 /// symbol table enclosing `op`. Returns null Value on error.
+///
+/// The global name being generated will be mangled using `preffix` and
+/// `suffix`.
 Value getBuiltinVariableValue(Operation *op, BuiltIn builtin, Type integerType,
-                              OpBuilder &builder);
+                              OpBuilder &builder,
+                              StringRef prefix = "__builtin__",
+                              StringRef suffix = "__");
 
 /// Gets the value at the given `offset` of the push constant storage with a
 /// total of `elementCount` `integerType` integers. A global variable will be

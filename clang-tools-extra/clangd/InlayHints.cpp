@@ -11,10 +11,12 @@
 #include "HeuristicResolver.h"
 #include "ParsedAST.h"
 #include "SourceCode.h"
+#include "clang/AST/ASTDiagnostic.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclarationName.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/AST/Type.h"
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -190,6 +192,64 @@ getDesignators(const InitListExpr *Syn) {
   return Designators;
 }
 
+// Determines if any intermediate type in desugaring QualType QT is of
+// substituted template parameter type. Ignore pointer or reference wrappers.
+bool isSugaredTemplateParameter(QualType QT) {
+  static auto PeelWrappers = [](QualType QT) {
+    // Neither `PointerType` nor `ReferenceType` is considered as sugared
+    // type. Peel it.
+    QualType Next;
+    while (!(Next = QT->getPointeeType()).isNull())
+      QT = Next;
+    return QT;
+  };
+  while (true) {
+    QualType Desugared =
+        PeelWrappers(QT->getLocallyUnqualifiedSingleStepDesugaredType());
+    if (Desugared == QT)
+      break;
+    if (Desugared->getAs<SubstTemplateTypeParmType>())
+      return true;
+    QT = Desugared;
+  }
+  return false;
+}
+
+// A simple wrapper for `clang::desugarForDiagnostic` that provides optional
+// semantic.
+std::optional<QualType> desugar(ASTContext &AST, QualType QT) {
+  bool ShouldAKA = false;
+  auto Desugared = clang::desugarForDiagnostic(AST, QT, ShouldAKA);
+  if (!ShouldAKA)
+    return std::nullopt;
+  return Desugared;
+}
+
+// Apply a series of heuristic methods to determine whether or not a QualType QT
+// is suitable for desugaring (e.g. getting the real name behind the using-alias
+// name). If so, return the desugared type. Otherwise, return the unchanged
+// parameter QT.
+//
+// This could be refined further. See
+// https://github.com/clangd/clangd/issues/1298.
+QualType maybeDesugar(ASTContext &AST, QualType QT) {
+  // Prefer desugared type for name that aliases the template parameters.
+  // This can prevent things like printing opaque `: type` when accessing std
+  // containers.
+  if (isSugaredTemplateParameter(QT))
+    return desugar(AST, QT).value_or(QT);
+
+  // Prefer desugared type for `decltype(expr)` specifiers.
+  if (QT->isDecltypeType())
+    return QT.getCanonicalType();
+  if (const AutoType *AT = QT->getContainedAutoType())
+    if (!AT->getDeducedType().isNull() &&
+        AT->getDeducedType()->isDecltypeType())
+      return QT.getCanonicalType();
+
+  return QT;
+}
+
 class InlayHintVisitor : public RecursiveASTVisitor<InlayHintVisitor> {
 public:
   InlayHintVisitor(std::vector<InlayHint> &Results, ParsedAST &AST,
@@ -198,8 +258,7 @@ public:
         Cfg(Cfg), RestrictRange(std::move(RestrictRange)),
         MainFileID(AST.getSourceManager().getMainFileID()),
         Resolver(AST.getHeuristicResolver()),
-        TypeHintPolicy(this->AST.getPrintingPolicy()),
-        StructuredBindingPolicy(this->AST.getPrintingPolicy()) {
+        TypeHintPolicy(this->AST.getPrintingPolicy()) {
     bool Invalid = false;
     llvm::StringRef Buf =
         AST.getSourceManager().getBufferData(MainFileID, &Invalid);
@@ -209,14 +268,8 @@ public:
     TypeHintPolicy.AnonymousTagLocations =
         false; // do not print lambda locations
 
-    // For structured bindings, print canonical types. This is important because
-    // for bindings that use the tuple_element protocol, the non-canonical types
-    // would be "tuple_element<I, A>::type".
-    // For "auto", we often prefer sugared types.
     // Not setting PrintCanonicalTypes for "auto" allows
     // SuppressDefaultTemplateArgs (set by default) to have an effect.
-    StructuredBindingPolicy = TypeHintPolicy;
-    StructuredBindingPolicy.PrintCanonicalTypes = true;
   }
 
   bool VisitTypeLoc(TypeLoc TL) {
@@ -274,6 +327,33 @@ public:
           addReturnTypeHint(D, FTL.getRParenLoc());
       }
     }
+    if (Cfg.InlayHints.BlockEnd && D->isThisDeclarationADefinition()) {
+      // We use `printName` here to properly print name of ctor/dtor/operator
+      // overload.
+      if (const Stmt *Body = D->getBody())
+        addBlockEndHint(Body->getSourceRange(), "", printName(AST, *D), "");
+    }
+    return true;
+  }
+
+  bool VisitTagDecl(TagDecl *D) {
+    if (Cfg.InlayHints.BlockEnd && D->isThisDeclarationADefinition()) {
+      std::string DeclPrefix = D->getKindName().str();
+      if (const auto *ED = dyn_cast<EnumDecl>(D)) {
+        if (ED->isScoped())
+          DeclPrefix += ED->isScopedUsingClassTag() ? " class" : " struct";
+      };
+      addBlockEndHint(D->getBraceRange(), DeclPrefix, getSimpleName(*D), ";");
+    }
+    return true;
+  }
+
+  bool VisitNamespaceDecl(NamespaceDecl *D) {
+    if (Cfg.InlayHints.BlockEnd) {
+      // For namespace, the range actually starts at the namespace keyword. But
+      // it should be fine since it's usually very short.
+      addBlockEndHint(D->getSourceRange(), "namespace", getSimpleName(*D), "");
+    }
     return true;
   }
 
@@ -298,8 +378,12 @@ public:
     // but show hints for the individual bindings.
     if (auto *DD = dyn_cast<DecompositionDecl>(D)) {
       for (auto *Binding : DD->bindings()) {
-        addTypeHint(Binding->getLocation(), Binding->getType(), /*Prefix=*/": ",
-                    StructuredBindingPolicy);
+        // For structured bindings, print canonical types. This is important
+        // because for bindings that use the tuple_element protocol, the
+        // non-canonical types would be "tuple_element<I, A>::type".
+        if (auto Type = Binding->getType(); !Type.isNull())
+          addTypeHint(Binding->getLocation(), Type.getCanonicalType(),
+                      /*Prefix=*/": ");
       }
       return true;
     }
@@ -430,7 +514,7 @@ private:
       return false;
 
     StringRef Name = getSimpleName(*Callee);
-    if (!Name.startswith_insensitive("set"))
+    if (!Name.starts_with_insensitive("set"))
       return false;
 
     // In addition to checking that the function has one parameter and its
@@ -616,6 +700,16 @@ private:
   void addInlayHint(SourceRange R, HintSide Side, InlayHintKind Kind,
                     llvm::StringRef Prefix, llvm::StringRef Label,
                     llvm::StringRef Suffix) {
+    auto LSPRange = getHintRange(R);
+    if (!LSPRange)
+      return;
+
+    addInlayHint(*LSPRange, Side, Kind, Prefix, Label, Suffix);
+  }
+
+  void addInlayHint(Range LSPRange, HintSide Side, InlayHintKind Kind,
+                    llvm::StringRef Prefix, llvm::StringRef Label,
+                    llvm::StringRef Suffix) {
     // We shouldn't get as far as adding a hint if the category is disabled.
     // We'd like to disable as much of the analysis as possible above instead.
     // Assert in debug mode but add a dynamic check in production.
@@ -631,20 +725,18 @@ private:
       CHECK_KIND(Parameter, Parameters);
       CHECK_KIND(Type, DeducedTypes);
       CHECK_KIND(Designator, Designators);
+      CHECK_KIND(BlockEnd, BlockEnd);
 #undef CHECK_KIND
     }
 
-    auto LSPRange = getHintRange(R);
-    if (!LSPRange)
-      return;
-    Position LSPPos = Side == HintSide::Left ? LSPRange->start : LSPRange->end;
+    Position LSPPos = Side == HintSide::Left ? LSPRange.start : LSPRange.end;
     if (RestrictRange &&
         (LSPPos < RestrictRange->start || !(LSPPos < RestrictRange->end)))
       return;
     bool PadLeft = Prefix.consume_front(" ");
     bool PadRight = Suffix.consume_back(" ");
     Results.push_back(InlayHint{LSPPos, (Prefix + Label + Suffix).str(), Kind,
-                                PadLeft, PadRight, *LSPRange});
+                                PadLeft, PadRight, LSPRange});
   }
 
   // Get the range of the main file that *exactly* corresponds to R.
@@ -663,32 +755,20 @@ private:
                  sourceLocToPosition(SM, Spelled->back().endLocation())};
   }
 
-  static bool shouldPrintCanonicalType(QualType QT) {
-    // The sugared type is more useful in some cases, and the canonical
-    // type in other cases. For now, prefer the sugared type unless
-    // we are printing `decltype(expr)`. This could be refined further
-    // (see https://github.com/clangd/clangd/issues/1298).
-    if (QT->isDecltypeType())
-      return true;
-    if (const AutoType *AT = QT->getContainedAutoType())
-      if (!AT->getDeducedType().isNull() &&
-          AT->getDeducedType()->isDecltypeType())
-        return true;
-    return false;
-  }
-
   void addTypeHint(SourceRange R, QualType T, llvm::StringRef Prefix) {
-    TypeHintPolicy.PrintCanonicalTypes = shouldPrintCanonicalType(T);
-    addTypeHint(R, T, Prefix, TypeHintPolicy);
-  }
-
-  void addTypeHint(SourceRange R, QualType T, llvm::StringRef Prefix,
-                   const PrintingPolicy &Policy) {
     if (!Cfg.InlayHints.DeducedTypes || T.isNull())
       return;
 
-    std::string TypeName = T.getAsString(Policy);
-    if (TypeName.length() < TypeNameLimit)
+    // The sugared type is more useful in some cases, and the canonical
+    // type in other cases.
+    auto Desugared = maybeDesugar(AST, T);
+    std::string TypeName = Desugared.getAsString(TypeHintPolicy);
+    if (T != Desugared && !shouldPrintTypeHint(TypeName)) {
+      // If the desugared type is too long to display, fallback to the sugared
+      // type.
+      TypeName = T.getAsString(TypeHintPolicy);
+    }
+    if (shouldPrintTypeHint(TypeName))
       addInlayHint(R, HintSide::Right, InlayHintKind::Type, Prefix, TypeName,
                    /*Suffix=*/"");
   }
@@ -696,6 +776,81 @@ private:
   void addDesignatorHint(SourceRange R, llvm::StringRef Text) {
     addInlayHint(R, HintSide::Left, InlayHintKind::Designator,
                  /*Prefix=*/"", Text, /*Suffix=*/"=");
+  }
+
+  bool shouldPrintTypeHint(llvm::StringRef TypeName) const noexcept {
+    return Cfg.InlayHints.TypeNameLimit == 0 ||
+           TypeName.size() < Cfg.InlayHints.TypeNameLimit;
+  }
+
+  void addBlockEndHint(SourceRange BraceRange, StringRef DeclPrefix,
+                       StringRef Name, StringRef OptionalPunctuation) {
+    auto HintRange = computeBlockEndHintRange(BraceRange, OptionalPunctuation);
+    if (!HintRange)
+      return;
+
+    std::string Label = DeclPrefix.str();
+    if (!Label.empty() && !Name.empty())
+      Label += ' ';
+    Label += Name;
+
+    constexpr unsigned HintMaxLengthLimit = 60;
+    if (Label.length() > HintMaxLengthLimit)
+      return;
+
+    addInlayHint(*HintRange, HintSide::Right, InlayHintKind::BlockEnd, " // ",
+                 Label, "");
+  }
+
+  // Compute the LSP range to attach the block end hint to, if any allowed.
+  // 1. "}" is the last non-whitespace character on the line. The range of "}"
+  // is returned.
+  // 2. After "}", if the trimmed trailing text is exactly
+  // `OptionalPunctuation`, say ";". The range of "} ... ;" is returned.
+  // Otherwise, the hint shouldn't be shown.
+  std::optional<Range> computeBlockEndHintRange(SourceRange BraceRange,
+                                                StringRef OptionalPunctuation) {
+    constexpr unsigned HintMinLineLimit = 2;
+
+    auto &SM = AST.getSourceManager();
+    auto [BlockBeginFileId, BlockBeginOffset] =
+        SM.getDecomposedLoc(SM.getFileLoc(BraceRange.getBegin()));
+    auto RBraceLoc = SM.getFileLoc(BraceRange.getEnd());
+    auto [RBraceFileId, RBraceOffset] = SM.getDecomposedLoc(RBraceLoc);
+
+    // Because we need to check the block satisfies the minimum line limit, we
+    // require both source location to be in the main file. This prevents hint
+    // to be shown in weird cases like '{' is actually in a "#include", but it's
+    // rare anyway.
+    if (BlockBeginFileId != MainFileID || RBraceFileId != MainFileID)
+      return std::nullopt;
+
+    StringRef RestOfLine = MainFileBuf.substr(RBraceOffset).split('\n').first;
+    if (!RestOfLine.starts_with("}"))
+      return std::nullopt;
+
+    StringRef TrimmedTrailingText = RestOfLine.drop_front().trim();
+    if (!TrimmedTrailingText.empty() &&
+        TrimmedTrailingText != OptionalPunctuation)
+      return std::nullopt;
+
+    auto BlockBeginLine = SM.getLineNumber(BlockBeginFileId, BlockBeginOffset);
+    auto RBraceLine = SM.getLineNumber(RBraceFileId, RBraceOffset);
+
+    // Don't show hint on trivial blocks like `class X {};`
+    if (BlockBeginLine + HintMinLineLimit - 1 > RBraceLine)
+      return std::nullopt;
+
+    // This is what we attach the hint to, usually "}" or "};".
+    StringRef HintRangeText = RestOfLine.take_front(
+        TrimmedTrailingText.empty()
+            ? 1
+            : TrimmedTrailingText.bytes_end() - RestOfLine.bytes_begin());
+
+    Position HintStart = sourceLocToPosition(SM, RBraceLoc);
+    Position HintEnd = sourceLocToPosition(
+        SM, RBraceLoc.getLocWithOffset(HintRangeText.size()));
+    return Range{HintStart, HintEnd};
   }
 
   std::vector<InlayHint> &Results;
@@ -706,16 +861,7 @@ private:
   FileID MainFileID;
   StringRef MainFileBuf;
   const HeuristicResolver *Resolver;
-  // We want to suppress default template arguments, but otherwise print
-  // canonical types. Unfortunately, they're conflicting policies so we can't
-  // have both. For regular types, suppressing template arguments is more
-  // important, whereas printing canonical types is crucial for structured
-  // bindings, so we use two separate policies. (See the constructor where
-  // the policies are initialized for more details.)
   PrintingPolicy TypeHintPolicy;
-  PrintingPolicy StructuredBindingPolicy;
-
-  static const size_t TypeNameLimit = 32;
 };
 
 } // namespace

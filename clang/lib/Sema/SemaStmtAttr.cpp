@@ -238,7 +238,7 @@ static bool CheckStmtInlineAttr(Sema &SemaRef, const Stmt *OrigSt,
            << A;
   }
 
-  for (auto Tup :
+  for (const auto &Tup :
        llvm::zip_longest(OrigCEF.getCallExprs(), CEF.getCallExprs())) {
     // If the original call expression already had a callee, we already
     // diagnosed this, so skip it here. We can't skip if there isn't a 1:1
@@ -490,7 +490,9 @@ static Attr *ProcessStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &A,
       !(A.existsInTarget(S.Context.getTargetInfo()) ||
         (S.Context.getLangOpts().SYCLIsDevice && Aux &&
          A.existsInTarget(*Aux)))) {
-    S.Diag(A.getLoc(), A.isDeclspecAttribute()
+    S.Diag(A.getLoc(), A.isRegularKeywordAttribute()
+                           ? (unsigned)diag::err_keyword_not_supported_on_target
+                       : A.isDeclspecAttribute()
                            ? (unsigned)diag::warn_unhandled_ms_attribute_ignored
                            : (unsigned)diag::warn_unknown_attribute_ignored)
         << A << A.getRange();
@@ -526,7 +528,7 @@ static Attr *ProcessStmtAttribute(Sema &S, Stmt *St, const ParsedAttr &A,
     // declaration attribute is not written on a statement, but this code is
     // needed for attributes in Attr.td that do not list any subjects.
     S.Diag(A.getRange().getBegin(), diag::err_decl_attribute_invalid_on_stmt)
-        << A << St->getBeginLoc();
+        << A << A.isRegularKeywordAttribute() << St->getBeginLoc();
     return nullptr;
   }
 }

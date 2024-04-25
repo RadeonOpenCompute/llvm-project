@@ -181,14 +181,14 @@ LLVM_DUMP_METHOD void VirtRegMap::dump() const {
 namespace {
 
 class VirtRegRewriter : public MachineFunctionPass {
-  MachineFunction *MF;
-  const TargetRegisterInfo *TRI;
-  const TargetInstrInfo *TII;
-  MachineRegisterInfo *MRI;
-  SlotIndexes *Indexes;
-  LiveIntervals *LIS;
-  VirtRegMap *VRM;
-  LiveDebugVariables *DebugVars;
+  MachineFunction *MF = nullptr;
+  const TargetRegisterInfo *TRI = nullptr;
+  const TargetInstrInfo *TII = nullptr;
+  MachineRegisterInfo *MRI = nullptr;
+  SlotIndexes *Indexes = nullptr;
+  LiveIntervals *LIS = nullptr;
+  VirtRegMap *VRM = nullptr;
+  LiveDebugVariables *DebugVars = nullptr;
   DenseSet<Register> RewriteRegs;
   bool ClearVirtRegs;
 
@@ -404,16 +404,6 @@ bool VirtRegRewriter::readsUndefSubreg(const MachineOperand &MO) const {
   return true;
 }
 
-// Returns true when all the implicit operands of the copy instruction \p MI are
-// reserved registers.
-static bool isCopyWithReservedImplicitOpnds(const MachineInstr &MI,
-                                            const MachineRegisterInfo &MRI) {
-  for (unsigned I = 2, E = MI.getNumOperands(); I != E; ++I) {
-    if (!MRI.isReserved(MI.getOperand(I).getReg()))
-      return false;
-  }
-  return true;
-}
 void VirtRegRewriter::handleIdentityCopy(MachineInstr &MI) {
   if (!MI.isIdentityCopy())
     return;
@@ -434,11 +424,8 @@ void VirtRegRewriter::handleIdentityCopy(MachineInstr &MI) {
   //    %al = COPY %al, implicit-def %eax
   // give us additional liveness information: The target (super-)register
   // must not be valid before this point. Replace the COPY with a KILL
-  // instruction to maintain this information. Do not insert KILL when the
-  // implicit operands are all reserved registers.
-  if (MI.getOperand(1).isUndef() ||
-      ((MI.getNumOperands() > 2) &&
-       !isCopyWithReservedImplicitOpnds(MI, *MRI))) {
+  // instruction to maintain this information.
+  if (MI.getOperand(1).isUndef() || MI.getNumOperands() > 2) {
     MI.setDesc(TII->get(TargetOpcode::KILL));
     LLVM_DEBUG(dbgs() << "  replace by: " << MI);
     return;
@@ -527,8 +514,8 @@ bool VirtRegRewriter::subRegLiveThrough(const MachineInstr &MI,
   SlotIndex MIIndex = LIS->getInstructionIndex(MI);
   SlotIndex BeforeMIUses = MIIndex.getBaseIndex();
   SlotIndex AfterMIDefs = MIIndex.getBoundaryIndex();
-  for (MCRegUnitIterator Unit(SuperPhysReg, TRI); Unit.isValid(); ++Unit) {
-    const LiveRange &UnitRange = LIS->getRegUnit(*Unit);
+  for (MCRegUnit Unit : TRI->regunits(SuperPhysReg)) {
+    const LiveRange &UnitRange = LIS->getRegUnit(Unit);
     // If the regunit is live both before and after MI,
     // we assume it is live through.
     // Generally speaking, this is not true, because something like
@@ -646,9 +633,8 @@ void VirtRegRewriter::rewrite() {
     // Don't bother maintaining accurate LiveIntervals for registers which were
     // already allocated.
     for (Register PhysReg : RewriteRegs) {
-      for (MCRegUnitIterator Units(PhysReg, TRI); Units.isValid();
-           ++Units) {
-        LIS->removeRegUnit(*Units);
+      for (MCRegUnit Unit : TRI->regunits(PhysReg)) {
+        LIS->removeRegUnit(Unit);
       }
     }
   }

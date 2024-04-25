@@ -101,13 +101,13 @@ MachineRegisterInfo::constrainRegAttrs(Register Reg,
     const auto RegCB = getRegClassOrRegBank(Reg);
     if (RegCB.isNull())
       setRegClassOrRegBank(Reg, ConstrainingRegCB);
-    else if (RegCB.is<const TargetRegisterClass *>() !=
-             ConstrainingRegCB.is<const TargetRegisterClass *>())
+    else if (isa<const TargetRegisterClass *>(RegCB) !=
+             isa<const TargetRegisterClass *>(ConstrainingRegCB))
       return false;
-    else if (RegCB.is<const TargetRegisterClass *>()) {
+    else if (isa<const TargetRegisterClass *>(RegCB)) {
       if (!::constrainRegClass(
-              *this, Reg, RegCB.get<const TargetRegisterClass *>(),
-              ConstrainingRegCB.get<const TargetRegisterClass *>(), MinNumRegs))
+              *this, Reg, cast<const TargetRegisterClass *>(RegCB),
+              cast<const TargetRegisterClass *>(ConstrainingRegCB), MinNumRegs))
         return false;
     } else if (RegCB != ConstrainingRegCB)
       return false;
@@ -481,8 +481,9 @@ MachineRegisterInfo::EmitLiveInCopies(MachineBasicBlock *EntryMBB,
         --i; --e;
       } else {
         // Emit a copy.
-        TII.buildCopy(*EntryMBB, EntryMBB->begin(), DebugLoc(),
-                      LiveIns[i].second, LiveIns[i].first);
+        BuildMI(*EntryMBB, EntryMBB->begin(), DebugLoc(),
+                TII.get(TargetOpcode::COPY), LiveIns[i].second)
+          .addReg(LiveIns[i].first);
 
         // Add the register to the entry block live-in set.
         EntryMBB->addLiveIn(LiveIns[i].first);
@@ -643,16 +644,8 @@ void MachineRegisterInfo::setCalleeSavedRegs(ArrayRef<MCPhysReg> CSRs) {
 bool MachineRegisterInfo::isReservedRegUnit(unsigned Unit) const {
   const TargetRegisterInfo *TRI = getTargetRegisterInfo();
   for (MCRegUnitRootIterator Root(Unit, TRI); Root.isValid(); ++Root) {
-    bool IsRootReserved = true;
-    for (MCSuperRegIterator Super(*Root, TRI, /*IncludeSelf=*/true);
-         Super.isValid(); ++Super) {
-      MCRegister Reg = *Super;
-      if (!isReserved(Reg)) {
-        IsRootReserved = false;
-        break;
-      }
-    }
-    if (IsRootReserved)
+    if (all_of(TRI->superregs_inclusive(*Root),
+               [&](MCPhysReg Super) { return isReserved(Super); }))
       return true;
   }
   return false;

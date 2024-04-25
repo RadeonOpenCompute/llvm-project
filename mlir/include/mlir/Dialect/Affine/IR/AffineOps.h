@@ -22,12 +22,13 @@
 #include "mlir/Interfaces/LoopLikeInterface.h"
 
 namespace mlir {
+namespace affine {
+
 class AffineApplyOp;
 class AffineBound;
+class AffineMaxOp;
+class AffineMinOp;
 class AffineValueMap;
-
-/// TODO: These should be renamed if they are on the mlir namespace.
-///       Ideally, they should go in a mlir::affine:: namespace.
 
 /// A utility function to check if a value is defined at the top level of an
 /// op with trait `AffineScope` or is a region argument for such an op. A value
@@ -107,7 +108,7 @@ public:
   /// Returns the source MemRefType for this DMA operation.
   Value getSrcMemRef() { return getOperand(getSrcMemRefOperandIndex()); }
   MemRefType getSrcMemRefType() {
-    return getSrcMemRef().getType().cast<MemRefType>();
+    return cast<MemRefType>(getSrcMemRef().getType());
   }
 
   /// Returns the rank (number of indices) of the source MemRefType.
@@ -116,7 +117,7 @@ public:
   /// Returns the affine map used to access the source memref.
   AffineMap getSrcMap() { return getSrcMapAttr().getValue(); }
   AffineMapAttr getSrcMapAttr() {
-    return (*this)->getAttr(getSrcMapAttrStrName()).cast<AffineMapAttr>();
+    return cast<AffineMapAttr>((*this)->getAttr(getSrcMapAttrStrName()));
   }
 
   /// Returns the source memref affine map indices for this DMA operation.
@@ -128,7 +129,7 @@ public:
 
   /// Returns the memory space of the source memref.
   unsigned getSrcMemorySpace() {
-    return getSrcMemRef().getType().cast<MemRefType>().getMemorySpaceAsInt();
+    return cast<MemRefType>(getSrcMemRef().getType()).getMemorySpaceAsInt();
   }
 
   /// Returns the operand index of the destination memref.
@@ -139,23 +140,23 @@ public:
   /// Returns the destination MemRefType for this DMA operation.
   Value getDstMemRef() { return getOperand(getDstMemRefOperandIndex()); }
   MemRefType getDstMemRefType() {
-    return getDstMemRef().getType().cast<MemRefType>();
+    return cast<MemRefType>(getDstMemRef().getType());
   }
 
   /// Returns the rank (number of indices) of the destination MemRefType.
   unsigned getDstMemRefRank() {
-    return getDstMemRef().getType().cast<MemRefType>().getRank();
+    return cast<MemRefType>(getDstMemRef().getType()).getRank();
   }
 
   /// Returns the memory space of the source memref.
   unsigned getDstMemorySpace() {
-    return getDstMemRef().getType().cast<MemRefType>().getMemorySpaceAsInt();
+    return cast<MemRefType>(getDstMemRef().getType()).getMemorySpaceAsInt();
   }
 
   /// Returns the affine map used to access the destination memref.
   AffineMap getDstMap() { return getDstMapAttr().getValue(); }
   AffineMapAttr getDstMapAttr() {
-    return (*this)->getAttr(getDstMapAttrStrName()).cast<AffineMapAttr>();
+    return cast<AffineMapAttr>((*this)->getAttr(getDstMapAttrStrName()));
   }
 
   /// Returns the destination memref indices for this DMA operation.
@@ -173,18 +174,18 @@ public:
   /// Returns the Tag MemRef for this DMA operation.
   Value getTagMemRef() { return getOperand(getTagMemRefOperandIndex()); }
   MemRefType getTagMemRefType() {
-    return getTagMemRef().getType().cast<MemRefType>();
+    return cast<MemRefType>(getTagMemRef().getType());
   }
 
   /// Returns the rank (number of indices) of the tag MemRefType.
   unsigned getTagMemRefRank() {
-    return getTagMemRef().getType().cast<MemRefType>().getRank();
+    return cast<MemRefType>(getTagMemRef().getType()).getRank();
   }
 
   /// Returns the affine map used to access the tag memref.
   AffineMap getTagMap() { return getTagMapAttr().getValue(); }
   AffineMapAttr getTagMapAttr() {
-    return (*this)->getAttr(getTagMapAttrStrName()).cast<AffineMapAttr>();
+    return cast<AffineMapAttr>((*this)->getAttr(getTagMapAttrStrName()));
   }
 
   /// Returns the tag memref indices for this DMA operation.
@@ -300,13 +301,13 @@ public:
   /// Returns the Tag MemRef associated with the DMA operation being waited on.
   Value getTagMemRef() { return getOperand(0); }
   MemRefType getTagMemRefType() {
-    return getTagMemRef().getType().cast<MemRefType>();
+    return cast<MemRefType>(getTagMemRef().getType());
   }
 
   /// Returns the affine map used to access the tag memref.
   AffineMap getTagMap() { return getTagMapAttr().getValue(); }
   AffineMapAttr getTagMapAttr() {
-    return (*this)->getAttr(getTagMapAttrStrName()).cast<AffineMapAttr>();
+    return cast<AffineMapAttr>((*this)->getAttr(getTagMapAttrStrName()));
   }
 
   /// Returns the tag memref index for this DMA operation.
@@ -317,7 +318,7 @@ public:
 
   /// Returns the rank (number of indices) of the tag memref.
   unsigned getTagMemRefRank() {
-    return getTagMemRef().getType().cast<MemRefType>().getRank();
+    return cast<MemRefType>(getTagMemRef().getType()).getRank();
   }
 
   /// Impelements the AffineMapAccessInterface. Returns the AffineMapAttr
@@ -383,10 +384,9 @@ void canonicalizeSetAndOperands(IntegerSet *set,
 /// other AffineApplyOps supplying those operands. The operands of the resulting
 /// AffineApplyOp do not change the length of  AffineApplyOp chains.
 AffineApplyOp makeComposedAffineApply(OpBuilder &b, Location loc, AffineMap map,
-                                      ValueRange operands);
-/// Variant of `makeComposedAffineApply` which infers the AffineMap from `e`.
+                                      ArrayRef<OpFoldResult> operands);
 AffineApplyOp makeComposedAffineApply(OpBuilder &b, Location loc, AffineExpr e,
-                                      ValueRange values);
+                                      ArrayRef<OpFoldResult> operands);
 
 /// Constructs an AffineApplyOp that applies `map` to `operands` after composing
 /// the map with the maps of any other AffineApplyOp supplying the operands,
@@ -408,8 +408,8 @@ SmallVector<OpFoldResult> makeComposedFoldedMultiResultAffineApply(
 
 /// Returns an AffineMinOp obtained by composing `map` and `operands` with
 /// AffineApplyOps supplying those operands.
-Value makeComposedAffineMin(OpBuilder &b, Location loc, AffineMap map,
-                            ValueRange operands);
+AffineMinOp makeComposedAffineMin(OpBuilder &b, Location loc, AffineMap map,
+                                  ArrayRef<OpFoldResult> operands);
 
 /// Constructs an AffineMinOp that computes a minimum across the results of
 /// applying `map` to `operands`, then immediately attempts to fold it. If
@@ -425,10 +425,6 @@ OpFoldResult makeComposedFoldedAffineMax(OpBuilder &b, Location loc,
                                          AffineMap map,
                                          ArrayRef<OpFoldResult> operands);
 
-/// Returns the values obtained by applying `map` to the list of values.
-SmallVector<Value, 4> applyMapToValues(OpBuilder &b, Location loc,
-                                       AffineMap map, ValueRange values);
-
 /// Given an affine map `map` and its input `operands`, this method composes
 /// into `map`, maps of AffineApplyOps whose results are the values in
 /// `operands`, iteratively until no more of `operands` are the result of an
@@ -438,13 +434,18 @@ SmallVector<Value, 4> applyMapToValues(OpBuilder &b, Location loc,
 /// argument.
 void fullyComposeAffineMapAndOperands(AffineMap *map,
                                       SmallVectorImpl<Value> *operands);
+
+} // namespace affine
 } // namespace mlir
+
 #include "mlir/Dialect/Affine/IR/AffineOpsDialect.h.inc"
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/Affine/IR/AffineOps.h.inc"
 
 namespace mlir {
+namespace affine {
+
 /// Returns true if the provided value is the induction variable of an
 /// AffineForOp.
 bool isAffineForInductionVar(Value val);
@@ -537,6 +538,7 @@ private:
   friend class AffineForOp;
 };
 
+} // namespace affine
 } // namespace mlir
 
 #endif

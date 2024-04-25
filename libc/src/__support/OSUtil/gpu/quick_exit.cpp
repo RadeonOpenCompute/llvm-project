@@ -17,21 +17,20 @@
 namespace __llvm_libc {
 
 void quick_exit(int status) {
-  // TODO: Support asynchronous calls so we don't wait and exit from the GPU
-  // immediately.
-  rpc::client.run(
-      [&](rpc::Buffer *buffer) {
-        buffer->data[0] = rpc::Opcode::EXIT;
-        buffer->data[1] = status;
-      },
-      [](rpc::Buffer *) { /* void */ });
+  // We want to first make sure the server is listening before we exit.
+  rpc::Client::Port port = rpc::client.open<RPC_EXIT>();
+  port.send_and_recv([](rpc::Buffer *) {}, [](rpc::Buffer *) {});
+  port.send([&](rpc::Buffer *buffer) {
+    reinterpret_cast<uint32_t *>(buffer->data)[0] = status;
+  });
+  port.close();
 
 #if defined(LIBC_TARGET_ARCH_IS_NVPTX)
-  asm("exit;" ::: "memory");
+  LIBC_INLINE_ASM("exit;" ::: "memory");
 #elif defined(LIBC_TARGET_ARCH_IS_AMDGPU)
   // This will terminate the entire wavefront, may not be valid with divergent
   // work items.
-  asm("s_endpgm" ::: "memory");
+  __builtin_amdgcn_endpgm();
 #endif
   __builtin_unreachable();
 }

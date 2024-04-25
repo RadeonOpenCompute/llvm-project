@@ -200,6 +200,8 @@ public:
   /// Returns the type of the innermost field.
   QualType getType() const { return getFieldDesc()->getType(); }
 
+  Pointer getDeclPtr() const { return Pointer(Pointee); }
+
   /// Returns the element size of the innermost field.
   size_t elemSize() const {
     if (Base == RootPtrMark)
@@ -245,9 +247,11 @@ public:
   }
 
   /// Returns the record descriptor of a class.
-  Record *getRecord() const { return getFieldDesc()->ElemRecord; }
-  // Returns the element record type, if this is a non-primive array.
-  Record *getElemRecord() const { return getFieldDesc()->ElemDesc->ElemRecord; }
+  const Record *getRecord() const { return getFieldDesc()->ElemRecord; }
+  /// Returns the element record type, if this is a non-primive array.
+  const Record *getElemRecord() const {
+    return getFieldDesc()->ElemDesc->ElemRecord;
+  }
   /// Returns the field information.
   const FieldDecl *getField() const { return getFieldDesc()->asFieldDecl(); }
 
@@ -290,7 +294,7 @@ public:
   /// Returns the number of elements.
   unsigned getNumElems() const { return getSize() / elemSize(); }
 
-  Block *block() const { return Pointee; }
+  const Block *block() const { return Pointee; }
 
   /// Returns the index into an array.
   int64_t getIndex() const {

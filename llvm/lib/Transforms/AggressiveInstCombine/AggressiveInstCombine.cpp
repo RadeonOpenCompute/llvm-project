@@ -19,6 +19,7 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/ConstantFolding.h"
+#include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
@@ -28,6 +29,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/PatternMatch.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/BuildLibCalls.h"
 #include "llvm/Transforms/Utils/Local.h"
 
@@ -396,51 +398,6 @@ static bool tryToFPToSat(Instruction &I, TargetTransformInfo &TTI) {
   return true;
 }
 
-/// Try to replace a mathlib call to sqrt with the LLVM intrinsic. This avoids
-/// pessimistic codegen that has to account for setting errno and can enable
-/// vectorization.
-static bool foldSqrt(Instruction &I, TargetTransformInfo &TTI,
-                     TargetLibraryInfo &TLI) {
-  // Match a call to sqrt mathlib function.
-  auto *Call = dyn_cast<CallInst>(&I);
-  if (!Call)
-    return false;
-
-  Module *M = Call->getModule();
-  LibFunc Func;
-  if (!TLI.getLibFunc(*Call, Func) || !isLibFuncEmittable(M, &TLI, Func))
-    return false;
-
-  if (Func != LibFunc_sqrt && Func != LibFunc_sqrtf && Func != LibFunc_sqrtl)
-    return false;
-
-  // If (1) this is a sqrt libcall, (2) we can assume that NAN is not created
-  // (because NNAN or the operand arg must not be less than -0.0) and (2) we
-  // would not end up lowering to a libcall anyway (which could change the value
-  // of errno), then:
-  // (1) errno won't be set.
-  // (2) it is safe to convert this to an intrinsic call.
-  Type *Ty = Call->getType();
-  Value *Arg = Call->getArgOperand(0);
-  if (TTI.haveFastSqrt(Ty) &&
-      (Call->hasNoNaNs() || CannotBeOrderedLessThanZero(Arg, &TLI))) {
-    IRBuilder<> Builder(&I);
-    IRBuilderBase::FastMathFlagGuard Guard(Builder);
-    Builder.setFastMathFlags(Call->getFastMathFlags());
-
-    Function *Sqrt = Intrinsic::getDeclaration(M, Intrinsic::sqrt, Ty);
-    Value *NewSqrt = Builder.CreateCall(Sqrt, Arg, "sqrt");
-    I.replaceAllUsesWith(NewSqrt);
-
-    // Explicitly erase the old call because a call with side effects is not
-    // trivially dead.
-    I.eraseFromParent();
-    return true;
-  }
-
-  return false;
-}
-
 // Check if this array of constants represents a cttz table.
 // Iterate over the elements from \p Table by trying to find/match all
 // the numbers from 0 to \p InputBits that should represent cttz results.
@@ -611,7 +568,7 @@ struct LoadOps {
   LoadInst *RootInsert = nullptr;
   bool FoundRoot = false;
   uint64_t LoadSize = 0;
-  Value *Shift = nullptr;
+  const APInt *Shift = nullptr;
   Type *ZextType;
   AAMDNodes AATags;
 };
@@ -621,7 +578,7 @@ struct LoadOps {
 // (ZExt(L1) << shift1) | ZExt(L2) -> ZExt(L3)
 static bool foldLoadsRecursive(Value *V, LoadOps &LOps, const DataLayout &DL,
                                AliasAnalysis &AA) {
-  Value *ShAmt2 = nullptr;
+  const APInt *ShAmt2 = nullptr;
   Value *X;
   Instruction *L1, *L2;
 
@@ -629,7 +586,7 @@ static bool foldLoadsRecursive(Value *V, LoadOps &LOps, const DataLayout &DL,
   if (match(V, m_OneUse(m_c_Or(
                    m_Value(X),
                    m_OneUse(m_Shl(m_OneUse(m_ZExt(m_OneUse(m_Instruction(L2)))),
-                                  m_Value(ShAmt2)))))) ||
+                                  m_APInt(ShAmt2)))))) ||
       match(V, m_OneUse(m_Or(m_Value(X),
                              m_OneUse(m_ZExt(m_OneUse(m_Instruction(L2)))))))) {
     if (!foldLoadsRecursive(X, LOps, DL, AA) && LOps.FoundRoot)
@@ -640,11 +597,11 @@ static bool foldLoadsRecursive(Value *V, LoadOps &LOps, const DataLayout &DL,
 
   // Check if the pattern has loads
   LoadInst *LI1 = LOps.Root;
-  Value *ShAmt1 = LOps.Shift;
+  const APInt *ShAmt1 = LOps.Shift;
   if (LOps.FoundRoot == false &&
       (match(X, m_OneUse(m_ZExt(m_Instruction(L1)))) ||
        match(X, m_OneUse(m_Shl(m_OneUse(m_ZExt(m_OneUse(m_Instruction(L1)))),
-                               m_Value(ShAmt1)))))) {
+                               m_APInt(ShAmt1)))))) {
     LI1 = dyn_cast<LoadInst>(L1);
   }
   LoadInst *LI2 = dyn_cast<LoadInst>(L2);
@@ -719,12 +676,11 @@ static bool foldLoadsRecursive(Value *V, LoadOps &LOps, const DataLayout &DL,
     std::swap(ShAmt1, ShAmt2);
 
   // Find Shifts values.
-  const APInt *Temp;
   uint64_t Shift1 = 0, Shift2 = 0;
-  if (ShAmt1 && match(ShAmt1, m_APInt(Temp)))
-    Shift1 = Temp->getZExtValue();
-  if (ShAmt2 && match(ShAmt2, m_APInt(Temp)))
-    Shift2 = Temp->getZExtValue();
+  if (ShAmt1)
+    Shift1 = ShAmt1->getZExtValue();
+  if (ShAmt2)
+    Shift2 = ShAmt2->getZExtValue();
 
   // First load is always LI1. This is where we put the new load.
   // Use the merged load size available from LI1 for forward loads.
@@ -766,7 +722,8 @@ static bool foldLoadsRecursive(Value *V, LoadOps &LOps, const DataLayout &DL,
 // pattern which suggests that the loads can be combined. The one and only use
 // of the loads is to form a wider load.
 static bool foldConsecutiveLoads(Instruction &I, const DataLayout &DL,
-                                 TargetTransformInfo &TTI, AliasAnalysis &AA) {
+                                 TargetTransformInfo &TTI, AliasAnalysis &AA,
+                                 const DominatorTree &DT) {
   // Only consider load chains of scalar values.
   if (isa<VectorType>(I.getType()))
     return false;
@@ -791,17 +748,18 @@ static bool foldConsecutiveLoads(Instruction &I, const DataLayout &DL,
   if (!Allowed || !Fast)
     return false;
 
-  // Make sure the Load pointer of type GEP/non-GEP is above insert point
-  Instruction *Inst = dyn_cast<Instruction>(LI1->getPointerOperand());
-  if (Inst && Inst->getParent() == LI1->getParent() &&
-      !Inst->comesBefore(LOps.RootInsert))
-    Inst->moveBefore(LOps.RootInsert);
-
-  // New load can be generated
+  // Get the Index and Ptr for the new GEP.
   Value *Load1Ptr = LI1->getPointerOperand();
   Builder.SetInsertPoint(LOps.RootInsert);
-  Value *NewPtr = Builder.CreateBitCast(Load1Ptr, WiderType->getPointerTo(AS));
-  NewLoad = Builder.CreateAlignedLoad(WiderType, NewPtr, LI1->getAlign(),
+  if (!DT.dominates(Load1Ptr, LOps.RootInsert)) {
+    APInt Offset1(DL.getIndexTypeSizeInBits(Load1Ptr->getType()), 0);
+    Load1Ptr = Load1Ptr->stripAndAccumulateConstantOffsets(
+        DL, Offset1, /* AllowNonInbounds */ true);
+    Load1Ptr = Builder.CreateGEP(Builder.getInt8Ty(), Load1Ptr,
+                                 Builder.getInt32(Offset1.getZExtValue()));
+  }
+  // Generate wider load.
+  NewLoad = Builder.CreateAlignedLoad(WiderType, Load1Ptr, LI1->getAlign(),
                                       LI1->isVolatile(), "");
   NewLoad->takeName(LI1);
   // Set the New Load AATags Metadata.
@@ -816,10 +774,52 @@ static bool foldConsecutiveLoads(Instruction &I, const DataLayout &DL,
   // Check if shift needed. We need to shift with the amount of load1
   // shift if not zero.
   if (LOps.Shift)
-    NewOp = Builder.CreateShl(NewOp, LOps.Shift);
+    NewOp = Builder.CreateShl(NewOp, ConstantInt::get(I.getContext(), *LOps.Shift));
   I.replaceAllUsesWith(NewOp);
 
   return true;
+}
+
+// Calculate GEP Stride and accumulated const ModOffset. Return Stride and
+// ModOffset
+static std::pair<APInt, APInt>
+getStrideAndModOffsetOfGEP(Value *PtrOp, const DataLayout &DL) {
+  unsigned BW = DL.getIndexTypeSizeInBits(PtrOp->getType());
+  std::optional<APInt> Stride;
+  APInt ModOffset(BW, 0);
+  // Return a minimum gep stride, greatest common divisor of consective gep
+  // index scales(c.f. Bézout's identity).
+  while (auto *GEP = dyn_cast<GEPOperator>(PtrOp)) {
+    MapVector<Value *, APInt> VarOffsets;
+    if (!GEP->collectOffset(DL, BW, VarOffsets, ModOffset))
+      break;
+
+    for (auto [V, Scale] : VarOffsets) {
+      // Only keep a power of two factor for non-inbounds
+      if (!GEP->isInBounds())
+        Scale = APInt::getOneBitSet(Scale.getBitWidth(), Scale.countr_zero());
+
+      if (!Stride)
+        Stride = Scale;
+      else
+        Stride = APIntOps::GreatestCommonDivisor(*Stride, Scale);
+    }
+
+    PtrOp = GEP->getPointerOperand();
+  }
+
+  // Check whether pointer arrives back at Global Variable via at least one GEP.
+  // Even if it doesn't, we can check by alignment.
+  if (!isa<GlobalVariable>(PtrOp) || !Stride)
+    return {APInt(BW, 1), APInt(BW, 0)};
+
+  // In consideration of signed GEP indices, non-negligible offset become
+  // remainder of division by minimum GEP stride.
+  ModOffset = ModOffset.srem(*Stride);
+  if (ModOffset.isNegative())
+    ModOffset += *Stride;
+
+  return {*Stride, ModOffset};
 }
 
 /// If C is a constant patterned array and all valid loaded results for given
@@ -836,29 +836,24 @@ static bool foldPatternedLoads(Instruction &I, const DataLayout &DL) {
   if (!GV || !GV->isConstant() || !GV->hasDefinitiveInitializer())
     return false;
 
-  Type *LoadTy = LI->getType();
-  Constant *C = GV->getInitializer();
-
   // Bail for large initializers in excess of 4K to avoid too many scans.
+  Constant *C = GV->getInitializer();
   uint64_t GVSize = DL.getTypeAllocSize(C->getType());
   if (!GVSize || 4096 < GVSize)
     return false;
 
-  // Check whether pointer arrives back at Global Variable.
-  // If PtrOp is neither GlobalVariable nor GEP, it might not arrive back at
-  // GlobalVariable.
-  // TODO: implement GEP handling
+  Type *LoadTy = LI->getType();
   unsigned BW = DL.getIndexTypeSizeInBits(PtrOp->getType());
-  // TODO: Determine stride based on GEPs.
-  APInt Stride(BW, 1);
-  APInt ConstOffset(BW, 0);
+  auto [Stride, ConstOffset] = getStrideAndModOffsetOfGEP(PtrOp, DL);
 
   // Any possible offset could be multiple of GEP stride. And any valid
   // offset is multiple of load alignment, so checking only multiples of bigger
   // one is sufficient to say results' equality.
   if (auto LA = LI->getAlign();
-      LA <= GV->getAlign().valueOrOne() && Stride.getZExtValue() < LA.value())
+      LA <= GV->getAlign().valueOrOne() && Stride.getZExtValue() < LA.value()) {
+    ConstOffset = APInt(BW, 0);
     Stride = APInt(BW, LA.value());
+  }
 
   Constant *Ca = ConstantFoldLoadFromConst(C, LoadTy, ConstOffset, DL);
   if (!Ca)
@@ -874,12 +869,159 @@ static bool foldPatternedLoads(Instruction &I, const DataLayout &DL) {
   return true;
 }
 
+/// Try to replace a mathlib call to sqrt with the LLVM intrinsic. This avoids
+/// pessimistic codegen that has to account for setting errno and can enable
+/// vectorization.
+static bool foldSqrt(CallInst *Call, TargetTransformInfo &TTI,
+                     TargetLibraryInfo &TLI, AssumptionCache &AC,
+                     DominatorTree &DT) {
+  Module *M = Call->getModule();
+
+  // If (1) this is a sqrt libcall, (2) we can assume that NAN is not created
+  // (because NNAN or the operand arg must not be less than -0.0) and (2) we
+  // would not end up lowering to a libcall anyway (which could change the value
+  // of errno), then:
+  // (1) errno won't be set.
+  // (2) it is safe to convert this to an intrinsic call.
+  Type *Ty = Call->getType();
+  Value *Arg = Call->getArgOperand(0);
+  if (TTI.haveFastSqrt(Ty) &&
+      (Call->hasNoNaNs() ||
+       cannotBeOrderedLessThanZero(Arg, M->getDataLayout(), &TLI, 0, &AC, Call,
+                                   &DT))) {
+    IRBuilder<> Builder(Call);
+    IRBuilderBase::FastMathFlagGuard Guard(Builder);
+    Builder.setFastMathFlags(Call->getFastMathFlags());
+
+    Function *Sqrt = Intrinsic::getDeclaration(M, Intrinsic::sqrt, Ty);
+    Value *NewSqrt = Builder.CreateCall(Sqrt, Arg, "sqrt");
+    Call->replaceAllUsesWith(NewSqrt);
+
+    // Explicitly erase the old call because a call with side effects is not
+    // trivially dead.
+    Call->eraseFromParent();
+    return true;
+  }
+
+  return false;
+}
+
+/// Try to expand strcmp(P, "x") calls.
+static bool expandStrcmp(CallInst *CI, DominatorTree &DT, bool &MadeCFGChange) {
+  Value *Str1P = CI->getArgOperand(0), *Str2P = CI->getArgOperand(1);
+
+  // Trivial cases are optimized during inst combine
+  if (Str1P == Str2P)
+    return false;
+
+  StringRef Str1, Str2;
+  bool HasStr1 = getConstantStringInfo(Str1P, Str1);
+  bool HasStr2 = getConstantStringInfo(Str2P, Str2);
+
+  Value *NonConstantP = nullptr;
+  StringRef ConstantStr;
+
+  if (!HasStr1 && HasStr2 && Str2.size() == 1) {
+    NonConstantP = Str1P;
+    ConstantStr = Str2;
+  } else if (!HasStr2 && HasStr1 && Str1.size() == 1) {
+    NonConstantP = Str2P;
+    ConstantStr = Str1;
+  } else {
+    return false;
+  }
+
+  // Check if strcmp result is only used in a comparison with zero
+  if (!isOnlyUsedInZeroComparison(CI))
+    return false;
+
+  // For strcmp(P, "x") do the following transformation:
+  //
+  // (before)
+  // dst = strcmp(P, "x")
+  //
+  // (after)
+  // v0 = P[0] - 'x'
+  // [if v0 == 0]
+  //   v1 = P[1]
+  // dst = phi(v0, v1)
+  //
+
+  IRBuilder<> B(CI->getParent());
+  DomTreeUpdater DTU(DT, DomTreeUpdater::UpdateStrategy::Lazy);
+
+  Type *RetType = CI->getType();
+
+  B.SetInsertPoint(CI);
+  BasicBlock *InitialBB = B.GetInsertBlock();
+  Value *Str1FirstCharacterValue =
+      B.CreateZExt(B.CreateLoad(B.getInt8Ty(), NonConstantP), RetType);
+  Value *Str2FirstCharacterValue =
+      ConstantInt::get(RetType, static_cast<unsigned char>(ConstantStr[0]));
+  Value *FirstCharacterSub =
+      B.CreateNSWSub(Str1FirstCharacterValue, Str2FirstCharacterValue);
+  Value *IsFirstCharacterSubZero =
+      B.CreateICmpEQ(FirstCharacterSub, ConstantInt::get(RetType, 0));
+  Instruction *IsFirstCharacterSubZeroBBTerminator = SplitBlockAndInsertIfThen(
+      IsFirstCharacterSubZero, CI, /*Unreachable*/ false,
+      /*BranchWeights*/ nullptr, &DTU);
+
+  B.SetInsertPoint(IsFirstCharacterSubZeroBBTerminator);
+  B.GetInsertBlock()->setName("strcmp_expand_sub_is_zero");
+  BasicBlock *IsFirstCharacterSubZeroBB = B.GetInsertBlock();
+  Value *Str1SecondCharacterValue = B.CreateZExt(
+      B.CreateLoad(B.getInt8Ty(), B.CreateConstInBoundsGEP1_64(
+                                      B.getInt8Ty(), NonConstantP, 1)),
+      RetType);
+
+  B.SetInsertPoint(CI);
+  B.GetInsertBlock()->setName("strcmp_expand_sub_join");
+
+  PHINode *Result = B.CreatePHI(RetType, 2);
+  Result->addIncoming(FirstCharacterSub, InitialBB);
+  Result->addIncoming(Str1SecondCharacterValue, IsFirstCharacterSubZeroBB);
+
+  CI->replaceAllUsesWith(Result);
+  CI->eraseFromParent();
+
+  MadeCFGChange = true;
+
+  return true;
+}
+
+static bool foldLibraryCalls(Instruction &I, TargetTransformInfo &TTI,
+                             TargetLibraryInfo &TLI, DominatorTree &DT,
+                             AssumptionCache &AC, bool &MadeCFGChange) {
+  CallInst *CI = dyn_cast<CallInst>(&I);
+  if (!CI)
+    return false;
+
+  LibFunc Func;
+  Module *M = I.getModule();
+  if (!TLI.getLibFunc(*CI, Func) || !isLibFuncEmittable(M, &TLI, Func))
+    return false;
+
+  switch (Func) {
+  case LibFunc_sqrt:
+  case LibFunc_sqrtf:
+  case LibFunc_sqrtl:
+    return foldSqrt(CI, TTI, TLI, AC, DT);
+  case LibFunc_strcmp:
+    return expandStrcmp(CI, DT, MadeCFGChange);
+  default:
+    break;
+  }
+
+  return false;
+}
+
 /// This is the entry point for folds that could be implemented in regular
 /// InstCombine, but they are separated because they are not expected to
 /// occur frequently and/or have more than a constant-length pattern match.
 static bool foldUnusualPatterns(Function &F, DominatorTree &DT,
                                 TargetTransformInfo &TTI,
-                                TargetLibraryInfo &TLI, AliasAnalysis &AA) {
+                                TargetLibraryInfo &TLI, AliasAnalysis &AA,
+                                AssumptionCache &AC, bool &MadeCFGChange) {
   bool MadeChange = false;
   for (BasicBlock &BB : F) {
     // Ignore unreachable basic blocks.
@@ -899,12 +1041,12 @@ static bool foldUnusualPatterns(Function &F, DominatorTree &DT,
       MadeChange |= tryToRecognizePopCount(I);
       MadeChange |= tryToFPToSat(I, TTI);
       MadeChange |= tryToRecognizeTableBasedCttz(I);
-      MadeChange |= foldConsecutiveLoads(I, DL, TTI, AA);
+      MadeChange |= foldConsecutiveLoads(I, DL, TTI, AA, DT);
       MadeChange |= foldPatternedLoads(I, DL);
       // NOTE: This function introduces erasing of the instruction `I`, so it
       // needs to be called at the end of this sequence, otherwise we may make
       // bugs.
-      MadeChange |= foldSqrt(I, TTI, TLI);
+      MadeChange |= foldLibraryCalls(I, TTI, TLI, DT, AC, MadeCFGChange);
     }
   }
 
@@ -920,12 +1062,12 @@ static bool foldUnusualPatterns(Function &F, DominatorTree &DT,
 /// handled in the callers of this function.
 static bool runImpl(Function &F, AssumptionCache &AC, TargetTransformInfo &TTI,
                     TargetLibraryInfo &TLI, DominatorTree &DT,
-                    AliasAnalysis &AA) {
+                    AliasAnalysis &AA, bool &ChangedCFG) {
   bool MadeChange = false;
   const DataLayout &DL = F.getParent()->getDataLayout();
   TruncInstCombine TIC(AC, TLI, DL, DT);
   MadeChange |= TIC.run(F);
-  MadeChange |= foldUnusualPatterns(F, DT, TTI, TLI, AA);
+  MadeChange |= foldUnusualPatterns(F, DT, TTI, TLI, AA, AC, ChangedCFG);
   return MadeChange;
 }
 
@@ -936,12 +1078,21 @@ PreservedAnalyses AggressiveInstCombinePass::run(Function &F,
   auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
   auto &TTI = AM.getResult<TargetIRAnalysis>(F);
   auto &AA = AM.getResult<AAManager>(F);
-  if (!runImpl(F, AC, TTI, TLI, DT, AA)) {
+
+  bool MadeCFGChange = false;
+
+  if (!runImpl(F, AC, TTI, TLI, DT, AA, MadeCFGChange)) {
     // No changes, all analyses are preserved.
     return PreservedAnalyses::all();
   }
+
   // Mark all the analyses that instcombine updates as preserved.
   PreservedAnalyses PA;
-  PA.preserveSet<CFGAnalyses>();
+
+  if (MadeCFGChange)
+    PA.preserve<DominatorTreeAnalysis>();
+  else
+    PA.preserveSet<CFGAnalyses>();
+
   return PA;
 }

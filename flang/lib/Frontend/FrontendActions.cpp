@@ -23,6 +23,7 @@
 #include "flang/Optimizer/Dialect/Support/KindMapping.h"
 #include "flang/Optimizer/Support/InitFIR.h"
 #include "flang/Optimizer/Support/Utils.h"
+#include "flang/Optimizer/Transforms/Passes.h"
 #include "flang/Parser/dump-parse-tree.h"
 #include "flang/Parser/parsing.h"
 #include "flang/Parser/provenance.h"
@@ -281,10 +282,12 @@ bool CodeGenAction::beginSourceFileAction() {
 
   if (ci.getInvocation().getFrontendOpts().features.IsEnabled(
           Fortran::common::LanguageFeature::OpenMP)) {
-    setOffloadModuleInterfaceAttributes(
-        *mlirModule, ci.getInvocation().getLangOpts().OpenMPIsDevice);
+    setOffloadModuleInterfaceAttributes(*mlirModule,
+                                        ci.getInvocation().getLangOpts());
     setOffloadModuleInterfaceTargetAttribute(*mlirModule, tm->getTargetCPU(),
                                              tm->getTargetFeatureString());
+    setOpenMPVersionAttribute(*mlirModule,
+                              ci.getInvocation().getLangOpts().OpenMPVersion);
   }
 
   const llvm::DataLayout &dl = tm->createDataLayout();
@@ -297,6 +300,27 @@ bool CodeGenAction::beginSourceFileAction() {
   // run the default passes.
   mlir::PassManager pm((*mlirModule)->getName(),
                        mlir::OpPassManager::Nesting::Implicit);
+  // Add OpenMP-related passes
+  // WARNING: These passes must be run immediately after the lowering to ensure
+  // that the FIR is correct with respect to OpenMP operations/attributes.
+  if (ci.getInvocation().getFrontendOpts().features.IsEnabled(
+          Fortran::common::LanguageFeature::OpenMP)) {
+    bool isDevice = false;
+    if (auto offloadMod = llvm::dyn_cast<mlir::omp::OffloadModuleInterface>(
+            mlirModule->getOperation()))
+      isDevice = offloadMod.getIsTargetDevice();
+
+    pm.addPass(fir::createOMPMarkDeclareTargetPass());
+    if (isDevice) {
+      pm.addPass(fir::createOMPEarlyOutliningPass());
+      // FIXME: This should eventually be moved out of the
+      // if, so that it also functions for host, however,
+      // we must fix the filtering to function reasonably
+      // for host first.  
+      pm.addPass(fir::createOMPFunctionFilteringPass());
+    }
+  }
+
   pm.enableVerifier(/*verifyPasses=*/true);
   pm.addPass(std::make_unique<Fortran::lower::VerifierPass>());
 
@@ -604,10 +628,10 @@ void GetDefinitionAction::executeAction() {
   }
 
   llvm::outs() << "Found symbol name: " << symbol->name().ToString() << "\n";
-  llvm::outs() << symbol->name().ToString() << ": "
-               << sourceInfo->first.file.path() << ", "
-               << sourceInfo->first.line << ", " << sourceInfo->first.column
-               << "-" << sourceInfo->second.column << "\n";
+  llvm::outs() << symbol->name().ToString() << ": " << sourceInfo->first.path
+               << ", " << sourceInfo->first.line << ", "
+               << sourceInfo->first.column << "-" << sourceInfo->second.column
+               << "\n";
 }
 
 void GetSymbolsSourcesAction::executeAction() {
@@ -645,6 +669,34 @@ mapToLevel(const Fortran::frontend::CodeGenOptions &opts) {
   }
 }
 
+// Lower using HLFIR then run the FIR to HLFIR pipeline
+void CodeGenAction::lowerHLFIRToFIR() {
+  assert(mlirModule && "The MLIR module has not been generated yet.");
+
+  CompilerInstance &ci = this->getInstance();
+  auto opts = ci.getInvocation().getCodeGenOpts();
+  llvm::OptimizationLevel level = mapToLevel(opts);
+
+  fir::support::loadDialects(*mlirCtx);
+
+  // Set-up the MLIR pass manager
+  mlir::PassManager pm((*mlirModule)->getName(),
+                       mlir::OpPassManager::Nesting::Implicit);
+
+  pm.addPass(std::make_unique<Fortran::lower::VerifierPass>());
+  pm.enableVerifier(/*verifyPasses=*/true);
+
+  // Create the pass pipeline
+  fir::createHLFIRToFIRPassPipeline(pm, level);
+  (void)mlir::applyPassManagerCLOptions(pm);
+
+  if (!mlir::succeeded(pm.run(*mlirModule))) {
+    unsigned diagID = ci.getDiagnostics().getCustomDiagID(
+        clang::DiagnosticsEngine::Error, "Lowering to FIR failed");
+    ci.getDiagnostics().Report(diagID);
+  }
+}
+
 // Lower the previously generated MLIR module into an LLVM IR module
 void CodeGenAction::generateLLVMIR() {
   assert(mlirModule && "The MLIR module has not been generated yet.");
@@ -665,7 +717,8 @@ void CodeGenAction::generateLLVMIR() {
 
   // Create the pass pipeline
   fir::createMLIRToLLVMPassPipeline(pm, level, opts.StackArrays,
-                                    opts.Underscoring, opts.getDebugInfo());
+                                    opts.Underscoring, opts.LoopVersioning,
+                                    opts.getDebugInfo());
   (void)mlir::applyPassManagerCLOptions(pm);
 
   // run the pass manager
@@ -704,7 +757,6 @@ void CodeGenAction::generateLLVMIR() {
       llvmModule->setPIELevel(
           static_cast<llvm::PIELevel::Level>(opts.PICLevel));
   }
-
 }
 
 bool CodeGenAction::setUpTargetMachine() {
@@ -749,7 +801,9 @@ getOutputStream(CompilerInstance &ci, llvm::StringRef inFile,
   case BackendActionTy::Backend_EmitLL:
     return ci.createDefaultOutputFile(
         /*Binary=*/false, inFile, /*extension=*/"ll");
-  case BackendActionTy::Backend_EmitMLIR:
+  case BackendActionTy::Backend_EmitFIR:
+    LLVM_FALLTHROUGH;
+  case BackendActionTy::Backend_EmitHLFIR:
     return ci.createDefaultOutputFile(
         /*Binary=*/false, inFile, /*extension=*/"mlir");
   case BackendActionTy::Backend_EmitBC:
@@ -912,7 +966,17 @@ void CodeGenAction::executeAction() {
     }
   }
 
-  if (action == BackendActionTy::Backend_EmitMLIR) {
+  if (action == BackendActionTy::Backend_EmitFIR) {
+    if (ci.getInvocation().getLoweringOpts().getLowerToHighLevelFIR()) {
+      lowerHLFIRToFIR();
+    }
+    mlirModule->print(ci.isOutputStreamNull() ? *os : ci.getOutputStream());
+    return;
+  }
+
+  if (action == BackendActionTy::Backend_EmitHLFIR) {
+    assert(ci.getInvocation().getLoweringOpts().getLowerToHighLevelFIR() &&
+           "Lowering must have been configured to emit HLFIR");
     mlirModule->print(ci.isOutputStreamNull() ? *os : ci.getOutputStream());
     return;
   }

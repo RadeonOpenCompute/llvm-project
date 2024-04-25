@@ -27,6 +27,7 @@
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Analysis/VectorUtils.h"
+#include "llvm/IR/AttributeMask.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constant.h"
@@ -536,6 +537,10 @@ static Instruction *foldCttzCtlz(IntrinsicInst &II, InstCombinerImpl &IC) {
     if (match(Op0, m_Neg(m_Value(X))))
       return IC.replaceOperand(II, 0, X);
 
+    // cttz(-x & x) -> cttz(x)
+    if (match(Op0, m_c_And(m_Neg(m_Value(X)), m_Deferred(X))))
+      return IC.replaceOperand(II, 0, X);
+
     // cttz(sext(x)) -> cttz(zext(x))
     if (match(Op0, m_OneUse(m_SExt(m_Value(X))))) {
       auto *Zext = IC.Builder.CreateZExt(X, II.getType());
@@ -813,22 +818,75 @@ InstCombinerImpl::foldIntrinsicWithOverflowCommon(IntrinsicInst *II) {
   return nullptr;
 }
 
-/// \returns true if the test performed by llvm.is.fpclass(x, \p Mask) is
-/// equivalent to fcmp oeq x, 0.0 with the floating-point environment assumed
-/// for \p F for type \p Ty
-static bool fpclassTestIsFCmp0(FPClassTest Mask, const Function &F, Type *Ty) {
-  if (Mask == fcZero)
-    return F.getDenormalMode(Ty->getScalarType()->getFltSemantics()).Input ==
-           DenormalMode::IEEE;
+static bool inputDenormalIsIEEE(const Function &F, const Type *Ty) {
+  Ty = Ty->getScalarType();
+  return F.getDenormalMode(Ty->getFltSemantics()).Input == DenormalMode::IEEE;
+}
 
-  if (Mask == (fcZero | fcSubnormal)) {
-    DenormalMode::DenormalModeKind InputMode =
-        F.getDenormalMode(Ty->getScalarType()->getFltSemantics()).Input;
-    return InputMode == DenormalMode::PreserveSign ||
-           InputMode == DenormalMode::PositiveZero;
+static bool inputDenormalIsDAZ(const Function &F, const Type *Ty) {
+  Ty = Ty->getScalarType();
+  return F.getDenormalMode(Ty->getFltSemantics()).inputsAreZero();
+}
+
+/// \returns the compare predicate type if the test performed by
+/// llvm.is.fpclass(x, \p Mask) is equivalent to fcmp o__ x, 0.0 with the
+/// floating-point environment assumed for \p F for type \p Ty
+static FCmpInst::Predicate fpclassTestIsFCmp0(FPClassTest Mask,
+                                              const Function &F, Type *Ty) {
+  switch (static_cast<unsigned>(Mask)) {
+  case fcZero:
+    if (inputDenormalIsIEEE(F, Ty))
+      return FCmpInst::FCMP_OEQ;
+    break;
+  case fcZero | fcSubnormal:
+    if (inputDenormalIsDAZ(F, Ty))
+      return FCmpInst::FCMP_OEQ;
+    break;
+  case fcPositive | fcNegZero:
+    if (inputDenormalIsIEEE(F, Ty))
+      return FCmpInst::FCMP_OGE;
+    break;
+  case fcPositive | fcNegZero | fcNegSubnormal:
+    if (inputDenormalIsDAZ(F, Ty))
+      return FCmpInst::FCMP_OGE;
+    break;
+  case fcPosSubnormal | fcPosNormal | fcPosInf:
+    if (inputDenormalIsIEEE(F, Ty))
+      return FCmpInst::FCMP_OGT;
+    break;
+  case fcNegative | fcPosZero:
+    if (inputDenormalIsIEEE(F, Ty))
+      return FCmpInst::FCMP_OLE;
+    break;
+  case fcNegative | fcPosZero | fcPosSubnormal:
+    if (inputDenormalIsDAZ(F, Ty))
+      return FCmpInst::FCMP_OLE;
+    break;
+  case fcNegSubnormal | fcNegNormal | fcNegInf:
+    if (inputDenormalIsIEEE(F, Ty))
+      return FCmpInst::FCMP_OLT;
+    break;
+  case fcPosNormal | fcPosInf:
+    if (inputDenormalIsDAZ(F, Ty))
+      return FCmpInst::FCMP_OGT;
+    break;
+  case fcNegNormal | fcNegInf:
+    if (inputDenormalIsDAZ(F, Ty))
+      return FCmpInst::FCMP_OLT;
+    break;
+  case ~fcZero & ~fcNan:
+    if (inputDenormalIsIEEE(F, Ty))
+      return FCmpInst::FCMP_ONE;
+    break;
+  case ~(fcZero | fcSubnormal) & ~fcNan:
+    if (inputDenormalIsDAZ(F, Ty))
+      return FCmpInst::FCMP_ONE;
+    break;
+  default:
+    break;
   }
 
-  return false;
+  return FCmpInst::BAD_FCMP_PREDICATE;
 }
 
 Instruction *InstCombinerImpl::foldIntrinsicIsFPClass(IntrinsicInst &II) {
@@ -905,52 +963,52 @@ Instruction *InstCombinerImpl::foldIntrinsicIsFPClass(IntrinsicInst &II) {
     return replaceInstUsesWith(II, FCmp);
   }
 
+  FCmpInst::Predicate PredType = FCmpInst::BAD_FCMP_PREDICATE;
+
+  // Try to replace with an fcmp with 0
+  //
+  // is.fpclass(x, fcZero) -> fcmp oeq x, 0.0
+  // is.fpclass(x, fcZero | fcNan) -> fcmp ueq x, 0.0
+  // is.fpclass(x, ~fcZero & ~fcNan) -> fcmp one x, 0.0
+  // is.fpclass(x, ~fcZero) -> fcmp une x, 0.0
+  //
+  // is.fpclass(x, fcPosSubnormal | fcPosNormal | fcPosInf) -> fcmp ogt x, 0.0
+  // is.fpclass(x, fcPositive | fcNegZero) -> fcmp oge x, 0.0
+  //
+  // is.fpclass(x, fcNegSubnormal | fcNegNormal | fcNegInf) -> fcmp olt x, 0.0
+  // is.fpclass(x, fcNegative | fcPosZero) -> fcmp ole x, 0.0
+  //
   if (!IsStrict && (IsOrdered || IsUnordered) &&
-      fpclassTestIsFCmp0(OrderedMask, *II.getFunction(), Src0->getType())) {
+      (PredType = fpclassTestIsFCmp0(OrderedMask, *II.getFunction(),
+                                     Src0->getType())) !=
+          FCmpInst::BAD_FCMP_PREDICATE) {
     Constant *Zero = ConstantFP::getZero(Src0->getType());
     // Equivalent of == 0.
-    Value *FCmp = IsUnordered ? Builder.CreateFCmpUEQ(Src0, Zero)
-                              : Builder.CreateFCmpOEQ(Src0, Zero);
-    FCmp->takeName(&II);
-    return replaceInstUsesWith(II, FCmp);
-  }
-
-  if (!IsStrict && (IsOrdered || IsUnordered) &&
-      fpclassTestIsFCmp0(OrderedInvertedMask, *II.getFunction(),
-                         Src0->getType())) {
-    Constant *Zero = ConstantFP::getZero(Src0->getType());
-
-    // Equivalent of !(x == 0).
-    Value *FCmp = IsUnordered ? Builder.CreateFCmpUNE(Src0, Zero)
-                              : Builder.CreateFCmpONE(Src0, Zero);
+    Value *FCmp = Builder.CreateFCmp(
+        IsUnordered ? FCmpInst::getUnorderedPredicate(PredType) : PredType,
+        Src0, Zero);
 
     FCmp->takeName(&II);
     return replaceInstUsesWith(II, FCmp);
   }
 
+  KnownFPClass Known = computeKnownFPClass(
+      Src0, DL, Mask, 0, &getTargetLibraryInfo(), &AC, &II, &DT);
+
+  // Clear test bits we know must be false from the source value.
   // fp_class (nnan x), qnan|snan|other -> fp_class (nnan x), other
-  if ((Mask & fcNan) && isKnownNeverNaN(Src0, &getTargetLibraryInfo())) {
-    II.setArgOperand(1, ConstantInt::get(Src1->getType(), Mask & ~fcNan));
-    return &II;
-  }
-
-  // fp_class (nnan x), ~(qnan|snan) -> true
-  if (Mask == (~fcNan & fcAllFlags) &&
-      isKnownNeverNaN(Src0, &getTargetLibraryInfo())) {
-    return replaceInstUsesWith(II, ConstantInt::get(II.getType(), true));
-  }
-
   // fp_class (ninf x), ninf|pinf|other -> fp_class (ninf x), other
-  if ((Mask & fcInf) && isKnownNeverInfinity(Src0, &getTargetLibraryInfo())) {
-    II.setArgOperand(1, ConstantInt::get(Src1->getType(), Mask & ~fcInf));
+  if ((Mask & Known.KnownFPClasses) != Mask) {
+    II.setArgOperand(
+        1, ConstantInt::get(Src1->getType(), Mask & Known.KnownFPClasses));
     return &II;
   }
 
+  // If none of the tests which can return false are possible, fold to true.
+  // fp_class (nnan x), ~(qnan|snan) -> true
   // fp_class (ninf x), ~(ninf|pinf) -> true
-  if (Mask == (~fcInf & fcAllFlags) &&
-      isKnownNeverInfinity(Src0, &getTargetLibraryInfo())) {
+  if (Mask == Known.KnownFPClasses)
     return replaceInstUsesWith(II, ConstantInt::get(II.getType(), true));
-  }
 
   return nullptr;
 }
@@ -970,6 +1028,19 @@ static std::optional<bool> getKnownSign(Value *Op, Instruction *CxtI,
 
   return isImpliedByDomCondition(
       ICmpInst::ICMP_SLT, Op, Constant::getNullValue(Op->getType()), CxtI, DL);
+}
+
+/// Return true if two values \p Op0 and \p Op1 are known to have the same sign.
+static bool signBitMustBeTheSame(Value *Op0, Value *Op1, Instruction *CxtI,
+                                 const DataLayout &DL, AssumptionCache *AC,
+                                 DominatorTree *DT) {
+  std::optional<bool> Known1 = getKnownSign(Op1, CxtI, DL, AC, DT);
+  if (!Known1)
+    return false;
+  std::optional<bool> Known0 = getKnownSign(Op0, CxtI, DL, AC, DT);
+  if (!Known0)
+    return false;
+  return *Known0 == *Known1;
 }
 
 /// Try to canonicalize min/max(X + C0, C1) as min/max(X, C1 - C0) + C0. This
@@ -1272,6 +1343,45 @@ foldShuffledIntrinsicOperands(IntrinsicInst *II,
   return new ShuffleVectorInst(NewIntrinsic, Mask);
 }
 
+/// Fold the following cases and accepts bswap and bitreverse intrinsics:
+///   bswap(logic_op(bswap(x), y)) --> logic_op(x, bswap(y))
+///   bswap(logic_op(bswap(x), bswap(y))) --> logic_op(x, y) (ignores multiuse)
+template <Intrinsic::ID IntrID>
+static Instruction *foldBitOrderCrossLogicOp(Value *V,
+                                             InstCombiner::BuilderTy &Builder) {
+  static_assert(IntrID == Intrinsic::bswap || IntrID == Intrinsic::bitreverse,
+                "This helper only supports BSWAP and BITREVERSE intrinsics");
+
+  Value *X, *Y;
+  // Find bitwise logic op. Check that it is a BinaryOperator explicitly so we
+  // don't match ConstantExpr that aren't meaningful for this transform.
+  if (match(V, m_OneUse(m_BitwiseLogic(m_Value(X), m_Value(Y)))) &&
+      isa<BinaryOperator>(V)) {
+    Value *OldReorderX, *OldReorderY;
+    BinaryOperator::BinaryOps Op = cast<BinaryOperator>(V)->getOpcode();
+
+    // If both X and Y are bswap/bitreverse, the transform reduces the number
+    // of instructions even if there's multiuse.
+    // If only one operand is bswap/bitreverse, we need to ensure the operand
+    // have only one use.
+    if (match(X, m_Intrinsic<IntrID>(m_Value(OldReorderX))) &&
+        match(Y, m_Intrinsic<IntrID>(m_Value(OldReorderY)))) {
+      return BinaryOperator::Create(Op, OldReorderX, OldReorderY);
+    }
+
+    if (match(X, m_OneUse(m_Intrinsic<IntrID>(m_Value(OldReorderX))))) {
+      Value *NewReorder = Builder.CreateUnaryIntrinsic(IntrID, Y);
+      return BinaryOperator::Create(Op, OldReorderX, NewReorder);
+    }
+
+    if (match(Y, m_OneUse(m_Intrinsic<IntrID>(m_Value(OldReorderY))))) {
+      Value *NewReorder = Builder.CreateUnaryIntrinsic(IntrID, X);
+      return BinaryOperator::Create(Op, NewReorder, OldReorderY);
+    }
+  }
+  return nullptr;
+}
+
 /// CallInst simplification. This mostly only handles folding of intrinsic
 /// instructions. For normal calls, it allows visitCallBase to do the heavy
 /// lifting.
@@ -1305,7 +1415,7 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
   // not a multiple of element size then behavior is undefined.
   if (auto *AMI = dyn_cast<AtomicMemIntrinsic>(II))
     if (ConstantInt *NumBytes = dyn_cast<ConstantInt>(AMI->getLength()))
-      if (NumBytes->getSExtValue() < 0 ||
+      if (NumBytes->isNegative() ||
           (NumBytes->getZExtValue() % AMI->getElementSizeInBytes() != 0)) {
         CreateNonTerminatorUnreachable(AMI);
         assert(AMI->getType()->isVoidTy() &&
@@ -1396,10 +1506,16 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
 
   Intrinsic::ID IID = II->getIntrinsicID();
   switch (IID) {
-  case Intrinsic::objectsize:
-    if (Value *V = lowerObjectSizeCall(II, DL, &TLI, AA, /*MustSucceed=*/false))
+  case Intrinsic::objectsize: {
+    SmallVector<Instruction *> InsertedInstructions;
+    if (Value *V = lowerObjectSizeCall(II, DL, &TLI, AA, /*MustSucceed=*/false,
+                                       &InsertedInstructions)) {
+      for (Instruction *Inserted : InsertedInstructions)
+        Worklist.add(Inserted);
       return replaceInstUsesWith(CI, V);
+    }
     return nullptr;
+  }
   case Intrinsic::abs: {
     Value *IIOperand = II->getArgOperand(0);
     bool IntMinIsPoison = cast<Constant>(II->getArgOperand(1))->isOneValue();
@@ -1617,15 +1733,21 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
     break;
   }
   case Intrinsic::bitreverse: {
+    Value *IIOperand = II->getArgOperand(0);
     // bitrev (zext i1 X to ?) --> X ? SignBitC : 0
     Value *X;
-    if (match(II->getArgOperand(0), m_ZExt(m_Value(X))) &&
+    if (match(IIOperand, m_ZExt(m_Value(X))) &&
         X->getType()->isIntOrIntVectorTy(1)) {
       Type *Ty = II->getType();
       APInt SignBit = APInt::getSignMask(Ty->getScalarSizeInBits());
       return SelectInst::Create(X, ConstantInt::get(Ty, SignBit),
                                 ConstantInt::getNullValue(Ty));
     }
+
+    if (Instruction *crossLogicOpFold =
+        foldBitOrderCrossLogicOp<Intrinsic::bitreverse>(IIOperand, Builder))
+      return crossLogicOpFold;
+
     break;
   }
   case Intrinsic::bswap: {
@@ -1675,6 +1797,12 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
       Value *V = Builder.CreateLShr(X, CV);
       return new TruncInst(V, IIOperand->getType());
     }
+
+    if (Instruction *crossLogicOpFold =
+            foldBitOrderCrossLogicOp<Intrinsic::bswap>(IIOperand, Builder)) {
+      return crossLogicOpFold;
+    }
+
     break;
   }
   case Intrinsic::masked_load:
@@ -2151,7 +2279,7 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
   }
   case Intrinsic::copysign: {
     Value *Mag = II->getArgOperand(0), *Sign = II->getArgOperand(1);
-    if (SignBitMustBeZero(Sign, &TLI)) {
+    if (SignBitMustBeZero(Sign, DL, &TLI)) {
       // If we know that the sign argument is positive, reduce to FABS:
       // copysign Mag, +Sign --> fabs Mag
       Value *Fabs = Builder.CreateUnaryIntrinsic(Intrinsic::fabs, Mag, II);
@@ -2245,6 +2373,42 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
       FNeg->copyFastMathFlags(II);
       return FNeg;
     }
+    break;
+  }
+  case Intrinsic::ldexp: {
+    // ldexp(ldexp(x, a), b) -> ldexp(x, a + b)
+    //
+    // The danger is if the first ldexp would overflow to infinity or underflow
+    // to zero, but the combined exponent avoids it. We ignore this with
+    // reassoc.
+    //
+    // It's also safe to fold if we know both exponents are >= 0 or <= 0 since
+    // it would just double down on the overflow/underflow which would occur
+    // anyway.
+    //
+    // TODO: Could do better if we had range tracking for the input value
+    // exponent. Also could broaden sign check to cover == 0 case.
+    Value *Src = II->getArgOperand(0);
+    Value *Exp = II->getArgOperand(1);
+    Value *InnerSrc;
+    Value *InnerExp;
+    if (match(Src, m_OneUse(m_Intrinsic<Intrinsic::ldexp>(
+                       m_Value(InnerSrc), m_Value(InnerExp)))) &&
+        Exp->getType() == InnerExp->getType()) {
+      FastMathFlags FMF = II->getFastMathFlags();
+      FastMathFlags InnerFlags = cast<FPMathOperator>(Src)->getFastMathFlags();
+
+      if ((FMF.allowReassoc() && InnerFlags.allowReassoc()) ||
+          signBitMustBeTheSame(Exp, InnerExp, II, DL, &AC, &DT)) {
+        // TODO: Add nsw/nuw probably safe if integer type exceeds exponent
+        // width.
+        Value *NewExp = Builder.CreateAdd(InnerExp, Exp);
+        II->setArgOperand(1, NewExp);
+        II->setFastMathFlags(InnerFlags); // Or the inner flags.
+        return replaceOperand(*II, 0, InnerSrc);
+      }
+    }
+
     break;
   }
   case Intrinsic::ptrauth_auth:
@@ -2548,6 +2712,7 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
         isValidAssumeForContext(II, LHS, &DT)) {
       MDNode *MD = MDNode::get(II->getContext(), std::nullopt);
       LHS->setMetadata(LLVMContext::MD_nonnull, MD);
+      LHS->setMetadata(LLVMContext::MD_noundef, MD);
       return RemoveConditionFromAssume(II);
 
       // TODO: apply nonnull return attributes to calls and invokes
@@ -2668,6 +2833,12 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
     if (Known.isAllOnes() && isAssumeWithEmptyBundle(cast<AssumeInst>(*II)))
       return eraseInstFromFunction(*II);
 
+    // assume(false) is unreachable.
+    if (match(IIOperand, m_CombineOr(m_Zero(), m_Undef()))) {
+      CreateNonTerminatorUnreachable(II);
+      return eraseInstFromFunction(*II);
+    }
+
     // Update the cache of affected values for this assumption (we might be
     // here because we just simplified the condition).
     AC.updateAffectedValues(cast<AssumeInst>(II));
@@ -2734,7 +2905,7 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
       for (i = 0; i != SubVecNumElts; ++i)
         WidenMask.push_back(i);
       for (; i != VecNumElts; ++i)
-        WidenMask.push_back(UndefMaskElem);
+        WidenMask.push_back(PoisonMaskElem);
 
       Value *WidenShuffle = Builder.CreateShuffleVector(SubVec, WidenMask);
 
@@ -3029,7 +3200,7 @@ Instruction *InstCombinerImpl::visitCallInst(CallInst &CI) {
     int Sz = Mask.size();
     SmallBitVector UsedIndices(Sz);
     for (int Idx : Mask) {
-      if (Idx == UndefMaskElem || UsedIndices.test(Idx))
+      if (Idx == PoisonMaskElem || UsedIndices.test(Idx))
         break;
       UsedIndices.set(Idx);
     }
@@ -3126,49 +3297,6 @@ Instruction *InstCombinerImpl::visitCallBrInst(CallBrInst &CBI) {
   return visitCallBase(CBI);
 }
 
-/// If this cast does not affect the value passed through the varargs area, we
-/// can eliminate the use of the cast.
-static bool isSafeToEliminateVarargsCast(const CallBase &Call,
-                                         const DataLayout &DL,
-                                         const CastInst *const CI,
-                                         const int ix) {
-  if (!CI->isLosslessCast())
-    return false;
-
-  // If this is a GC intrinsic, avoid munging types.  We need types for
-  // statepoint reconstruction in SelectionDAG.
-  // TODO: This is probably something which should be expanded to all
-  // intrinsics since the entire point of intrinsics is that
-  // they are understandable by the optimizer.
-  if (isa<GCStatepointInst>(Call) || isa<GCRelocateInst>(Call) ||
-      isa<GCResultInst>(Call))
-    return false;
-
-  // Opaque pointers are compatible with any byval types.
-  PointerType *SrcTy = cast<PointerType>(CI->getOperand(0)->getType());
-  if (SrcTy->isOpaque())
-    return true;
-
-  // The size of ByVal or InAlloca arguments is derived from the type, so we
-  // can't change to a type with a different size.  If the size were
-  // passed explicitly we could avoid this check.
-  if (!Call.isPassPointeeByValueArgument(ix))
-    return true;
-
-  // The transform currently only handles type replacement for byval, not other
-  // type-carrying attributes.
-  if (!Call.isByValArgument(ix))
-    return false;
-
-  Type *SrcElemTy = SrcTy->getNonOpaquePointerElementType();
-  Type *DstElemTy = Call.getParamByValType(ix);
-  if (!SrcElemTy->isSized() || !DstElemTy->isSized())
-    return false;
-  if (DL.getTypeAllocSize(SrcElemTy) != DL.getTypeAllocSize(DstElemTy))
-    return false;
-  return true;
-}
-
 Instruction *InstCombinerImpl::tryOptimizeCall(CallInst *CI) {
   if (!CI->getCalledFunction()) return nullptr;
 
@@ -3184,7 +3312,7 @@ Instruction *InstCombinerImpl::tryOptimizeCall(CallInst *CI) {
   auto InstCombineErase = [this](Instruction *I) {
     eraseInstFromFunction(*I);
   };
-  LibCallSimplifier Simplifier(DL, &TLI, ORE, BFI, PSI, InstCombineRAUW,
+  LibCallSimplifier Simplifier(DL, &TLI, &AC, ORE, BFI, PSI, InstCombineRAUW,
                                InstCombineErase);
   if (Value *With = Simplifier.optimizeCall(CI, Builder)) {
     ++NumSimplified;
@@ -3416,32 +3544,6 @@ Instruction *InstCombinerImpl::visitCallBase(CallBase &Call) {
 
   if (IntrinsicInst *II = findInitTrampoline(Callee))
     return transformCallThroughTrampoline(Call, *II);
-
-  // TODO: Drop this transform once opaque pointer transition is done.
-  FunctionType *FTy = Call.getFunctionType();
-  if (FTy->isVarArg()) {
-    int ix = FTy->getNumParams();
-    // See if we can optimize any arguments passed through the varargs area of
-    // the call.
-    for (auto I = Call.arg_begin() + FTy->getNumParams(), E = Call.arg_end();
-         I != E; ++I, ++ix) {
-      CastInst *CI = dyn_cast<CastInst>(*I);
-      if (CI && isSafeToEliminateVarargsCast(Call, DL, CI, ix)) {
-        replaceUse(*I, CI->getOperand(0));
-
-        // Update the byval type to match the pointer type.
-        // Not necessary for opaque pointers.
-        PointerType *NewTy = cast<PointerType>(CI->getOperand(0)->getType());
-        if (!NewTy->isOpaque() && Call.isByValArgument(ix)) {
-          Call.removeParamAttr(ix, Attribute::ByVal);
-          Call.addParamAttr(ix, Attribute::getWithByValType(
-                                    Call.getContext(),
-                                    NewTy->getNonOpaquePointerElementType()));
-        }
-        Changed = true;
-      }
-    }
-  }
 
   if (isa<InlineAsm>(Callee) && !Call.doesNotThrow()) {
     InlineAsm *IA = cast<InlineAsm>(Callee);
@@ -3711,24 +3813,6 @@ bool InstCombinerImpl::transformConstExprCastCall(CallBase &Call) {
     if (CallerPAL.hasParamAttr(i, Attribute::ByVal) !=
         Callee->getAttributes().hasParamAttr(i, Attribute::ByVal))
       return false; // Cannot transform to or from byval.
-
-    // If the parameter is passed as a byval argument, then we have to have a
-    // sized type and the sized type has to have the same size as the old type.
-    if (ParamTy != ActTy && CallerPAL.hasParamAttr(i, Attribute::ByVal)) {
-      PointerType *ParamPTy = dyn_cast<PointerType>(ParamTy);
-      if (!ParamPTy)
-        return false;
-
-      if (!ParamPTy->isOpaque()) {
-        Type *ParamElTy = ParamPTy->getNonOpaquePointerElementType();
-        if (!ParamElTy->isSized())
-          return false;
-
-        Type *CurElTy = Call.getParamByValType(i);
-        if (DL.getTypeAllocSize(CurElTy) != DL.getTypeAllocSize(ParamElTy))
-          return false;
-      }
-    }
   }
 
   if (Callee->isDeclaration()) {
@@ -3789,16 +3873,8 @@ bool InstCombinerImpl::transformConstExprCastCall(CallBase &Call) {
     // type. Note that we made sure all incompatible ones are safe to drop.
     AttributeMask IncompatibleAttrs = AttributeFuncs::typeIncompatible(
         ParamTy, AttributeFuncs::ASK_SAFE_TO_DROP);
-    if (CallerPAL.hasParamAttr(i, Attribute::ByVal) &&
-        !ParamTy->isOpaquePointerTy()) {
-      AttrBuilder AB(Ctx, CallerPAL.getParamAttrs(i).removeAttributes(
-                              Ctx, IncompatibleAttrs));
-      AB.addByValAttr(ParamTy->getNonOpaquePointerElementType());
-      ArgAttrs.push_back(AttributeSet::get(Ctx, AB));
-    } else {
-      ArgAttrs.push_back(
-          CallerPAL.getParamAttrs(i).removeAttributes(Ctx, IncompatibleAttrs));
-    }
+    ArgAttrs.push_back(
+        CallerPAL.getParamAttrs(i).removeAttributes(Ctx, IncompatibleAttrs));
   }
 
   // If the function takes more arguments than the call was taking, add them

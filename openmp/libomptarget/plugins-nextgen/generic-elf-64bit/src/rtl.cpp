@@ -309,8 +309,8 @@ struct GenELF64DeviceTy : public GenericDeviceTy {
   Error syncEventImpl(void *EventPtr) override { return Plugin::success(); }
 
   /// Print information about the device.
-  Error printInfoImpl() override {
-    printf("    This is a generic-elf-64bit device\n");
+  Error obtainInfoImpl(InfoQueueTy &Info) override {
+    Info.add("Device Type", "Generic-elf-64bit");
     return Plugin::success();
   }
 
@@ -392,7 +392,9 @@ struct GenELF64PluginTy final : public GenericPluginTy {
   }
 
   /// All images (ELF-compatible) should be compatible with this plugin.
-  Expected<bool> isImageCompatible(__tgt_image_info *Info) const override {
+  Expected<bool>
+  isImageCompatible(__tgt_image_info *Info,
+                    __tgt_device_image *TgtImage) const override {
     return true;
   }
 

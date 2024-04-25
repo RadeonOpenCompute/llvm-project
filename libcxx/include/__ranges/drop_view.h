@@ -71,14 +71,14 @@ namespace ranges {
     _View __base_ = _View();
 
 public:
-    drop_view() requires default_initializable<_View> = default;
+    _LIBCPP_HIDE_FROM_ABI drop_view() requires default_initializable<_View> = default;
 
     _LIBCPP_HIDE_FROM_ABI
     constexpr _LIBCPP_EXPLICIT_SINCE_CXX23 drop_view(_View __base, range_difference_t<_View> __count)
       : __count_(__count)
       , __base_(std::move(__base))
     {
-      _LIBCPP_ASSERT(__count_ >= 0, "count must be greater than or equal to zero.");
+      _LIBCPP_ASSERT_UNCATEGORIZED(__count_ >= 0, "count must be greater than or equal to zero.");
     }
 
     _LIBCPP_HIDE_FROM_ABI constexpr _View base() const& requires copy_constructible<_View> { return __base_; }

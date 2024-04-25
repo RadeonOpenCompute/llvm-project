@@ -610,12 +610,13 @@ public:
     unsigned Generation = 0;
     int MatchingId = -1;
     bool IsAtomic = false;
+    bool IsLoad = false;
 
     LoadValue() = default;
     LoadValue(Instruction *Inst, unsigned Generation, unsigned MatchingId,
-              bool IsAtomic)
+              bool IsAtomic, bool IsLoad)
         : DefInst(Inst), Generation(Generation), MatchingId(MatchingId),
-          IsAtomic(IsAtomic) {}
+          IsAtomic(IsAtomic), IsLoad(IsLoad) {}
   };
 
   using LoadMapAllocator =
@@ -834,17 +835,7 @@ private:
 
     Type *getValueType() const {
       // TODO: handle target-specific intrinsics.
-      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
-        switch (II->getIntrinsicID()) {
-        case Intrinsic::masked_load:
-          return II->getType();
-        case Intrinsic::masked_store:
-          return II->getArgOperand(0)->getType();
-        default:
-          return nullptr;
-        }
-      }
-      return getLoadStoreType(Inst);
+      return Inst->getAccessType();
     }
 
     bool mayReadFromMemory() const {
@@ -1508,8 +1499,9 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
           LLVM_DEBUG(dbgs() << "Skipping due to debug counter\n");
           continue;
         }
-        if (auto *I = dyn_cast<Instruction>(Op))
-          combineMetadataForCSE(I, &Inst, false);
+        if (InVal.IsLoad)
+          if (auto *I = dyn_cast<Instruction>(Op))
+            combineMetadataForCSE(I, &Inst, false);
         if (!Inst.use_empty())
           Inst.replaceAllUsesWith(Op);
         salvageKnowledge(&Inst, &AC);
@@ -1524,7 +1516,8 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
       AvailableLoads.insert(MemInst.getPointerOperand(),
                             LoadValue(&Inst, CurrentGeneration,
                                       MemInst.getMatchingId(),
-                                      MemInst.isAtomic()));
+                                      MemInst.isAtomic(),
+                                      MemInst.isLoad()));
       LastStore = nullptr;
       continue;
     }
@@ -1648,7 +1641,8 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
         AvailableLoads.insert(MemInst.getPointerOperand(),
                               LoadValue(&Inst, CurrentGeneration,
                                         MemInst.getMatchingId(),
-                                        MemInst.isAtomic()));
+                                        MemInst.isAtomic(),
+                                        MemInst.isLoad()));
 
         // Remember that this was the last unordered store we saw for DSE. We
         // don't yet handle DSE on ordered or volatile stores since we don't

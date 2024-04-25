@@ -16,9 +16,10 @@ For general information on debugging OpenMP target offloading applications, see
 LLVM/OpenMP Host Runtime (``libomp``)
 -------------------------------------
 
-An `early (2015) design document <https://openmp.llvm.org/Reference.pdf>`_ for
-the LLVM/OpenMP host runtime, aka.  `libomp.so`, is available as a `pdf
-<https://openmp.llvm.org/Reference.pdf>`_.
+An `early (2015) design document
+<https://raw.githubusercontent.com/llvm/llvm-project/main/openmp/runtime/doc/Reference.pdf>`_
+for the LLVM/OpenMP host runtime, aka.  `libomp.so`, is available as a `pdf
+<https://raw.githubusercontent.com/llvm/llvm-project/main/openmp/runtime/doc/Reference.pdf>`_.
 
 .. _libomp_environment_vars:
 
@@ -724,7 +725,7 @@ LIBOMPTARGET_DEBUG
 """"""""""""""""""
 
 ``LIBOMPTARGET_DEBUG`` controls whether or not debugging information will be
-displayed. This feature is only availible if ``libomptarget`` was built with
+displayed. This feature is only available if ``libomptarget`` was built with
 ``-DOMPTARGET_DEBUG``. The debugging output provided is intended for use by
 ``libomptarget`` developers. More user-friendly output is presented when using
 ``LIBOMPTARGET_INFO``.
@@ -974,7 +975,7 @@ going wrong.
     Libomptarget error: Consult https://openmp.llvm.org/design/Runtimes.html for debugging options.
     sum.cpp:5:1: Libomptarget error 1: failure of target construct while offloading is mandatory
 
-This shows that there is an illegal memory access occuring inside the OpenMP
+This shows that there is an illegal memory access occurring inside the OpenMP
 target region once execution has moved to the CUDA device, suggesting a
 segmentation fault. This then causes a chain reaction of failures in
 ``libomptarget``. Another message suggests using the ``LIBOMPTARGET_INFO``
@@ -1060,7 +1061,7 @@ of LLVM did not.
 LIBOMPTARGET_JIT_OPT_LEVEL
 """"""""""""""""""""""""""
 
-This environment variable can be used to change the optimization pipeleine used
+This environment variable can be used to change the optimization pipeline used
 to optimize the embedded device code as part of the device JIT. The value is
 corresponds to the ``-O{0,1,2,3}`` command line argument passed to ``clang``.
 
@@ -1224,9 +1225,9 @@ LIBOMPTARGET_AMDGPU_MAX_ASYNC_COPY_BYTES
 
 This environment variable specifies the maximum size in bytes where the memory
 copies are asynchronous operations in the AMDGPU plugin. Up to this transfer
-size, the memory copies are asychronous operations pushed to the corresponding
+size, the memory copies are asynchronous operations pushed to the corresponding
 stream. For larger transfers, they are synchronous transfers. Memory copies
-involving already locked/pinned host buffers are always asychronous. The default
+involving already locked/pinned host buffers are always asynchronous. The default
 value is ``1*1024*1024`` bytes (1 MB).
 
 LIBOMPTARGET_AMDGPU_NUM_INITIAL_HSA_SIGNALS
@@ -1260,14 +1261,6 @@ server is running on the same host, each device may be identified twice:
 once through the device plugins and once through the device plugins that the
 server application has access to.
 
-This plugin consists of ``libomptarget.rtl.rpc.so`` and
-``openmp-offloading-server`` which should be running on the (remote) host. The
-server application does not have to be running on a remote host, and can
-instead be used on the same host in order to debug memory mapping during offloading.
-These are implemented via gRPC/protobuf so these libraries are required to
-build and use this plugin. The server must also have access to the necessary
-target-specific plugins in order to perform the offloading.
-
 Due to the experimental nature of this plugin, the CMake variable
 ``LIBOMPTARGET_ENABLE_EXPERIMENTAL_REMOTE_PLUGIN`` must be set in order to
 build this plugin. For example, the rpc plugin is not designed to be
@@ -1287,7 +1280,7 @@ LIBOMPTARGET_RPC_ADDRESS
 The address and port at which the server is running. This needs to be set for
 the server and the application, the default is ``0.0.0.0:50051``. A single
 OpenMP executable can offload onto multiple remote hosts by setting this to
-comma-seperated values of the addresses.
+comma-separated values of the addresses.
 
 LIBOMPTARGET_RPC_ALLOCATOR_MAX
 """"""""""""""""""""""""""""""
@@ -1300,6 +1293,54 @@ This is the maximum size of a single message while streaming data transfers betw
 LIBOMPTARGET_RPC_LATENCY
 """"""""""""""""""""""""
 This is the maximum amount of time the client will wait for a response from the server.
+
+
+.. _libomptarget_libc:
+
+LLVM/OpenMP support for C library routines
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Support for calling standard C library routines on GPU targets is provided by 
+the `LLVM C Library <https://libc.llvm.org/gpu/>`_. This project provides two 
+static libraries, ``libcgpu.a`` and ``libllvmlibc_rpc_server.a``, which are used 
+by the OpenMP runtime to provide ``libc`` support. The ``libcgpu.a`` library 
+contains the GPU device code, while ``libllvmlibc_rpc_server.a`` provides the 
+interface to the RPC interface. More information on the RPC construction can be 
+found in the `associated documentation <https://libc.llvm.org/gpu/rpc.html>`_.
+
+To provide host services, we run an RPC server inside of the runtime. This 
+allows the host to respond to requests made from the GPU asynchronously. For 
+``libc`` calls that require an RPC server, such as printing, an external handle 
+to the RPC client running on the GPU will be present in the GPU executable. If 
+we find this symbol, we will initialize a client and server and run it in the 
+background while the kernel is executing.
+
+For example, consider the following simple OpenMP offloading code. Here we will 
+simply print a string to the user from the GPU.
+
+.. code-block:: c++
+
+   #include <stdio.h>
+
+   int main() {
+    #pragma omp target
+      { fputs("Hello World!\n", stderr); }
+   }
+
+We can compile this using the ``libcgpu.a`` library to resolve the symbols. 
+Because this function requires RPC support, this will also pull in an externally 
+visible symbol called ``__llvm_libc_rpc_client`` into the device image. When 
+loading the device image, the runtime will check for this symbol and initialize 
+an RPC interface if it is found. The following example shows the RPC server 
+being used.
+
+.. code-block:: console
+
+    $ clang++ hello.c -fopenmp --offload-arch=gfx90a -lcgpu
+    $ env LIBOMPTARGET_DEBUG=1 ./a.out
+    PluginInterface --> Running an RPC server on device 0
+    ...
+    Hello World!
 
 .. _libomptarget_device:
 

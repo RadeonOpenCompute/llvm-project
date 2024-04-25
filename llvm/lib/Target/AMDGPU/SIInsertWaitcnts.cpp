@@ -31,6 +31,7 @@
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachinePostDominators.h"
 #include "llvm/InitializePasses.h"
@@ -56,8 +57,6 @@ namespace {
 // Class of object that encapsulates latest instruction counter score
 // associated with the operand.  Used for determining whether
 // s_waitcnt instruction needs to be emitted.
-
-#define CNT_MASK(t) (1u << (t))
 
 enum InstCounterType { VM_CNT = 0, LGKM_CNT, EXP_CNT, VS_CNT, NUM_INST_CNTS };
 } // namespace
@@ -88,19 +87,20 @@ struct RegisterEncoding {
 };
 
 enum WaitEventType {
-  VMEM_ACCESS,       // vector-memory read & write
-  VMEM_READ_ACCESS,  // vector-memory read
-  VMEM_WRITE_ACCESS, // vector-memory write
-  LDS_ACCESS,        // lds read & write
-  GDS_ACCESS,        // gds read & write
-  SQ_MESSAGE,        // send message
-  SMEM_ACCESS,       // scalar-memory read & write
-  EXP_GPR_LOCK,      // export holding on its data src
-  GDS_GPR_LOCK,      // GDS holding on its data and addr src
-  EXP_POS_ACCESS,    // write to export position
-  EXP_PARAM_ACCESS,  // write to export parameter
-  VMW_GPR_LOCK,      // vector-memory write holding on its data src
-  EXP_LDS_ACCESS,    // read by ldsdir counting as export
+  VMEM_ACCESS,          // vector-memory read & write
+  VMEM_READ_ACCESS,     // vector-memory read
+  VMEM_WRITE_ACCESS,    // vector-memory write that is not scratch
+  SCRATCH_WRITE_ACCESS, // vector-memory write that may be scratch
+  LDS_ACCESS,           // lds read & write
+  GDS_ACCESS,           // gds read & write
+  SQ_MESSAGE,           // send message
+  SMEM_ACCESS,          // scalar-memory read & write
+  EXP_GPR_LOCK,         // export holding on its data src
+  GDS_GPR_LOCK,         // GDS holding on its data and addr src
+  EXP_POS_ACCESS,       // write to export position
+  EXP_PARAM_ACCESS,     // write to export parameter
+  VMW_GPR_LOCK,         // vector-memory write holding on its data src
+  EXP_LDS_ACCESS,       // read by ldsdir counting as export
   NUM_WAIT_EVENTS,
 };
 
@@ -110,7 +110,7 @@ static const unsigned WaitEventMaskForInst[NUM_INST_CNTS] = {
         (1 << SQ_MESSAGE),
     (1 << EXP_GPR_LOCK) | (1 << GDS_GPR_LOCK) | (1 << VMW_GPR_LOCK) |
         (1 << EXP_PARAM_ACCESS) | (1 << EXP_POS_ACCESS) | (1 << EXP_LDS_ACCESS),
-    (1 << VMEM_WRITE_ACCESS)};
+    (1 << VMEM_WRITE_ACCESS) | (1 << SCRATCH_WRITE_ACCESS)};
 
 // The mapping is:
 //  0                .. SQ_MAX_PGM_VGPRS-1               real VGPRs
@@ -122,8 +122,13 @@ enum RegisterMapping {
   SQ_MAX_PGM_VGPRS = 512, // Maximum programmable VGPRs across all targets.
   AGPR_OFFSET = 256,      // Maximum programmable ArchVGPRs across all targets.
   SQ_MAX_PGM_SGPRS = 256, // Maximum programmable SGPRs across all targets.
-  NUM_EXTRA_VGPRS = 1,    // A reserved slot for DS.
-  EXTRA_VGPR_LDS = 0,     // An artificial register to track LDS writes.
+  NUM_EXTRA_VGPRS = 9,    // Reserved slots for DS.
+  // Artificial register slots to track LDS writes into specific LDS locations
+  // if a location is known. When slots are exhausted or location is
+  // unknown use the first slot. The first slot is also always updated in
+  // addition to known location's slot to properly generate waits if dependent
+  // instruction's location is unknown.
+  EXTRA_VGPR_LDS = 0,
   NUM_ALL_VGPRS = SQ_MAX_PGM_VGPRS + NUM_EXTRA_VGPRS, // Where SGPR starts.
 };
 
@@ -293,6 +298,10 @@ public:
     VgprVmemTypes[GprNo] = 0;
   }
 
+  ArrayRef<const MachineInstr *> getLDSDMAStores() const {
+    return LDSDMAStores;
+  }
+
   void print(raw_ostream &);
   void dump() { print(dbgs()); }
 
@@ -355,6 +364,9 @@ private:
   // Bitmask of the VmemTypes of VMEM instructions that might have a pending
   // write to each vgpr.
   unsigned char VgprVmemTypes[NUM_ALL_VGPRS] = {0};
+  // Store representative LDS DMA operations. The only useful info here is
+  // alias info. One store is kept per unique AAInfo.
+  SmallVector<const MachineInstr *, NUM_EXTRA_VGPRS - 1> LDSDMAStores;
 };
 
 class SIInsertWaitcnts : public MachineFunctionPass {
@@ -370,13 +382,11 @@ private:
   DenseMap<MachineBasicBlock *, bool> PreheadersToFlush;
   MachineLoopInfo *MLI;
   MachinePostDominatorTree *PDT;
+  AliasAnalysis *AA = nullptr;
 
   struct BlockInfo {
-    MachineBasicBlock *MBB;
     std::unique_ptr<WaitcntBrackets> Incoming;
     bool Dirty = true;
-
-    explicit BlockInfo(MachineBasicBlock *MBB) : MBB(MBB) {}
   };
 
   MapVector<MachineBasicBlock *, BlockInfo> BlockInfos;
@@ -404,6 +414,7 @@ public:
   bool shouldFlushVmCnt(MachineLoop *ML, WaitcntBrackets &Brackets);
   bool isPreheaderToFlush(MachineBasicBlock &MBB,
                           WaitcntBrackets &ScoreBrackets);
+  bool isVMEMOrFlatVMEM(const MachineInstr &MI) const;
   bool runOnMachineFunction(MachineFunction &MF) override;
 
   StringRef getPassName() const override {
@@ -414,6 +425,8 @@ public:
     AU.setPreservesCFG();
     AU.addRequired<MachineLoopInfo>();
     AU.addRequired<MachinePostDominatorTree>();
+    AU.addUsedIfAvailable<AAResultsWrapperPass>();
+    AU.addPreserved<AAResultsWrapperPass>();
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
@@ -422,10 +435,6 @@ public:
       if (ForceEmitWaitcnt[T])
         return true;
     return false;
-  }
-
-  AMDGPU::Waitcnt allZeroWaitcnt() const {
-    return AMDGPU::Waitcnt::allZero(ST->hasVscnt());
   }
 
   void setForceEmitWaitcnt() {
@@ -459,15 +468,23 @@ public:
   // FLAT instruction.
   WaitEventType getVmemWaitEventType(const MachineInstr &Inst) const {
     assert(SIInstrInfo::isVMEM(Inst) || SIInstrInfo::isFLAT(Inst));
-    if (!ST->hasVscnt())
+    // LDS DMA loads are also stores, but on the LDS side. On the VMEM side
+    // these should use VM_CNT.
+    if (!ST->hasVscnt() || SIInstrInfo::mayWriteLDSThroughDMA(Inst))
       return VMEM_ACCESS;
-    if (Inst.mayStore() && !SIInstrInfo::isAtomicRet(Inst))
+    if (Inst.mayStore() && !SIInstrInfo::isAtomicRet(Inst)) {
+      // FLAT and SCRATCH instructions may access scratch. Other VMEM
+      // instructions do not.
+      if (SIInstrInfo::isFLAT(Inst) && mayAccessScratchThroughFlat(Inst))
+        return SCRATCH_WRITE_ACCESS;
       return VMEM_WRITE_ACCESS;
+    }
     return VMEM_READ_ACCESS;
   }
 
   bool mayAccessVMEMThroughFlat(const MachineInstr &MI) const;
   bool mayAccessLDSThroughFlat(const MachineInstr &MI) const;
+  bool mayAccessScratchThroughFlat(const MachineInstr &MI) const;
   bool generateWaitcntInstBefore(MachineInstr &MI,
                                  WaitcntBrackets &ScoreBrackets,
                                  MachineInstr *OldWaitcntInstr,
@@ -542,14 +559,6 @@ void WaitcntBrackets::setExpScore(const MachineInstr *MI,
   for (int RegNo = Interval.first; RegNo < Interval.second; ++RegNo) {
     setRegScore(RegNo, EXP_CNT, Val);
   }
-}
-
-// MUBUF and FLAT LDS DMA operations need a wait on vmcnt before LDS written
-// can be accessed. A load from LDS to VMEM does not need a wait.
-static bool mayWriteLDSThroughDMA(const MachineInstr &MI) {
-  return SIInstrInfo::isVALU(MI) &&
-         (SIInstrInfo::isMUBUF(MI) || SIInstrInfo::isFLAT(MI)) &&
-         MI.getOpcode() != AMDGPU::BUFFER_STORE_LDS_DWORD;
 }
 
 void WaitcntBrackets::updateByEvent(const SIInstrInfo *TII,
@@ -704,8 +713,44 @@ void WaitcntBrackets::updateByEvent(const SIInstrInfo *TII,
         setRegScore(RegNo, T, CurrScore);
       }
     }
-    if (Inst.mayStore() && (TII->isDS(Inst) || mayWriteLDSThroughDMA(Inst))) {
-      setRegScore(SQ_MAX_PGM_VGPRS + EXTRA_VGPR_LDS, T, CurrScore);
+    if (Inst.mayStore() &&
+        (TII->isDS(Inst) || TII->mayWriteLDSThroughDMA(Inst))) {
+      // MUBUF and FLAT LDS DMA operations need a wait on vmcnt before LDS
+      // written can be accessed. A load from LDS to VMEM does not need a wait.
+      unsigned Slot = 0;
+      for (const auto *MemOp : Inst.memoperands()) {
+        if (!MemOp->isStore() ||
+            MemOp->getAddrSpace() != AMDGPUAS::LOCAL_ADDRESS)
+          continue;
+        // Comparing just AA info does not guarantee memoperands are equal
+        // in general, but this is so for LDS DMA in practice.
+        auto AAI = MemOp->getAAInfo();
+        // Alias scope information gives a way to definitely identify an
+        // original memory object and practically produced in the module LDS
+        // lowering pass. If there is no scope available we will not be able
+        // to disambiguate LDS aliasing as after the module lowering all LDS
+        // is squashed into a single big object. Do not attempt to use one of
+        // the limited LDSDMAStores for something we will not be able to use
+        // anyway.
+        if (!AAI || !AAI.Scope)
+          break;
+        for (unsigned I = 0, E = LDSDMAStores.size(); I != E && !Slot; ++I) {
+          for (const auto *MemOp : LDSDMAStores[I]->memoperands()) {
+            if (MemOp->isStore() && AAI == MemOp->getAAInfo()) {
+              Slot = I + 1;
+              break;
+            }
+          }
+        }
+        if (Slot || LDSDMAStores.size() == NUM_EXTRA_VGPRS - 1)
+          break;
+        LDSDMAStores.push_back(&Inst);
+        Slot = LDSDMAStores.size();
+        break;
+      }
+      setRegScore(SQ_MAX_PGM_VGPRS + EXTRA_VGPR_LDS + Slot, T, CurrScore);
+      if (Slot)
+        setRegScore(SQ_MAX_PGM_VGPRS + EXTRA_VGPR_LDS, T, CurrScore);
     }
   }
 }
@@ -1035,7 +1080,18 @@ bool SIInsertWaitcnts::generateWaitcntInstBefore(MachineInstr &MI,
       MI.getOpcode() == AMDGPU::SI_RETURN ||
       MI.getOpcode() == AMDGPU::S_SETPC_B64_return ||
       (MI.isReturn() && MI.isCall() && !callWaitsOnFunctionEntry(MI))) {
-    Wait = Wait.combined(allZeroWaitcnt());
+    Wait = Wait.combined(AMDGPU::Waitcnt::allZeroExceptVsCnt());
+  }
+  // Identify S_ENDPGM instructions which may have to wait for outstanding VMEM
+  // stores. In this case it can be useful to send a message to explicitly
+  // release all VGPRs before the stores have completed, but it is only safe to
+  // do this if there are no outstanding scratch stores.
+  else if (MI.getOpcode() == AMDGPU::S_ENDPGM ||
+           MI.getOpcode() == AMDGPU::S_ENDPGM_SAVED) {
+    if (ST->getGeneration() >= AMDGPUSubtarget::GFX11 &&
+        ScoreBrackets.getScoreRange(VS_CNT) != 0 &&
+        !ScoreBrackets.hasPendingEvent(SCRATCH_WRITE_ACCESS))
+      ReleaseVGPRInsts.insert(&MI);
   }
   // Identify S_ENDPGM instructions which may have to wait for outstanding VMEM
   // stores. In this case it can be useful to send a message to explicitly
@@ -1177,11 +1233,29 @@ bool SIInsertWaitcnts::generateWaitcntInstBefore(MachineInstr &MI,
         if (AS != AMDGPUAS::LOCAL_ADDRESS && AS != AMDGPUAS::FLAT_ADDRESS)
           continue;
         // No need to wait before load from VMEM to LDS.
-        if (mayWriteLDSThroughDMA(MI))
+        if (TII->mayWriteLDSThroughDMA(MI))
           continue;
-        unsigned RegNo = SQ_MAX_PGM_VGPRS + EXTRA_VGPR_LDS;
+
         // VM_CNT is only relevant to vgpr or LDS.
-        ScoreBrackets.determineWait(VM_CNT, RegNo, Wait);
+        unsigned RegNo = SQ_MAX_PGM_VGPRS + EXTRA_VGPR_LDS;
+        bool FoundAliasingStore = false;
+        // Only objects with alias scope info were added to LDSDMAScopes array.
+        // In the absense of the scope info we will not be able to disambiguate
+        // aliasing here. There is no need to try searching for a corresponding
+        // store slot. This is conservatively correct because in that case we
+        // will produce a wait using the first (general) LDS DMA wait slot which
+        // will wait on all of them anyway.
+        if (Ptr && Memop->getAAInfo() && Memop->getAAInfo().Scope) {
+          const auto &LDSDMAStores = ScoreBrackets.getLDSDMAStores();
+          for (unsigned I = 0, E = LDSDMAStores.size(); I != E; ++I) {
+            if (MI.mayAlias(AA, *LDSDMAStores[I], true)) {
+              FoundAliasingStore = true;
+              ScoreBrackets.determineWait(VM_CNT, RegNo + I + 1, Wait);
+            }
+          }
+        }
+        if (!FoundAliasingStore)
+          ScoreBrackets.determineWait(VM_CNT, RegNo, Wait);
         if (Memop->isStore()) {
           ScoreBrackets.determineWait(EXP_CNT, RegNo, Wait);
         }
@@ -1229,7 +1303,7 @@ bool SIInsertWaitcnts::generateWaitcntInstBefore(MachineInstr &MI,
   // cause an exception. Otherwise, insert an explicit S_WAITCNT 0 here.
   if (MI.getOpcode() == AMDGPU::S_BARRIER &&
       !ST->hasAutoWaitcntBeforeBarrier() && !ST->supportsBackOffBarrier()) {
-    Wait = Wait.combined(allZeroWaitcnt());
+    Wait = Wait.combined(AMDGPU::Waitcnt::allZero(ST->hasVscnt()));
   }
 
   // TODO: Remove this work-around, enable the assert for Bug 457939
@@ -1245,7 +1319,7 @@ bool SIInsertWaitcnts::generateWaitcntInstBefore(MachineInstr &MI,
   ScoreBrackets.simplifyWaitcnt(Wait);
 
   if (ForceEmitZeroWaitcnts)
-    Wait = allZeroWaitcnt();
+    Wait = AMDGPU::Waitcnt::allZeroExceptVsCnt();
 
   if (ForceEmitWaitcnt[VM_CNT])
     Wait.VmCnt = 0;
@@ -1253,8 +1327,6 @@ bool SIInsertWaitcnts::generateWaitcntInstBefore(MachineInstr &MI,
     Wait.ExpCnt = 0;
   if (ForceEmitWaitcnt[LGKM_CNT])
     Wait.LgkmCnt = 0;
-  if (ForceEmitWaitcnt[VS_CNT])
-    Wait.VsCnt = 0;
 
   if (FlushVmCnt) {
     if (ScoreBrackets.hasPendingEvent(VM_CNT))
@@ -1399,6 +1471,32 @@ bool SIInsertWaitcnts::mayAccessLDSThroughFlat(const MachineInstr &MI) const {
   return false;
 }
 
+// This is a flat memory operation. Check to see if it has memory tokens for
+// either scratch or FLAT.
+bool SIInsertWaitcnts::mayAccessScratchThroughFlat(
+    const MachineInstr &MI) const {
+  assert(TII->isFLAT(MI));
+
+  // SCRATCH instructions always access scratch.
+  if (TII->isFLATScratch(MI))
+    return true;
+
+  // GLOBAL instructions never access scratch.
+  if (TII->isFLATGlobal(MI))
+    return false;
+
+  // If there are no memory operands then conservatively assume the flat
+  // operation may access scratch.
+  if (MI.memoperands_empty())
+    return true;
+
+  // See if any memory operand specifies an address space that involves scratch.
+  return any_of(MI.memoperands(), [](const MachineMemOperand *Memop) {
+    unsigned AS = Memop->getAddrSpace();
+    return AS == AMDGPUAS::PRIVATE_ADDRESS || AS == AMDGPUAS::FLAT_ADDRESS;
+  });
+}
+
 void SIInsertWaitcnts::updateEventWaitcntAfter(MachineInstr &Inst,
                                                WaitcntBrackets *ScoreBrackets) {
   // Now look at the instruction opcode. If it is a memory access
@@ -1451,7 +1549,7 @@ void SIInsertWaitcnts::updateEventWaitcntAfter(MachineInstr &Inst,
   } else if (Inst.isCall()) {
     if (callWaitsOnFunctionReturn(Inst)) {
       // Act as a wait on everything
-      ScoreBrackets->applyWaitcnt(allZeroWaitcnt());
+      ScoreBrackets->applyWaitcnt(AMDGPU::Waitcnt::allZeroExceptVsCnt());
     } else {
       // May need to way wait for anything.
       ScoreBrackets->applyWaitcnt(AMDGPU::Waitcnt());
@@ -1718,6 +1816,11 @@ bool SIInsertWaitcnts::isPreheaderToFlush(MachineBasicBlock &MBB,
   return UpdateCache(false);
 }
 
+bool SIInsertWaitcnts::isVMEMOrFlatVMEM(const MachineInstr &MI) const {
+  return SIInstrInfo::isVMEM(MI) ||
+         (SIInstrInfo::isFLAT(MI) && mayAccessVMEMThroughFlat(MI));
+}
+
 // Return true if it is better to flush the vmcnt counter in the preheader of
 // the given loop. We currently decide to flush in two situations:
 // 1. The loop contains vmem store(s), no vmem load and at least one use of a
@@ -1736,8 +1839,7 @@ bool SIInsertWaitcnts::shouldFlushVmCnt(MachineLoop *ML,
 
   for (MachineBasicBlock *MBB : ML->blocks()) {
     for (MachineInstr &MI : *MBB) {
-      if (SIInstrInfo::isVMEM(MI) ||
-          (SIInstrInfo::isFLAT(MI) && mayAccessVMEMThroughFlat(MI))) {
+      if (isVMEMOrFlatVMEM(MI)) {
         if (MI.mayLoad())
           HasVMemLoad = true;
         if (MI.mayStore())
@@ -1765,7 +1867,7 @@ bool SIInsertWaitcnts::shouldFlushVmCnt(MachineLoop *ML,
           }
         }
         // VMem load vgpr def
-        else if (SIInstrInfo::isVMEM(MI) && MI.mayLoad() && Op.isDef())
+        else if (isVMEMOrFlatVMEM(MI) && MI.mayLoad() && Op.isDef())
           for (int RegNo = Interval.first; RegNo < Interval.second; ++RegNo) {
             // If we find a register that is loaded inside the loop, 1. and 2.
             // are invalidated and we can exit.
@@ -1790,6 +1892,8 @@ bool SIInsertWaitcnts::runOnMachineFunction(MachineFunction &MF) {
   const SIMachineFunctionInfo *MFI = MF.getInfo<SIMachineFunctionInfo>();
   MLI = &getAnalysis<MachineLoopInfo>();
   PDT = &getAnalysis<MachinePostDominatorTree>();
+  if (auto AAR = getAnalysisIfAvailable<AAResultsWrapperPass>())
+    AA = &AAR->getAAResults();
 
   ForceEmitZeroWaitcnts = ForceEmitZeroFlag;
   for (auto T : inst_counter_types())
@@ -1832,10 +1936,6 @@ bool SIInsertWaitcnts::runOnMachineFunction(MachineFunction &MF) {
          I != E && (I->isPHI() || I->isMetaInstruction()); ++I)
       ;
     BuildMI(EntryBB, I, DebugLoc(), TII->get(AMDGPU::S_WAITCNT)).addImm(0);
-    if (ST->hasVscnt())
-      BuildMI(EntryBB, I, DebugLoc(), TII->get(AMDGPU::S_WAITCNT_VSCNT))
-          .addReg(AMDGPU::SGPR_NULL, RegState::Undef)
-          .addImm(0);
 
     Modified = true;
   }
@@ -1843,7 +1943,7 @@ bool SIInsertWaitcnts::runOnMachineFunction(MachineFunction &MF) {
   // Keep iterating over the blocks in reverse post order, inserting and
   // updating s_waitcnt where needed, until a fix point is reached.
   for (auto *MBB : ReversePostOrderTraversal<MachineFunction *>(&MF))
-    BlockInfos.insert({MBB, BlockInfo(MBB)});
+    BlockInfos.insert({MBB, BlockInfo()});
 
   std::unique_ptr<WaitcntBrackets> Brackets;
   bool Repeat;
@@ -1852,6 +1952,7 @@ bool SIInsertWaitcnts::runOnMachineFunction(MachineFunction &MF) {
 
     for (auto BII = BlockInfos.begin(), BIE = BlockInfos.end(); BII != BIE;
          ++BII) {
+      MachineBasicBlock *MBB = BII->first;
       BlockInfo &BI = BII->second;
       if (!BI.Dirty)
         continue;
@@ -1868,12 +1969,12 @@ bool SIInsertWaitcnts::runOnMachineFunction(MachineFunction &MF) {
           *Brackets = WaitcntBrackets(ST, Limits, Encoding);
       }
 
-      Modified |= insertWaitcntInBlock(MF, *BI.MBB, *Brackets);
+      Modified |= insertWaitcntInBlock(MF, *MBB, *Brackets);
       BI.Dirty = false;
 
       if (Brackets->hasPendingEvent()) {
         BlockInfo *MoveBracketsToSucc = nullptr;
-        for (MachineBasicBlock *Succ : BI.MBB->successors()) {
+        for (MachineBasicBlock *Succ : MBB->successors()) {
           auto SuccBII = BlockInfos.find(Succ);
           BlockInfo &SuccBI = SuccBII->second;
           if (!SuccBI.Incoming) {

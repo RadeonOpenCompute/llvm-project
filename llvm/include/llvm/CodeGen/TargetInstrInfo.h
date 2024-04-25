@@ -19,6 +19,7 @@
 #include "llvm/ADT/Uniformity.h"
 #include "llvm/CodeGen/MIRFormatter.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineCycleAnalysis.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -99,11 +100,10 @@ struct ExtAddrMode {
 class TargetInstrInfo : public MCInstrInfo {
 public:
   TargetInstrInfo(unsigned CFSetupOpcode = ~0u, unsigned CFDestroyOpcode = ~0u,
-                  unsigned CatchRetOpcode = ~0u, unsigned ReturnOpcode = ~0u,
-                  unsigned CopyOpcode = TargetOpcode::COPY)
+                  unsigned CatchRetOpcode = ~0u, unsigned ReturnOpcode = ~0u)
       : CallFrameSetupOpcode(CFSetupOpcode),
         CallFrameDestroyOpcode(CFDestroyOpcode), CatchRetOpcode(CatchRetOpcode),
-        ReturnOpcode(ReturnOpcode), CopyOpcode(CopyOpcode) {}
+        ReturnOpcode(ReturnOpcode) {}
   TargetInstrInfo(const TargetInstrInfo &) = delete;
   TargetInstrInfo &operator=(const TargetInstrInfo &) = delete;
   virtual ~TargetInstrInfo();
@@ -140,6 +140,11 @@ public:
   /// of instruction rematerialization or sinking.
   virtual bool isIgnorableUse(const MachineOperand &MO) const {
     return false;
+  }
+
+  virtual bool isSafeToSink(MachineInstr &MI, MachineBasicBlock *SuccToSinkTo,
+                            MachineCycleInfo *CI) const {
+    return true;
   }
 
 protected:
@@ -242,7 +247,6 @@ public:
 
   unsigned getCatchReturnOpcode() const { return CatchRetOpcode; }
   unsigned getReturnOpcode() const { return ReturnOpcode; }
-  unsigned getCopyOpcode() const { return CopyOpcode; }
 
   /// Returns the actual stack pointer adjustment made by an instruction
   /// as part of a call sequence. By default, only call frame setup/destroy
@@ -1007,6 +1011,10 @@ public:
     return false;
   }
 
+  /// Return an index for MachineJumpTableInfo if \p insn is an indirect jump
+  /// using a jump table, otherwise -1.
+  virtual int getJumpTableIndex(const MachineInstr &MI) const { return -1; }
+
 protected:
   /// Target-dependent implementation for IsCopyInstr.
   /// If the specific machine instruction is a instruction that moves/copies
@@ -1040,6 +1048,16 @@ public:
       return DestSourcePair{MI.getOperand(0), MI.getOperand(1)};
     }
     return isCopyInstrImpl(MI);
+  }
+
+  bool isFullCopyInstr(const MachineInstr &MI) const {
+    auto DestSrc = isCopyInstr(MI);
+    if (!DestSrc)
+      return false;
+
+    const MachineOperand *DestRegOp = DestSrc->Destination;
+    const MachineOperand *SrcRegOp = DestSrc->Source;
+    return !DestRegOp->getSubReg() && !SrcRegOp->getSubReg();
   }
 
   /// If the specific machine instruction is an instruction that adds an
@@ -1148,6 +1166,10 @@ public:
                                   MachineInstr &LoadMI,
                                   LiveIntervals *LIS = nullptr) const;
 
+  /// This function defines the logic to lower COPY instruction to
+  /// target specific instruction(s).
+  void lowerCopy(MachineInstr *MI, const TargetRegisterInfo *TRI) const;
+
   /// Return true when there is potentially a faster code sequence
   /// for an instruction chain ending in \p Root. All potential patterns are
   /// returned in the \p Pattern vector. Pattern should be sorted in priority
@@ -1224,6 +1246,13 @@ public:
       SmallVectorImpl<MachineInstr *> &InsInstrs,
       SmallVectorImpl<MachineInstr *> &DelInstrs,
       DenseMap<unsigned, unsigned> &InstIdxForVirtReg) const;
+
+  /// When calculate the latency of the root instruction, accumulate the
+  /// latency of the sequence to the root latency.
+  /// \param Root - Instruction that could be combined with one of its operands
+  virtual bool accumulateInstrSeqToRootLatency(MachineInstr &Root) const {
+    return true;
+  }
 
   /// Attempt to reassociate \P Root and \P Prev according to \P Pattern to
   /// reduce critical path length.
@@ -1947,39 +1976,12 @@ public:
     return false;
   }
 
-  /// Helper function for inserting a COPY to \p Dst at insertion point \p InsPt
-  /// in \p MBB block.
-  MachineInstr *buildCopy(MachineBasicBlock &MBB,
-                          MachineBasicBlock::iterator InsPt, const DebugLoc &DL,
-                          Register Dst) const {
-    return BuildMI(MBB, InsPt, DL, get(getCopyOpcode()), Dst);
-  }
 
-  /// Helper function for inserting a COPY to \p Dst from \p Src at insertion
-  /// point \p InsPt in \p MBB block.
-  MachineInstr *buildCopy(MachineBasicBlock &MBB,
-                          MachineBasicBlock::iterator InsPt, const DebugLoc &DL,
-                          Register Dst, Register Src, unsigned Flags = 0,
-                          unsigned SubReg = 0) const {
-    return BuildMI(MBB, InsPt, DL, get(getCopyOpcode()), Dst)
-        .addReg(Src, Flags, SubReg);
-  }
-
-  /// Helper function for inserting a COPY to \p Dst from \p Src at insertion
-  /// point \p InsPt in \p MBB block. Get the Debug Location from \p MIMD.
-  MachineInstrBuilder buildCopy(MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator InsPt,
-                                const MIMetadata &MIMD, Register Dst,
-                                Register Src, unsigned Flags = 0,
-                                unsigned SubReg = 0) const {
-    MachineFunction &MF = *MBB.getParent();
-    MachineInstr *MI =
-        MF.CreateMachineInstr(get(getCopyOpcode()), MIMD.getDL());
-    MBB.insert(InsPt, MI);
-    return MachineInstrBuilder(MF, MI)
-        .setPCSections(MIMD.getPCSections())
-        .addReg(Dst, RegState::Define)
-        .addReg(Src, Flags, SubReg);
+  /// Allows targets to use appropriate copy instruction while spilitting live
+  /// range of a register in register allocation.
+  virtual unsigned getLiveRangeSplitOpcode(Register Reg,
+                                           const MachineFunction &MF) const {
+    return TargetOpcode::COPY;
   }
 
   /// During PHI eleimination lets target to make necessary checks and
@@ -1988,7 +1990,8 @@ public:
   virtual MachineInstr *createPHIDestinationCopy(
       MachineBasicBlock &MBB, MachineBasicBlock::iterator InsPt,
       const DebugLoc &DL, Register Src, Register Dst) const {
-    return buildCopy(MBB, InsPt, DL, Dst, Src);
+    return BuildMI(MBB, InsPt, DL, get(TargetOpcode::COPY), Dst)
+        .addReg(Src);
   }
 
   /// During PHI eleimination lets target to make necessary checks and
@@ -1999,11 +2002,12 @@ public:
                                             const DebugLoc &DL, Register Src,
                                             unsigned SrcSubReg,
                                             Register Dst) const {
-    return buildCopy(MBB, InsPt, DL, Dst, Src, 0, SrcSubReg);
+    return BuildMI(MBB, InsPt, DL, get(TargetOpcode::COPY), Dst)
+        .addReg(Src, 0, SrcSubReg);
   }
 
   /// Returns a \p outliner::OutlinedFunction struct containing target-specific
-  /// information for a set of outlining candidates. Returns None if the
+  /// information for a set of outlining candidates. Returns std::nullopt if the
   /// candidates are not suitable for outlining.
   virtual std::optional<outliner::OutlinedFunction> getOutliningCandidateInfo(
       std::vector<outliner::Candidate> &RepeatedSequenceLocs) const {
@@ -2142,7 +2146,6 @@ private:
   unsigned CallFrameSetupOpcode, CallFrameDestroyOpcode;
   unsigned CatchRetOpcode;
   unsigned ReturnOpcode;
-  unsigned CopyOpcode;
 };
 
 /// Provide DenseMapInfo for TargetInstrInfo::RegSubRegPair.

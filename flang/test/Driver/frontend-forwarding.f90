@@ -15,6 +15,8 @@
 ! RUN:     -fassociative-math \
 ! RUN:     -freciprocal-math \
 ! RUN:     -fpass-plugin=Bye%pluginext \
+! RUN:     -fversion-loops-for-stride \
+! RUN:     -flang-experimental-polymorphism \
 ! RUN:     -mllvm -print-before-all \
 ! RUN:     -save-temps=obj \
 ! RUN:     -P \
@@ -34,5 +36,7 @@
 ! CHECK: "-freciprocal-math"
 ! CHECK: "-fconvert=little-endian"
 ! CHECK: "-fpass-plugin=Bye
+! CHECK: "-flang-experimental-polymorphism"
+! CHECK: "-fversion-loops-for-stride"
 ! CHECK: "-mllvm" "-print-before-all"
 ! CHECK: "-save-temps=obj"

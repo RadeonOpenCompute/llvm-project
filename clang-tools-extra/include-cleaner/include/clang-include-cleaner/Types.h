@@ -26,10 +26,13 @@
 #include "clang/Tooling/Inclusions/StandardLibrary.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseMapInfoVariant.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
 #include <memory>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace llvm {
@@ -43,7 +46,7 @@ namespace include_cleaner {
 
 /// We consider a macro to be a different symbol each time it is defined.
 struct Macro {
-  IdentifierInfo *Name;
+  const IdentifierInfo *Name;
   /// The location of the Name where the macro is defined.
   SourceLocation Definition;
 
@@ -67,6 +70,7 @@ struct Symbol {
 
   const Decl &declaration() const { return *std::get<Declaration>(Storage); }
   struct Macro macro() const { return std::get<Macro>(Storage); }
+  std::string name() const;
 
 private:
   // Order must match Kind enum!
@@ -94,10 +98,10 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &, RefType);
 
 /// Indicates that a piece of code refers to a symbol.
 struct SymbolReference {
-  /// The point in the code that refers to the symbol.
-  SourceLocation RefLocation;
   /// The symbol referred to.
   Symbol Target;
+  /// The point in the code that refers to the symbol.
+  SourceLocation RefLocation;
   /// Relation type between the reference location and the target.
   RefType RT;
 };
@@ -129,6 +133,10 @@ struct Header {
     return std::get<Standard>(Storage);
   }
   StringRef verbatim() const { return std::get<Verbatim>(Storage); }
+
+  /// Absolute path for the header when it's a physical file. Otherwise just
+  /// the spelling without surrounding quotes/brackets.
+  llvm::StringRef resolvedPath() const;
 
 private:
   // Order must match Kind enum!

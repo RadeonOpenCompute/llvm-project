@@ -607,20 +607,6 @@ public:
   /// callbacks, metadata).
   Error defineMaterializing(SymbolFlagsMap SymbolFlags);
 
-  /// Define the given symbols as non-existent, removing it from the symbol
-  /// table and notifying any pending queries. Queries that lookup up the
-  /// symbol using the SymbolLookupFlags::WeaklyReferencedSymbol flag will
-  /// behave as if the symbol had not been matched in the first place. Queries
-  /// that required this symbol will fail with a missing symbol definition
-  /// error.
-  ///
-  /// This method is intended to support cleanup of special symbols like
-  /// initializer symbols: Queries using
-  /// SymbolLookupFlags::WeaklyReferencedSymbol can be used to trigger their
-  /// emission, and this method can be used to remove them from the JITDylib
-  /// once materialization is complete.
-  void defineNonExistent(ArrayRef<SymbolStringPtr> Symbols);
-
   /// Notify all not-yet-emitted covered by this MaterializationResponsibility
   /// instance that an error has occurred.
   /// This will remove all symbols covered by this MaterializationResponsibilty
@@ -1056,6 +1042,11 @@ public:
   void setLinkOrder(JITDylibSearchOrder NewSearchOrder,
                     bool LinkAgainstThisJITDylibFirst = true);
 
+  /// Append the given JITDylibSearchOrder to the link order for this
+  /// JITDylib (discarding any elements already present in this JITDylib's
+  /// link order).
+  void addToLinkOrder(const JITDylibSearchOrder &NewLinks);
+
   /// Add the given JITDylib to the link order for definitions in this
   /// JITDylib.
   ///
@@ -1267,7 +1258,9 @@ private:
                                        const SymbolStringPtr &DependantName,
                                        MaterializingInfo &EmittedMI);
 
-  Expected<SymbolFlagsMap> defineMaterializing(SymbolFlagsMap SymbolFlags);
+  Expected<SymbolFlagsMap>
+  defineMaterializing(MaterializationResponsibility &FromMR,
+                      SymbolFlagsMap SymbolFlags);
 
   Error replace(MaterializationResponsibility &FromMR,
                 std::unique_ptr<MaterializationUnit> MU);

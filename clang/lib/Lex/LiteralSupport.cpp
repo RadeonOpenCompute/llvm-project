@@ -312,7 +312,7 @@ static unsigned ProcessCharEscape(const char *ThisTokBegin,
           << tok::r_brace;
     else if (!HadError) {
       Diag(Diags, Features, Loc, ThisTokBegin, EscapeBegin, ThisTokBuf,
-           Features.CPlusPlus2b ? diag::warn_cxx2b_delimited_escape_sequence
+           Features.CPlusPlus23 ? diag::warn_cxx23_delimited_escape_sequence
                                 : diag::ext_delimited_escape_sequence)
           << /*delimited*/ 0 << (Features.CPlusPlus ? 1 : 0);
     }
@@ -614,22 +614,28 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
     return false;
   }
 
-  // C++11 allows UCNs that refer to control characters and basic source
-  // characters inside character and string literals
+  // C2x and C++11 allow UCNs that refer to control characters
+  // and basic source characters inside character and string literals
   if (UcnVal < 0xa0 &&
-      (UcnVal != 0x24 && UcnVal != 0x40 && UcnVal != 0x60)) {  // $, @, `
-    bool IsError = (!Features.CPlusPlus11 || !in_char_string_literal);
+      // $, @, ` are allowed in all language modes
+      (UcnVal != 0x24 && UcnVal != 0x40 && UcnVal != 0x60)) {
+    bool IsError =
+        (!(Features.CPlusPlus11 || Features.C2x) || !in_char_string_literal);
     if (Diags) {
       char BasicSCSChar = UcnVal;
       if (UcnVal >= 0x20 && UcnVal < 0x7f)
         Diag(Diags, Features, Loc, ThisTokBegin, UcnBegin, ThisTokBuf,
-             IsError ? diag::err_ucn_escape_basic_scs :
-                       diag::warn_cxx98_compat_literal_ucn_escape_basic_scs)
+             IsError ? diag::err_ucn_escape_basic_scs
+             : Features.CPlusPlus
+                 ? diag::warn_cxx98_compat_literal_ucn_escape_basic_scs
+                 : diag::warn_c2x_compat_literal_ucn_escape_basic_scs)
             << StringRef(&BasicSCSChar, 1);
       else
         Diag(Diags, Features, Loc, ThisTokBegin, UcnBegin, ThisTokBuf,
-             IsError ? diag::err_ucn_control_character :
-                       diag::warn_cxx98_compat_literal_ucn_control_character);
+             IsError ? diag::err_ucn_control_character
+             : Features.CPlusPlus
+                 ? diag::warn_cxx98_compat_literal_ucn_control_character
+                 : diag::warn_c2x_compat_literal_ucn_control_character);
     }
     if (IsError)
       return false;
@@ -641,7 +647,7 @@ static bool ProcessUCNEscape(const char *ThisTokBegin, const char *&ThisTokBuf,
 
   if ((IsDelimitedEscapeSequence || IsNamedEscapeSequence) && Diags)
     Diag(Diags, Features, Loc, ThisTokBegin, UcnBegin, ThisTokBuf,
-         Features.CPlusPlus2b ? diag::warn_cxx2b_delimited_escape_sequence
+         Features.CPlusPlus23 ? diag::warn_cxx23_delimited_escape_sequence
                               : diag::ext_delimited_escape_sequence)
         << (IsNamedEscapeSequence ? 1 : 0) << (Features.CPlusPlus ? 1 : 0);
 
@@ -949,7 +955,7 @@ NumericLiteralParser::NumericLiteralParser(StringRef TokSpelling,
       // ToDo: more precise check for CUDA.
       // TODO: AMDGPU might also support it in the future.
       if ((Target.hasFloat16Type() || LangOpts.CUDA ||
-           (LangOpts.OpenMPIsDevice && Target.getTriple().isNVPTX())) &&
+           (LangOpts.OpenMPIsTargetDevice && Target.getTriple().isNVPTX())) &&
           s + 2 < ThisTokEnd && s[1] == '1' && s[2] == '6') {
         s += 2; // success, eat up 2 characters.
         isFloat16 = true;
@@ -1867,28 +1873,27 @@ void StringLiteralParser::init(ArrayRef<Token> StringToks){
 
   // Implement Translation Phase #6: concatenation of string literals
   /// (C99 5.1.1.2p1).  The common case is only one string fragment.
-  for (unsigned i = 1; i != StringToks.size(); ++i) {
-    if (StringToks[i].getLength() < 2)
-      return DiagnoseLexingError(StringToks[i].getLocation());
+  for (const Token &Tok : StringToks) {
+    if (Tok.getLength() < 2)
+      return DiagnoseLexingError(Tok.getLocation());
 
     // The string could be shorter than this if it needs cleaning, but this is a
     // reasonable bound, which is all we need.
-    assert(StringToks[i].getLength() >= 2 && "literal token is invalid!");
-    SizeBound += StringToks[i].getLength()-2;  // -2 for "".
+    assert(Tok.getLength() >= 2 && "literal token is invalid!");
+    SizeBound += Tok.getLength() - 2; // -2 for "".
 
     // Remember maximum string piece length.
-    if (StringToks[i].getLength() > MaxTokenLength)
-      MaxTokenLength = StringToks[i].getLength();
+    if (Tok.getLength() > MaxTokenLength)
+      MaxTokenLength = Tok.getLength();
 
     // Remember if we see any wide or utf-8/16/32 strings.
     // Also check for illegal concatenations.
-    if (StringToks[i].isNot(Kind) && StringToks[i].isNot(tok::string_literal)) {
+    if (Tok.isNot(Kind) && Tok.isNot(tok::string_literal)) {
       if (isOrdinary()) {
-        Kind = StringToks[i].getKind();
+        Kind = Tok.getKind();
       } else {
         if (Diags)
-          Diags->Report(StringToks[i].getLocation(),
-                        diag::err_unsupported_string_concat);
+          Diags->Report(Tok.getLocation(), diag::err_unsupported_string_concat);
         hadError = true;
       }
     }

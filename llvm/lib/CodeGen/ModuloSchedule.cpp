@@ -74,10 +74,7 @@ void ModuloScheduleExpander::expand() {
   // stage difference for each use.  Keep the maximum value.
   for (MachineInstr *MI : Schedule.getInstructions()) {
     int DefStage = Schedule.getStage(MI);
-    for (const MachineOperand &Op : MI->operands()) {
-      if (!Op.isReg() || !Op.isDef())
-        continue;
-
+    for (const MachineOperand &Op : MI->all_defs()) {
       Register Reg = Op.getReg();
       unsigned MaxDiff = 0;
       bool PhiIsSwapped = false;
@@ -743,9 +740,7 @@ void ModuloScheduleExpander::removeDeadInstructions(MachineBasicBlock *KernelBB,
         continue;
       }
       bool used = true;
-      for (const MachineOperand &MO : MI->operands()) {
-        if (!MO.isReg() || !MO.isDef())
-          continue;
+      for (const MachineOperand &MO : MI->all_defs()) {
         Register reg = MO.getReg();
         // Assume physical registers are used, unless they are marked dead.
         if (reg.isPhysical()) {
@@ -823,7 +818,9 @@ void ModuloScheduleExpander::splitLifetimes(MachineBasicBlock *KernelBB,
             // We split the lifetime when we find the first use.
             if (SplitReg == 0) {
               SplitReg = MRI.createVirtualRegister(MRI.getRegClass(Def));
-              TII->buildCopy(*KernelBB, MI, MI->getDebugLoc(), SplitReg, Def);
+              BuildMI(*KernelBB, MI, MI->getDebugLoc(),
+                      TII->get(TargetOpcode::COPY), SplitReg)
+                  .addReg(Def);
             }
             BBJ.substituteRegister(Def, SplitReg, 0, *TRI);
           }
@@ -1188,7 +1185,9 @@ void ModuloScheduleExpander::rewriteScheduledInstr(
         UseOp.setReg(ReplaceReg);
       else {
         Register SplitReg = MRI.createVirtualRegister(MRI.getRegClass(OldReg));
-        TII->buildCopy(*BB, UseMI, UseMI->getDebugLoc(), SplitReg, ReplaceReg);
+        BuildMI(*BB, UseMI, UseMI->getDebugLoc(), TII->get(TargetOpcode::COPY),
+                SplitReg)
+            .addReg(ReplaceReg);
         UseOp.setReg(SplitReg);
       }
     }

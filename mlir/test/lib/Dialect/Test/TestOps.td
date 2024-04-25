@@ -99,14 +99,14 @@ def MultiTensorRankOf : TEST_Op<"multi_tensor_rank_of"> {
 }
 
 def TEST_TestType : DialectType<Test_Dialect,
-    CPred<"$_self.isa<::test::TestType>()">, "test">,
+    CPred<"::llvm::isa<::test::TestType>($_self)">, "test">,
     BuildableType<"$_builder.getType<::test::TestType>()">;
 
 //===----------------------------------------------------------------------===//
 // Test Symbols
 //===----------------------------------------------------------------------===//
 
-def SymbolOp : TEST_Op<"symbol", [Symbol]> {
+def SymbolOp : TEST_Op<"symbol", [NoMemoryEffect, Symbol]> {
   let summary =  "operation which defines a new symbol";
   let arguments = (ins StrAttr:$sym_name,
                        OptionalAttr<StrAttr>:$sym_visibility);
@@ -259,8 +259,8 @@ def DerivedTypeAttrOp : TEST_Op<"derived_type_attr", []> {
   let results = (outs AnyTensor:$output);
   DerivedTypeAttr element_dtype =
     DerivedTypeAttr<"return getElementTypeOrSelf(getOutput().getType());">;
-  DerivedAttr size = DerivedAttr<"int",
-    "return getOutput().getType().cast<ShapedType>().getSizeInBits();",
+  DerivedAttr num_elements = DerivedAttr<"int",
+    "return ::llvm::cast<ShapedType>(getOutput().getType()).getNumElements();",
     "$_builder.getI32IntegerAttr($_self)">;
 }
 
@@ -274,6 +274,13 @@ def TypedAttrOp : TEST_Op<"typed_attr"> {
   let arguments = (ins TypeAttr:$type, AnyAttr:$attr);
   let assemblyFormat = [{
     attr-dict $type `=` custom<AttrElideType>(ref($type), $attr)
+  }];
+}
+
+def TypeAttrOfOp : TEST_Op<"type_attr_of"> {
+  let arguments = (ins TypeAttrOf<I64>:$type);
+  let assemblyFormat = [{
+    attr-dict $type
   }];
 }
 
@@ -423,11 +430,24 @@ def VariadicRegionInferredTypesOp : TEST_Op<"variadic_region_inferred",
   let extraClassDeclaration = [{
     static mlir::LogicalResult inferReturnTypes(mlir::MLIRContext *context,
           std::optional<::mlir::Location> location, mlir::ValueRange operands,
-          mlir::DictionaryAttr attributes, mlir::RegionRange regions,
+          mlir::DictionaryAttr attributes, mlir::OpaqueProperties properties, mlir::RegionRange regions,
           llvm::SmallVectorImpl<mlir::Type> &inferredReturnTypes) {
       inferredReturnTypes.assign({mlir::IntegerType::get(context, 16)});
       return mlir::success();
     }
+  }];
+}
+
+def OneRegionWithOperandsOp : TEST_Op<"one_region_with_operands_op", []> {
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let regions = (region AnyRegion);
+}
+
+def IsolatedOneRegionOp : TEST_Op<"isolated_one_region_op", [IsolatedFromAbove]> {
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let regions = (region AnyRegion:$my_region);
+  let assemblyFormat = [{
+    attr-dict-with-keyword $operands $my_region `:` type($operands)
   }];
 }
 
@@ -475,10 +495,17 @@ def ConversionCallOp : TEST_Op<"conversion_call_op",
   let extraClassDeclaration = [{
     /// Return the callee of this operation.
     ::mlir::CallInterfaceCallable getCallableForCallee();
+
+    /// Set the callee for this operation.
+    void setCalleeFromCallable(::mlir::CallInterfaceCallable);
   }];
   let extraClassDefinition = [{
     ::mlir::CallInterfaceCallable $cppClass::getCallableForCallee() {
       return (*this)->getAttrOfType<::mlir::SymbolRefAttr>("callee");
+    }
+
+    void $cppClass::setCalleeFromCallable(::mlir::CallInterfaceCallable callee) {
+      (*this)->setAttr("callee", callee.get<SymbolRefAttr>());
     }
   }];
 }
@@ -551,7 +578,7 @@ def FunctionalRegionOp : TEST_Op<"functional_region_op",
   let extraClassDeclaration = [{
     ::mlir::Region *getCallableRegion() { return &getBody(); }
     ::llvm::ArrayRef<::mlir::Type> getCallableResults() {
-      return getType().cast<::mlir::FunctionType>().getResults();
+      return ::llvm::cast<::mlir::FunctionType>(getType()).getResults();
     }
     ::mlir::ArrayAttr getCallableArgAttrs() {
       return nullptr;
@@ -731,6 +758,12 @@ def IndexElementsAttrOp : TEST_Op<"indexElementsAttr"> {
 def OpWithInferTypeInterfaceOp : TEST_Op<"op_with_infer_type_if", [
     DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let arguments = (ins AnyTensor, AnyTensor);
+  let results = (outs AnyTensor);
+}
+
+def OpWithInferTypeAdaptorInterfaceOp : TEST_Op<"op_with_infer_type_adaptor_if", [
+    InferTypeOpAdaptor]> {
+  let arguments = (ins AnyTensor:$x, AnyTensor:$y);
   let results = (outs AnyTensor);
 }
 
@@ -1235,11 +1268,10 @@ def OpAllAttrConstraint2 : TEST_Op<"all_attr_constraint_of2"> {
   let results = (outs I32);
 }
 def Constraint0 : AttrConstraint<
-    CPred<"$_self.cast<ArrayAttr>()[0]."
-          "cast<::mlir::IntegerAttr>().getInt() == 0">,
+    CPred<"::llvm::cast<::mlir::IntegerAttr>(::llvm::cast<ArrayAttr>($_self)[0]).getInt() == 0">,
     "[0] == 0">;
 def Constraint1 : AttrConstraint<
-    CPred<"$_self.cast<ArrayAttr>()[1].cast<::mlir::IntegerAttr>().getInt() == 1">,
+    CPred<"::llvm::cast<::mlir::IntegerAttr>(::llvm::cast<ArrayAttr>($_self)[1]).getInt() == 1">,
     "[1] == 1">;
 def : Pat<(OpAllAttrConstraint1
             AllAttrOf<[Constraint0, Constraint1]>:$attr),
@@ -1456,7 +1488,7 @@ def OpAttrMatch2 : TEST_Op<"match_op_attribute2"> {
   let results = (outs I32);
 }
 def MoreConstraint : AttrConstraint<
-    CPred<"$_self.cast<IntegerAttr>().getInt() == 4">, "more constraint">;
+    CPred<"::llvm::cast<IntegerAttr>($_self).getInt() == 4">, "more constraint">;
 def : Pat<(OpAttrMatch1 $required, $optional, $default_valued,
                         MoreConstraint:$more),
           (OpAttrMatch2 $required, $optional, $default_valued, $more)>;
@@ -1671,20 +1703,20 @@ def TestEitherOpA : TEST_Op<"either_op_a"> {
 }
 
 def TestEitherOpB : TEST_Op<"either_op_b"> {
-  let arguments = (ins AnyInteger:$arg0);
+  let arguments = (ins AnyInteger:$arg0, AnyInteger:$arg1);
   let results = (outs I32:$output);
 }
 
-def : Pat<(TestEitherOpA (either I32:$arg1, I16:$arg2), $_),
-          (TestEitherOpB $arg2)>;
+def : Pat<(TestEitherOpA (either I32:$arg1, I16:$arg2), $x),
+          (TestEitherOpB $arg2, $x)>;
 
-def : Pat<(TestEitherOpA (either (TestEitherOpB I32:$arg1), I16:$arg2), $_),
-          (TestEitherOpB $arg2)>;
+def : Pat<(TestEitherOpA (either (TestEitherOpB I32:$arg1, $_), I16:$arg2), $x),
+          (TestEitherOpB $arg2, $x)>;
 
-def : Pat<(TestEitherOpA (either (TestEitherOpB I32:$arg1),
-                                 (TestEitherOpB I16:$arg2)),
-                          $_),
-          (TestEitherOpB $arg2)>;
+def : Pat<(TestEitherOpA (either (TestEitherOpB I32:$arg1, $_),
+                                 (TestEitherOpB I16:$arg2, $_)),
+                          $x),
+          (TestEitherOpB $arg2, $x)>;
 
 //===----------------------------------------------------------------------===//
 // Test Patterns (Location)
@@ -2504,7 +2536,7 @@ def FormatInferTypeOp : TEST_Op<"format_infer_type", [InferTypeOpInterface]> {
   let extraClassDeclaration = [{
     static ::mlir::LogicalResult inferReturnTypes(::mlir::MLIRContext *context,
           ::std::optional<::mlir::Location> location, ::mlir::ValueRange operands,
-          ::mlir::DictionaryAttr attributes, ::mlir::RegionRange regions,
+          ::mlir::DictionaryAttr attributes, mlir::OpaqueProperties properties, ::mlir::RegionRange regions,
           ::llvm::SmallVectorImpl<::mlir::Type> &inferredReturnTypes) {
       inferredReturnTypes.assign({::mlir::IntegerType::get(context, 16)});
       return ::mlir::success();
@@ -2527,7 +2559,7 @@ class FormatInferAllTypesBaseOp<string mnemonic, list<Trait> traits = []>
   let extraClassDeclaration = [{
     static ::mlir::LogicalResult inferReturnTypes(::mlir::MLIRContext *context,
           ::std::optional<::mlir::Location> location, ::mlir::ValueRange operands,
-          ::mlir::DictionaryAttr attributes, ::mlir::RegionRange regions,
+          ::mlir::DictionaryAttr attributes, mlir::OpaqueProperties properties, ::mlir::RegionRange regions,
           ::llvm::SmallVectorImpl<::mlir::Type> &inferredReturnTypes) {
       ::mlir::TypeRange operandTypes = operands.getTypes();
       inferredReturnTypes.assign(operandTypes.begin(), operandTypes.end());
@@ -2574,7 +2606,7 @@ def FormatInferTypeRegionsOp
   let extraClassDeclaration = [{
     static ::mlir::LogicalResult inferReturnTypes(::mlir::MLIRContext *context,
           ::std::optional<::mlir::Location> location, ::mlir::ValueRange operands,
-          ::mlir::DictionaryAttr attributes, ::mlir::RegionRange regions,
+          ::mlir::DictionaryAttr attributes, mlir::OpaqueProperties properties, ::mlir::RegionRange regions,
           ::llvm::SmallVectorImpl<::mlir::Type> &inferredReturnTypes) {
       if (regions.empty())
         return ::mlir::failure();
@@ -2595,9 +2627,10 @@ def FormatInferTypeVariadicOperandsOp
   let extraClassDeclaration = [{
     static ::mlir::LogicalResult inferReturnTypes(::mlir::MLIRContext *context,
           ::std::optional<::mlir::Location> location, ::mlir::ValueRange operands,
-          ::mlir::DictionaryAttr attributes, ::mlir::RegionRange regions,
+          ::mlir::DictionaryAttr attributes, mlir::OpaqueProperties properties, ::mlir::RegionRange regions,
           ::llvm::SmallVectorImpl<::mlir::Type> &inferredReturnTypes) {
-      FormatInferTypeVariadicOperandsOpAdaptor adaptor(operands, attributes);
+      FormatInferTypeVariadicOperandsOpAdaptor adaptor(
+          operands, attributes, *properties.as<Properties *>(), {});
       auto aTypes = adaptor.getA().getTypes();
       auto bTypes = adaptor.getB().getTypes();
       inferredReturnTypes.append(aTypes.begin(), aTypes.end());
@@ -2803,7 +2836,7 @@ class TableGenBuildInferReturnTypeBaseOp<string mnemonic,
   let extraClassDeclaration = [{
     static ::mlir::LogicalResult inferReturnTypes(::mlir::MLIRContext *,
           ::std::optional<::mlir::Location> location, ::mlir::ValueRange operands,
-          ::mlir::DictionaryAttr attributes, ::mlir::RegionRange regions,
+          ::mlir::DictionaryAttr attributes, mlir::OpaqueProperties properties, ::mlir::RegionRange regions,
           ::llvm::SmallVectorImpl<::mlir::Type> &inferredReturnTypes) {
       inferredReturnTypes.assign({operands[0].getType()});
       return ::mlir::success();
@@ -2880,6 +2913,34 @@ def OpCrashShort : TEST_Op<"op_crash_short"> {
 }
 
 def : Pat<(OpCrashLong $_, $_, $_), (OpCrashShort)>;
+
+//===----------------------------------------------------------------------===//
+// Test DestinationStyleOpInterface.
+//===----------------------------------------------------------------------===//
+
+def TestDestinationStyleOp :
+    TEST_Op<"destination_style_op", [
+      DestinationStyleOpInterface,
+      AttrSizedOperandSegments]> {
+  let arguments = (ins
+    Variadic<AnyType>:$inputs,
+    Variadic<AnyType>:$outputs,
+    Variadic<AnyType>:$other_operands);
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = [{
+    attr-dict (`ins` `(` $inputs^ `:` type($inputs) `)`)?
+    (`outs` `(` $outputs^  `:` type($outputs) `)`)?
+    (`(` $other_operands^ `:` type($other_operands) `)`)?
+    (`->` type($results)^)?
+  }];
+
+  let extraClassDeclaration = [{
+    std::pair<int64_t, int64_t> getDpsInitsPositionRange() {
+      int64_t numOperands = this->getNumOperands();
+      return {numOperands - getOutputs().size(), numOperands};
+    }
+  }];
+}
 
 //===----------------------------------------------------------------------===//
 // Test LinalgConvolutionOpInterface.
@@ -3259,5 +3320,111 @@ def TestVersionedOpB : TEST_Op<"versionedB"> {
     TestAttrParams:$attribute
   );
 }
+
+//===----------------------------------------------------------------------===//
+// Test Properties
+//===----------------------------------------------------------------------===//
+
+
+// Op with a properties struct defined inline.
+def TestOpWithProperties : TEST_Op<"with_properties"> {
+  let assemblyFormat = "prop-dict attr-dict";
+  let arguments = (ins
+    IntProperty<"int64_t">:$a,
+    StrAttr:$b, // Attributes can directly be used here.
+    ArrayProperty<"int64_t", 4>:$array // example of an array
+  );
+}
+
+// Demonstrate how to wrap an existing C++ class named MyPropStruct.
+def MyStructProperty : Property<"MyPropStruct"> {
+  let convertToAttribute = "$_storage.asAttribute($_ctxt)";
+  let convertFromAttribute = "return MyPropStruct::setFromAttr($_storage, $_attr, $_diag);";
+  let hashProperty = "$_storage.hash();";
+}
+
+def TestOpWithWrappedProperties : TEST_Op<"with_wrapped_properties"> {
+  let assemblyFormat = "prop-dict attr-dict";
+  let arguments = (ins
+    MyStructProperty:$prop
+  );
+}
+
+def TestOpUsingPropertyInCustom : TEST_Op<"using_property_in_custom"> {
+  let assemblyFormat = "custom<UsingPropertyInCustom>($prop) attr-dict";
+  let arguments = (ins ArrayProperty<"int64_t", 3>:$prop);
+}
+
+def TestOpUsingPropertyRefInCustom : TEST_Op<"using_property_ref_in_custom"> {
+  let assemblyFormat = "custom<IntProperty>($first) `+` custom<SumProperty>($second, ref($first)) attr-dict";
+  let arguments = (ins IntProperty<"int64_t">:$first, IntProperty<"int64_t">:$second);
+}
+
+// Op with a properties struct defined out-of-line. The struct has custom
+// printer/parser.
+
+def PropertiesWithCustomPrint : Property<"PropertiesWithCustomPrint"> {
+  let convertToAttribute = [{
+    getPropertiesAsAttribute($_ctxt, $_storage)
+  }];
+  let convertFromAttribute = [{
+    return setPropertiesFromAttribute($_storage, $_attr, $_diag);
+  }];
+  let hashProperty = [{
+    computeHash($_storage);
+  }];
+}
+
+def TestOpWithNiceProperties : TEST_Op<"with_nice_properties"> {
+  let assemblyFormat = "prop-dict attr-dict";
+  let arguments = (ins
+     PropertiesWithCustomPrint:$prop
+  );
+  let extraClassDeclaration = [{
+    void printProperties(::mlir::MLIRContext *ctx, ::mlir::OpAsmPrinter &p,
+                         const Properties &prop);
+    static ::mlir::ParseResult  parseProperties(::mlir::OpAsmParser &parser,
+                                     ::mlir::OperationState &result);
+    static ::mlir::LogicalResult readFromMlirBytecode(
+        ::mlir::DialectBytecodeReader &,
+        test::PropertiesWithCustomPrint &prop);
+    static void writeToMlirBytecode(
+        ::mlir::DialectBytecodeWriter &,
+        const test::PropertiesWithCustomPrint &prop);
+  }];
+  let extraClassDefinition = [{
+    ::mlir::LogicalResult TestOpWithNiceProperties::readFromMlirBytecode(
+        ::mlir::DialectBytecodeReader &reader,
+        test::PropertiesWithCustomPrint &prop) {
+      StringRef label;
+      uint64_t value;
+      if (failed(reader.readString(label)) || failed(reader.readVarInt(value)))
+        return failure();
+      prop.label = std::make_shared<std::string>(label.str());
+      prop.value = value;
+      return success();
+    }
+    void TestOpWithNiceProperties::writeToMlirBytecode(
+        ::mlir::DialectBytecodeWriter &writer,
+        const test::PropertiesWithCustomPrint &prop) {
+      writer.writeOwnedString(*prop.label);
+      writer.writeVarInt(prop.value);
+    }
+    void TestOpWithNiceProperties::printProperties(::mlir::MLIRContext *ctx,
+            ::mlir::OpAsmPrinter &p, const Properties &prop) {
+      customPrintProperties(p, prop.prop);
+    }
+    ::mlir::ParseResult TestOpWithNiceProperties::parseProperties(
+        ::mlir::OpAsmParser &parser,
+        ::mlir::OperationState &result) {
+      Properties &prop = result.getOrAddProperties<Properties>();
+      if (customParseProperties(parser, prop.prop))
+        return failure();
+      return success();
+    }
+  }];
+}
+
+
 
 #endif // TEST_OPS

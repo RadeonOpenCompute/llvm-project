@@ -9,6 +9,19 @@
 @lds.size.1.align.1 = internal unnamed_addr addrspace(3) global [1 x i8] undef, align 1
 @lds.size.16.align.16 = internal unnamed_addr addrspace(3) global [16 x i8] undef, align 16
 
+; GCN-LABEL: {{^}}f0:
+; GCN-DAG: v_mov_b32_e32 [[NULL:v[0-9]+]], 0
+; GCN-DAG: v_mov_b32_e32 [[TREE:v[0-9]+]], 3
+; GCN:     ds_write_b8 [[NULL]], [[TREE]]
+define void @f0() {
+; OPT-LABEL: @f0(
+; OPT-NEXT:    store i8 3, ptr addrspace(3) @llvm.amdgcn.module.lds, align 1
+; OPT-NEXT:    ret void
+;
+  store i8 3, ptr addrspace(3) @lds.size.1.align.1, align 1
+  ret void
+}
+
 ; GCN-LABEL: {{^}}k0:
 ; GCN-DAG: v_mov_b32_e32 [[NULL:v[0-9]+]], 0
 ; GCN-DAG: v_mov_b32_e32 [[ONE:v[0-9]+]], 1
@@ -17,6 +30,7 @@
 ; GCN:     ds_write_b8 [[NULL]], [[TWO]] offset:16
 define amdgpu_kernel void @k0() {
 ; OPT-LABEL: @k0(
+; OPT-NEXT:    call void @llvm.donothing() [ "ExplicitUse"(ptr addrspace(3) @llvm.amdgcn.kernel.k0.lds) ]
 ; OPT-NEXT:    call void @llvm.donothing() [ "ExplicitUse"(ptr addrspace(3) @llvm.amdgcn.module.lds) ]
 ; OPT-NEXT:    store i8 1, ptr addrspace(3) @llvm.amdgcn.module.lds, align 1
 ; OPT-NEXT:    store i8 2, ptr addrspace(3) @llvm.amdgcn.kernel.k0.lds, align 16
@@ -28,19 +42,3 @@ define amdgpu_kernel void @k0() {
   call void @f0()
   ret void
 }
-
-; GCN-LABEL: {{^}}f0:
-; GCN-DAG: v_mov_b32_e32 [[NULL:v[0-9]+]], 0
-; GCN-DAG: v_mov_b32_e32 [[TREE:v[0-9]+]], 3
-; GCN:     ds_write_b8 [[NULL]], [[TREE]]
-define void @f0() {
-; OPT-LABEL: @f0() {
-; OPT-NEXT:    store i8 3, ptr addrspace(3) @llvm.amdgcn.module.lds, align 1
-; OPT-NEXT:    ret void
-;
-  store i8 3, ptr addrspace(3) @lds.size.1.align.1, align 1
-  ret void
-}
-
-attributes #0 = { "amdgpu-elide-module-lds" }
-; CHECK: attributes #0 = { "amdgpu-elide-module-lds" }

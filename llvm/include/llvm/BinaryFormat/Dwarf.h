@@ -146,6 +146,11 @@ enum LocationAtom {
   DW_OP_LLVM_arg = 0x1005,              ///< Only used in LLVM metadata.
 };
 
+enum LlvmUserLocationAtom {
+#define HANDLE_DW_OP_LLVM_USEROP(ID, NAME) DW_OP_LLVM_##NAME = ID,
+#include "llvm/BinaryFormat/Dwarf.def"
+};
+
 enum TypeKind : uint8_t {
 #define HANDLE_DW_ATE(ID, NAME, VERSION, VENDOR) DW_ATE_##NAME = ID,
 #include "llvm/BinaryFormat/Dwarf.def"
@@ -263,6 +268,7 @@ inline bool isCPlusPlus(SourceLanguage S) {
   case DW_LANG_Fortran18:
   case DW_LANG_Ada2005:
   case DW_LANG_Ada2012:
+  case DW_LANG_Mojo:
     result = false;
     break;
   }
@@ -329,6 +335,7 @@ inline bool isFortran(SourceLanguage S) {
   case DW_LANG_C17:
   case DW_LANG_Ada2005:
   case DW_LANG_Ada2012:
+  case DW_LANG_Mojo:
     result = false;
     break;
   }
@@ -393,6 +400,7 @@ inline bool isC(SourceLanguage S) {
   case DW_LANG_Fortran18:
   case DW_LANG_Ada2005:
   case DW_LANG_Ada2012:
+  case DW_LANG_Mojo:
     return false;
   }
   llvm_unreachable("Unknown language kind.");
@@ -423,6 +431,12 @@ enum MemorySpace {
 #include "llvm/BinaryFormat/Dwarf.def"
   DW_MSPACE_LLVM_lo_user = 0x8000,
   DW_MSPACE_LLVM_hi_user = 0xffff
+};
+
+enum AddressSpace {
+#define HANDLE_DW_ASPACE(ID, NAME) DW_ASPACE_LLVM_##NAME = ID,
+#define HANDLE_DW_ASPACE_PRED(ID, NAME, PRED) DW_ASPACE_LLVM_##NAME = ID,
+#include "llvm/BinaryFormat/Dwarf.def"
 };
 
 enum InlineAttribute {
@@ -638,6 +652,8 @@ StringRef ChildrenString(unsigned Children);
 StringRef AttributeString(unsigned Attribute);
 StringRef FormEncodingString(unsigned Encoding);
 StringRef OperationEncodingString(unsigned Encoding);
+StringRef SubOperationEncodingString(unsigned OpEncoding,
+                                     unsigned SubOpEncoding);
 StringRef AttributeEncodingString(unsigned Encoding);
 StringRef DecimalSignString(unsigned Sign);
 StringRef EndianityString(unsigned Endian);
@@ -668,6 +684,7 @@ StringRef FormatString(DwarfFormat Format);
 StringRef FormatString(bool IsDWARF64);
 StringRef RLEString(unsigned RLE);
 StringRef MemorySpaceString(unsigned MS);
+StringRef AddressSpaceString(unsigned AS, llvm::Triple TT);
 /// @}
 
 /// \defgroup DwarfConstantsParsing Dwarf constants parsing functions
@@ -682,6 +699,8 @@ StringRef MemorySpaceString(unsigned MS);
 /// @{
 unsigned getTag(StringRef TagString);
 unsigned getOperationEncoding(StringRef OperationEncodingString);
+unsigned getSubOperationEncoding(unsigned OpEncoding,
+                                 StringRef SubOperationEncodingString);
 unsigned getVirtuality(StringRef VirtualityString);
 unsigned getLanguage(StringRef LanguageString);
 unsigned getCallingConvention(StringRef LanguageString);

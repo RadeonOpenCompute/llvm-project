@@ -204,7 +204,7 @@ public:
     auto &os = getStream() << " -> ";
 
     bool wrapped = !llvm::hasSingleElement(types) ||
-                   (*types.begin()).template isa<FunctionType>();
+                   llvm::isa<FunctionType>((*types.begin()));
     if (wrapped)
       os << '(';
     llvm::interleaveComma(types, *this);
@@ -778,7 +778,7 @@ public:
     /// The parsed keyword itself.
     StringRef keyword;
 
-    /// The result of the switch statement or none if currently unknown.
+    /// The result of the switch statement or std::nullopt if currently unknown.
     std::optional<ResultT> result;
   };
 
@@ -865,7 +865,7 @@ public:
       return failure();
 
     // Check for the right kind of attribute.
-    if (!(result = attr.dyn_cast<AttrType>()))
+    if (!(result = llvm::dyn_cast<AttrType>(attr)))
       return emitError(loc, "invalid kind of attribute specified");
 
     return success();
@@ -899,7 +899,7 @@ public:
       return failure();
 
     // Check for the right kind of attribute.
-    result = attr.dyn_cast<AttrType>();
+    result = llvm::dyn_cast<AttrType>(attr);
     if (!result)
       return emitError(loc, "invalid kind of attribute specified");
 
@@ -936,7 +936,7 @@ public:
       return failure();
 
     // Check for the right kind of attribute.
-    result = attr.dyn_cast<AttrType>();
+    result = llvm::dyn_cast<AttrType>(attr);
     if (!result)
       return emitError(loc, "invalid kind of attribute specified");
 
@@ -957,20 +957,20 @@ public:
   /// populated in `result`.
   template <typename AttrType>
   std::enable_if_t<detect_has_parse_method<AttrType>::value, ParseResult>
-  parseCustomAttributeWithFallback(AttrType &result) {
+  parseCustomAttributeWithFallback(AttrType &result, Type type = {}) {
     SMLoc loc = getCurrentLocation();
 
     // Parse any kind of attribute.
     Attribute attr;
     if (parseCustomAttributeWithFallback(
-            attr, {}, [&](Attribute &result, Type type) -> ParseResult {
+            attr, type, [&](Attribute &result, Type type) -> ParseResult {
               result = AttrType::parse(*this, type);
               return success(!!result);
             }))
       return failure();
 
     // Check for the right kind of attribute.
-    result = attr.dyn_cast<AttrType>();
+    result = llvm::dyn_cast<AttrType>(attr);
     if (!result)
       return emitError(loc, "invalid kind of attribute specified");
     return success();
@@ -979,8 +979,8 @@ public:
   /// SFINAE parsing method for Attribute that don't implement a parse method.
   template <typename AttrType>
   std::enable_if_t<!detect_has_parse_method<AttrType>::value, ParseResult>
-  parseCustomAttributeWithFallback(AttrType &result) {
-    return parseAttribute(result);
+  parseCustomAttributeWithFallback(AttrType &result, Type type = {}) {
+    return parseAttribute(result, type);
   }
 
   /// Parse an arbitrary optional attribute of a given type and return it in
@@ -1032,8 +1032,14 @@ public:
   /// Parse an affine map instance into 'map'.
   virtual ParseResult parseAffineMap(AffineMap &map) = 0;
 
+  /// Parse an affine expr instance into 'expr' using the already computed
+  /// mapping from symbols to affine expressions in 'symbolSet'.
+  virtual ParseResult
+  parseAffineExpr(ArrayRef<std::pair<StringRef, AffineExpr>> symbolSet,
+                  AffineExpr &expr) = 0;
+
   /// Parse an integer set instance into 'set'.
-  virtual ParseResult printIntegerSet(IntegerSet &set) = 0;
+  virtual ParseResult parseIntegerSet(IntegerSet &set) = 0;
 
   //===--------------------------------------------------------------------===//
   // Identifier Parsing
@@ -1126,7 +1132,7 @@ public:
       return failure();
 
     // Check for the right kind of type.
-    result = type.dyn_cast<TypeT>();
+    result = llvm::dyn_cast<TypeT>(type);
     if (!result)
       return emitError(loc, "invalid kind of type specified");
 
@@ -1158,7 +1164,7 @@ public:
       return failure();
 
     // Check for the right kind of Type.
-    result = type.dyn_cast<TypeT>();
+    result = llvm::dyn_cast<TypeT>(type);
     if (!result)
       return emitError(loc, "invalid kind of Type specified");
     return success();
@@ -1198,7 +1204,7 @@ public:
       return failure();
 
     // Check for the right kind of type.
-    result = type.dyn_cast<TypeType>();
+    result = llvm::dyn_cast<TypeType>(type);
     if (!result)
       return emitError(loc, "invalid kind of type specified");
 
@@ -1368,6 +1374,7 @@ public:
       std::optional<MutableArrayRef<std::unique_ptr<Region>>> parsedRegions =
           std::nullopt,
       std::optional<ArrayRef<NamedAttribute>> parsedAttributes = std::nullopt,
+      std::optional<Attribute> parsedPropertiesAttribute = std::nullopt,
       std::optional<FunctionType> parsedFnType = std::nullopt) = 0;
 
   /// Parse a single SSA value operand name along with a result number if
@@ -1438,13 +1445,13 @@ public:
   std::enable_if_t<!std::is_convertible<Types, Type>::value, ParseResult>
   resolveOperands(Operands &&operands, Types &&types, SMLoc loc,
                   SmallVectorImpl<Value> &result) {
-    size_t operandSize = std::distance(operands.begin(), operands.end());
-    size_t typeSize = std::distance(types.begin(), types.end());
+    size_t operandSize = llvm::range_size(operands);
+    size_t typeSize = llvm::range_size(types);
     if (operandSize != typeSize)
       return emitError(loc)
              << operandSize << " operands present, but expected " << typeSize;
 
-    for (auto [operand, type] : llvm::zip(operands, types))
+    for (auto [operand, type] : llvm::zip_equal(operands, types))
       if (resolveOperand(operand, type, result))
         return failure();
     return success();

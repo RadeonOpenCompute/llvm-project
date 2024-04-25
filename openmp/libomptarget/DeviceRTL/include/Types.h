@@ -33,7 +33,9 @@ using uint32_t = unsigned int;
 using int64_t = long;
 using uint64_t = unsigned long;
 using size_t = decltype(sizeof(char));
-using uintptr_t = unsigned long;
+// TODO: Properly implement this
+using intptr_t = int64_t;
+using uintptr_t = uint64_t;
 
 static_assert(sizeof(int8_t) == 1, "type size mismatch");
 static_assert(sizeof(uint8_t) == 1, "type size mismatch");
@@ -134,7 +136,7 @@ using LaneMaskTy = uint64_t;
 #pragma omp end declare variant
 
 #pragma omp begin declare variant match(                                       \
-    device = {arch(amdgcn)}, implementation = {extension(match_none)})
+        device = {arch(amdgcn)}, implementation = {extension(match_none)})
 using LaneMaskTy = uint64_t;
 #pragma omp end declare variant
 

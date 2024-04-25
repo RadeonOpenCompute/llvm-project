@@ -34,6 +34,8 @@ namespace jitlink {
 /// Translate from ELF relocation type to JITLink-internal edge kind.
 Expected<aarch32::EdgeKind_aarch32> getJITLinkEdgeKind(uint32_t ELFType) {
   switch (ELFType) {
+  case ELF::R_ARM_ABS32:
+    return aarch32::Data_Pointer32;
   case ELF::R_ARM_REL32:
     return aarch32::Data_Delta32;
   case ELF::R_ARM_CALL:
@@ -58,6 +60,8 @@ Expected<uint32_t> getELFRelocationType(Edge::Kind Kind) {
   switch (static_cast<aarch32::EdgeKind_aarch32>(Kind)) {
   case aarch32::Data_Delta32:
     return ELF::R_ARM_REL32;
+  case aarch32::Data_Pointer32:
+    return ELF::R_ARM_ABS32;
   case aarch32::Arm_Call:
     return ELF::R_ARM_CALL;
   case aarch32::Thumb_Call:
@@ -187,9 +191,10 @@ protected:
 public:
   ELFLinkGraphBuilder_aarch32(StringRef FileName,
                               const llvm::object::ELFFile<ELFT> &Obj, Triple TT,
+                              SubtargetFeatures Features,
                               aarch32::ArmConfig ArmCfg)
-      : ELFLinkGraphBuilder<ELFT>(Obj, std::move(TT), FileName,
-                                  getELFAArch32EdgeKindName),
+      : ELFLinkGraphBuilder<ELFT>(Obj, std::move(TT), std::move(Features),
+                                  FileName, getELFAArch32EdgeKindName),
         ArmCfg(std::move(ArmCfg)) {}
 };
 
@@ -212,6 +217,10 @@ createLinkGraphFromELFObject_aarch32(MemoryBufferRef ObjectBuffer) {
   auto ELFObj = ObjectFile::createELFObjectFile(ObjectBuffer);
   if (!ELFObj)
     return ELFObj.takeError();
+
+  auto Features = (*ELFObj)->getFeatures();
+  if (!Features)
+    return Features.takeError();
 
   // Find out what exact AArch32 instruction set and features we target.
   auto TT = (*ELFObj)->makeTriple();
@@ -245,14 +254,16 @@ createLinkGraphFromELFObject_aarch32(MemoryBufferRef ObjectBuffer) {
   case Triple::thumb: {
     auto &ELFFile = cast<ELFObjectFile<ELF32LE>>(**ELFObj).getELFFile();
     return ELFLinkGraphBuilder_aarch32<support::little>(
-               (*ELFObj)->getFileName(), ELFFile, TT, ArmCfg)
+               (*ELFObj)->getFileName(), ELFFile, TT, std::move(*Features),
+               ArmCfg)
         .buildGraph();
   }
   case Triple::armeb:
   case Triple::thumbeb: {
     auto &ELFFile = cast<ELFObjectFile<ELF32BE>>(**ELFObj).getELFFile();
-    return ELFLinkGraphBuilder_aarch32<support::big>((*ELFObj)->getFileName(),
-                                                     ELFFile, TT, ArmCfg)
+    return ELFLinkGraphBuilder_aarch32<support::big>(
+               (*ELFObj)->getFileName(), ELFFile, TT, std::move(*Features),
+               ArmCfg)
         .buildGraph();
   }
   default:

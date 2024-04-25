@@ -1,5 +1,6 @@
 // RUN: mlir-opt %s -convert-amdgpu-to-rocdl=chipset=gfx908 | FileCheck %s
 // RUN: mlir-opt %s -convert-amdgpu-to-rocdl=chipset=gfx1030 | FileCheck %s --check-prefix=RDNA
+// RUN: mlir-opt %s -convert-amdgpu-to-rocdl=chipset=gfx1100 | FileCheck %s --check-prefix=RDNA
 
 // CHECK-LABEL: func @gpu_gcn_raw_buffer_load_scalar_i32
 func.func @gpu_gcn_raw_buffer_load_scalar_i32(%buf: memref<i32>) -> i32 {
@@ -195,6 +196,35 @@ func.func @gpu_gcn_raw_buffer_atomic_umin_i32(%value: i32, %buf: memref<64xi32>,
   // CHECK: rocdl.raw.buffer.atomic.umin %{{.*}} %[[resource]], %{{.*}}, %{{.*}}, %{{.*}} : i32
   amdgpu.raw_buffer_atomic_umin {boundsCheck = true} %value -> %buf[%idx] : i32 -> memref<64xi32>, i32
   func.return
+}
+
+// CHECK-LABEL: func @amdgpu_raw_buffer_atomic_cmpswap_f32
+// CHECK-SAME: (%[[src:.*]]: f32, %[[cmp:.*]]: f32, {{.*}})
+func.func @amdgpu_raw_buffer_atomic_cmpswap_f32(%src : f32, %cmp : f32, %buf : memref<64xf32>, %idx: i32) -> f32 {
+  // CHECK: %[[srcCast:.*]] = llvm.bitcast %[[src]] : f32 to i32
+  // CHECK: %[[cmpCast:.*]] = llvm.bitcast %[[cmp]] : f32 to i32
+  // CHECK: %[[numRecords:.*]] = llvm.mlir.constant(256 : i32)
+  // CHECK: llvm.insertelement{{.*}}%[[numRecords]]
+  // CHECK: %[[word3:.*]] = llvm.mlir.constant(159744 : i32)
+  // CHECK: %[[resource:.*]] = llvm.insertelement{{.*}}%[[word3]]
+  // CHECK: %[[dst:.*]] = rocdl.raw.buffer.atomic.cmpswap(%[[srcCast]], %[[cmpCast]], %[[resource]], %{{.*}}, %{{.*}}, %{{.*}}) : i32, vector<4xi32>
+  // CHECK: %[[dstCast:.*]] = llvm.bitcast %[[dst]] : i32 to f32
+  // CHECK: return %[[dstCast]]
+  %dst = amdgpu.raw_buffer_atomic_cmpswap {boundsCheck = true} %src, %cmp -> %buf[%idx] : f32 -> memref<64xf32>, i32
+  func.return %dst : f32
+}
+
+// CHECK-LABEL: func @amdgpu_raw_buffer_atomic_cmpswap_i64
+// CHECK-SAME: (%[[src:.*]]: i64, %[[cmp:.*]]: i64, {{.*}})
+func.func @amdgpu_raw_buffer_atomic_cmpswap_i64(%src : i64, %cmp : i64, %buf : memref<64xi64>, %idx: i32) -> i64 {
+  // CHECK: %[[numRecords:.*]] = llvm.mlir.constant(512 : i32)
+  // CHECK: llvm.insertelement{{.*}}%[[numRecords]]
+  // CHECK: %[[word3:.*]] = llvm.mlir.constant(159744 : i32)
+  // CHECK: %[[resource:.*]] = llvm.insertelement{{.*}}%[[word3]]
+  // CHECK: %[[dst:.*]] = rocdl.raw.buffer.atomic.cmpswap(%[[src]], %[[cmp]], %[[resource]], %{{.*}}, %{{.*}}, %{{.*}}) : i64, vector<4xi32>
+  // CHECK: return %[[dst]]
+  %dst = amdgpu.raw_buffer_atomic_cmpswap {boundsCheck = true} %src, %cmp -> %buf[%idx] : i64 -> memref<64xi64>, i32
+  func.return %dst : i64
 }
 
 // CHECK-LABEL: func @lds_barrier

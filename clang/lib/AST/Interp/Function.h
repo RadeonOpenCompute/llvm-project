@@ -137,12 +137,19 @@ public:
   /// Checks if the function is a destructor.
   bool isDestructor() const { return isa<CXXDestructorDecl>(F); }
 
+  /// Returns the parent record decl, if any.
+  const CXXRecordDecl *getParentDecl() const {
+    if (const auto *MD = dyn_cast<CXXMethodDecl>(F))
+      return MD->getParent();
+    return nullptr;
+  }
+
   /// Checks if the function is fully done compiling.
   bool isFullyCompiled() const { return IsFullyCompiled; }
 
   bool hasThisPointer() const { return HasThisPointer; }
 
-  // Checks if the funtion already has a body attached.
+  /// Checks if the function already has a body attached.
   bool hasBody() const { return HasBody; }
 
   unsigned getBuiltinID() const { return F->getBuiltinID(); }
@@ -157,7 +164,7 @@ private:
            bool HasThisPointer, bool HasRVO);
 
   /// Sets the code of a function.
-  void setCode(unsigned NewFrameSize, std::vector<char> &&NewCode,
+  void setCode(unsigned NewFrameSize, std::vector<std::byte> &&NewCode,
                SourceMap &&NewSrcMap, llvm::SmallVector<Scope, 2> &&NewScopes,
                bool NewHasBody) {
     FrameSize = NewFrameSize;
@@ -185,7 +192,7 @@ private:
   /// Size of the argument stack.
   unsigned ArgSize;
   /// Program code.
-  std::vector<char> Code;
+  std::vector<std::byte> Code;
   /// Opcode-to-expression mapping.
   SourceMap SrcMap;
   /// List of block descriptors.

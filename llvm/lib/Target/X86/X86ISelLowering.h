@@ -833,6 +833,12 @@ namespace llvm {
     // Load FP control word from i16 memory.
     FLDCW16m,
 
+    // Store x87 FPU environment into memory.
+    FNSTENVm,
+
+    // Load x87 FPU environment from memory.
+    FLDENVm,
+
     /// This instruction implements FP_TO_SINT with the
     /// integer destination in memory and a FP reg source.  This corresponds
     /// to the X86::FIST*m instructions and the rounding mode change stuff. It
@@ -1439,11 +1445,11 @@ namespace llvm {
     bool shouldFormOverflowOp(unsigned Opcode, EVT VT,
                               bool MathUsed) const override;
 
-    bool storeOfVectorConstantIsCheap(EVT MemVT, unsigned NumElem,
+    bool storeOfVectorConstantIsCheap(bool IsZero, EVT MemVT, unsigned NumElem,
                                       unsigned AddrSpace) const override {
       // If we can replace more than 2 scalar stores, there will be a reduction
       // in instructions even after we add a vector constant load.
-      return NumElem > 2;
+      return IsZero || NumElem > 2;
     }
 
     bool isLoadBitCastBeneficial(EVT LoadVT, EVT BitcastVT,
@@ -1520,6 +1526,10 @@ namespace llvm {
     bool supportSwiftError() const override;
 
     bool supportKCFIBundles() const override { return true; }
+
+    MachineInstr *EmitKCFICheck(MachineBasicBlock &MBB,
+                                MachineBasicBlock::instr_iterator &MBBI,
+                                const TargetInstrInfo *TII) const override;
 
     bool hasStackProbeSymbol(const MachineFunction &MF) const override;
     bool hasInlineStackProbe(const MachineFunction &MF) const override;
@@ -1659,6 +1669,9 @@ namespace llvm {
     SDValue LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerGET_ROUNDING(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSET_ROUNDING(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerGET_FPENV_MEM(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSET_FPENV_MEM(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerRESET_FPENV(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerWin64_i128OP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerWin64_FP_TO_INT128(SDValue Op, SelectionDAG &DAG,
                                     SDValue &Chain) const;

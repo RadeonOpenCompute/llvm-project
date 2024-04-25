@@ -36,7 +36,6 @@
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/LTO/SummaryBasedOptimizations.h"
-#include "llvm/MC/SubtargetFeature.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/IRObjectFile.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -45,14 +44,16 @@
 #include "llvm/Support/CachePruning.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FileUtilities.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SHA1.h"
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/SubtargetFeature.h"
 #include "llvm/Transforms/IPO/FunctionAttrs.h"
 #include "llvm/Transforms/IPO/FunctionImport.h"
 #include "llvm/Transforms/IPO/Internalize.h"
@@ -415,29 +416,14 @@ public:
     if (EntryPath.empty())
       return;
 
-    // Write to a temporary to avoid race condition
-    SmallString<128> TempFilename;
-    SmallString<128> CachePath(EntryPath);
-    llvm::sys::path::remove_filename(CachePath);
-    sys::path::append(TempFilename, CachePath, "Thin-%%%%%%.tmp.o");
-
-    if (auto Err = handleErrors(
-            llvm::writeFileAtomically(TempFilename, EntryPath,
-                                      OutputBuffer.getBuffer()),
-            [](const llvm::AtomicFileWriteError &E) {
-              std::string ErrorMsgBuffer;
-              llvm::raw_string_ostream S(ErrorMsgBuffer);
-              E.log(S);
-
-              if (E.Error ==
-                  llvm::atomic_write_error::failed_to_create_uniq_file) {
-                errs() << "Error: " << ErrorMsgBuffer << "\n";
-                report_fatal_error("ThinLTO: Can't get a temporary file");
-              }
-            })) {
-      // FIXME
-      consumeError(std::move(Err));
-    }
+    if (auto Err = llvm::writeToOutput(
+            EntryPath, [&OutputBuffer](llvm::raw_ostream &OS) -> llvm::Error {
+              OS << OutputBuffer.getBuffer();
+              return llvm::Error::success();
+            }))
+      report_fatal_error(llvm::formatv("ThinLTO: Can't write file {0}: {1}",
+                                       EntryPath,
+                                       toString(std::move(Err)).c_str()));
   }
 };
 
@@ -452,11 +438,6 @@ ProcessThinLTOModule(Module &TheModule, ModuleSummaryIndex &Index,
                      bool DisableCodeGen, StringRef SaveTempsDir,
                      bool Freestanding, unsigned OptLevel, unsigned count,
                      bool DebugPassManager) {
-  // See comment at call to updateVCallVisibilityInIndex() for why
-  // WholeProgramVisibilityEnabledInLTO is false.
-  updatePublicTypeTestCalls(TheModule,
-                            /* WholeProgramVisibilityEnabledInLTO */ false);
-
   // "Benchmark"-like optimization: single-source case
   bool SingleModule = (ModuleMap.size() == 1);
 
@@ -487,13 +468,18 @@ ProcessThinLTOModule(Module &TheModule, ModuleSummaryIndex &Index,
   // Save internalized bitcode
   saveTempBitcode(TheModule, SaveTempsDir, count, ".2.internalized.bc");
 
-  if (!SingleModule) {
+  if (!SingleModule)
     crossImportIntoModule(TheModule, Index, ModuleMap, ImportList,
                           ClearDSOLocalOnDeclarations);
 
-    // Save temps: after cross-module import.
-    saveTempBitcode(TheModule, SaveTempsDir, count, ".3.imported.bc");
-  }
+  // Do this after any importing so that imported code is updated.
+  // See comment at call to updateVCallVisibilityInIndex() for why
+  // WholeProgramVisibilityEnabledInLTO is false.
+  updatePublicTypeTestCalls(TheModule,
+                            /* WholeProgramVisibilityEnabledInLTO */ false);
+
+  // Save temps: after cross-module import.
+  saveTempBitcode(TheModule, SaveTempsDir, count, ".3.imported.bc");
 
   optimizeModule(TheModule, TM, OptLevel, Freestanding, DebugPassManager,
                  &Index);

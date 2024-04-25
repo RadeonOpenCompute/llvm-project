@@ -151,7 +151,9 @@ protected:
 /// conversions.
 class OneToNPatternRewriter : public PatternRewriter {
 public:
-  OneToNPatternRewriter(MLIRContext *context) : PatternRewriter(context) {}
+  OneToNPatternRewriter(MLIRContext *context,
+                        OpBuilder::Listener *listener = nullptr)
+      : PatternRewriter(context, listener) {}
 
   /// Replaces the results of the operation with the specified list of values
   /// mapped back to the original types as specified in the provided type
@@ -225,13 +227,16 @@ public:
   public:
     using RangeT = ArrayRef<ValueRange>;
     using BaseT = typename SourceOp::template GenericAdaptor<RangeT>;
+    using Properties = typename SourceOp::template InferredProperties<SourceOp>;
 
     OpAdaptor(const OneToNTypeMapping *operandMapping,
               const OneToNTypeMapping *resultMapping,
               const ValueRange *convertedOperands, RangeT values,
-              DictionaryAttr attrs = nullptr, RegionRange regions = {})
-        : BaseT(values, attrs, regions), operandMapping(operandMapping),
-          resultMapping(resultMapping), convertedOperands(convertedOperands) {}
+              DictionaryAttr attrs = nullptr, Properties &properties = {},
+              RegionRange regions = {})
+        : BaseT(values, attrs, properties, regions),
+          operandMapping(operandMapping), resultMapping(resultMapping),
+          convertedOperands(convertedOperands) {}
 
     /// Get the type mapping of the original operands to the converted operands.
     const OneToNTypeMapping &getOperandMapping() const {
@@ -271,7 +276,8 @@ public:
       valueRanges.push_back(values);
     }
     OpAdaptor adaptor(&operandMapping, &resultMapping, &convertedOperands,
-                      valueRanges, op->getAttrDictionary(), op->getRegions());
+                      valueRanges, op->getAttrDictionary(),
+                      cast<SourceOp>(op).getProperties(), op->getRegions());
 
     // Call overload implemented by the derived class.
     return matchAndRewrite(cast<SourceOp>(op), adaptor, rewriter);

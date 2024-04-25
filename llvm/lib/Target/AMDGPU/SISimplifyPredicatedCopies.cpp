@@ -148,16 +148,8 @@ bool SISimplifyPredicatedCopies::runOnMachineFunction(MachineFunction &MF) {
       unsigned Opcode = MI.getOpcode();
       switch (Opcode) {
       case AMDGPU::COPY:
-      case AMDGPU::PRED_COPY:
         if (!TII->isVGPRCopy(MI) &&
             TRI->isSGPRReg(*MRI, MI.getOperand(1).getReg())) {
-          // For PRED_COPY with SGPR regclass, change the opcode back to the
-          // regular COPY.
-          if (Opcode == AMDGPU::PRED_COPY) {
-            LLVM_DEBUG(dbgs() << MI << " to use COPY opcode");
-            MI.setDesc(TII->get(AMDGPU::COPY));
-            Changed = true;
-          }
         } else {
           if (TII->isVGPRCopy(MI) &&
               !TRI->isSGPRReg(*MRI, MI.getOperand(1).getReg()) &&

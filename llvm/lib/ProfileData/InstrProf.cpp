@@ -13,6 +13,7 @@
 
 #include "llvm/ProfileData/InstrProf.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -153,6 +154,9 @@ static std::string getInstrProfErrString(instrprof_error Err,
     OS << "profile uses zlib compression but the profile reader was built "
           "without zlib support";
     break;
+  case instrprof_error::raw_profile_version_mismatch:
+    OS << "raw profile version mismatch";
+    break;
   }
 
   // If optional error message is not empty, append it to the message.
@@ -227,31 +231,6 @@ std::string getInstrProfSectionName(InstrProfSectKind IPSK,
     SectName += ",regular,live_support";
 
   return SectName;
-}
-
-void SoftInstrProfErrors::addError(instrprof_error IE) {
-  if (IE == instrprof_error::success)
-    return;
-
-  if (FirstError == instrprof_error::success)
-    FirstError = IE;
-
-  switch (IE) {
-  case instrprof_error::hash_mismatch:
-    ++NumHashMismatches;
-    break;
-  case instrprof_error::count_mismatch:
-    ++NumCountMismatches;
-    break;
-  case instrprof_error::counter_overflow:
-    ++NumCounterOverflows;
-    break;
-  case instrprof_error::value_site_count_mismatch:
-    ++NumValueSiteCountMismatches;
-    break;
-  default:
-    llvm_unreachable("Not a soft error");
-  }
 }
 
 std::string InstrProfError::message() const {
@@ -798,6 +777,48 @@ void InstrProfRecord::addValueData(uint32_t ValueKind, uint32_t Site,
     ValueSites.emplace_back();
   else
     ValueSites.emplace_back(VData, VData + N);
+}
+
+std::vector<BPFunctionNode> TemporalProfTraceTy::createBPFunctionNodes(
+    ArrayRef<TemporalProfTraceTy> Traces) {
+  using IDT = BPFunctionNode::IDT;
+  using UtilityNodeT = BPFunctionNode::UtilityNodeT;
+  // Collect all function IDs ordered by their smallest timestamp. This will be
+  // used as the initial FunctionNode order.
+  SetVector<IDT> FunctionIds;
+  size_t LargestTraceSize = 0;
+  for (auto &Trace : Traces)
+    LargestTraceSize =
+        std::max(LargestTraceSize, Trace.FunctionNameRefs.size());
+  for (size_t Timestamp = 0; Timestamp < LargestTraceSize; Timestamp++)
+    for (auto &Trace : Traces)
+      if (Timestamp < Trace.FunctionNameRefs.size())
+        FunctionIds.insert(Trace.FunctionNameRefs[Timestamp]);
+
+  int N = std::ceil(std::log2(LargestTraceSize));
+
+  // TODO: We need to use the Trace.Weight field to give more weight to more
+  // important utilities
+  DenseMap<IDT, SmallVector<UtilityNodeT, 4>> FuncGroups;
+  for (size_t TraceIdx = 0; TraceIdx < Traces.size(); TraceIdx++) {
+    auto &Trace = Traces[TraceIdx].FunctionNameRefs;
+    for (size_t Timestamp = 0; Timestamp < Trace.size(); Timestamp++) {
+      for (int I = std::floor(std::log2(Timestamp + 1)); I < N; I++) {
+        auto &FunctionId = Trace[Timestamp];
+        UtilityNodeT GroupId = TraceIdx * N + I;
+        FuncGroups[FunctionId].push_back(GroupId);
+      }
+    }
+  }
+
+  std::vector<BPFunctionNode> Nodes;
+  for (auto &Id : FunctionIds) {
+    auto &UNs = FuncGroups[Id];
+    llvm::sort(UNs);
+    UNs.erase(std::unique(UNs.begin(), UNs.end()), UNs.end());
+    Nodes.emplace_back(Id, UNs);
+  }
+  return Nodes;
 }
 
 #define INSTR_PROF_COMMON_API_IMPL
@@ -1376,9 +1397,13 @@ Expected<Header> Header::readFromBuffer(const unsigned char *Buffer) {
     // When a new field is added in the header add a case statement here to
     // populate it.
     static_assert(
-        IndexedInstrProf::ProfVersion::CurrentVersion == Version9,
+        IndexedInstrProf::ProfVersion::CurrentVersion == Version10,
         "Please update the reading code below if a new field has been added, "
         "if not add a case statement to fall through to the latest version.");
+  case 10ull:
+    H.TemporalProfTracesOffset =
+        read(Buffer, offsetOf(&Header::TemporalProfTracesOffset));
+    [[fallthrough]];
   case 9ull:
     H.BinaryIdOffset = read(Buffer, offsetOf(&Header::BinaryIdOffset));
     [[fallthrough]];
@@ -1398,10 +1423,13 @@ size_t Header::size() const {
     // When a new field is added to the header add a case statement here to
     // compute the size as offset of the new field + size of the new field. This
     // relies on the field being added to the end of the list.
-    static_assert(IndexedInstrProf::ProfVersion::CurrentVersion == Version9,
+    static_assert(IndexedInstrProf::ProfVersion::CurrentVersion == Version10,
                   "Please update the size computation below if a new field has "
                   "been added to the header, if not add a case statement to "
                   "fall through to the latest version.");
+  case 10ull:
+    return offsetOf(&Header::TemporalProfTracesOffset) +
+           sizeof(Header::TemporalProfTracesOffset);
   case 9ull:
     return offsetOf(&Header::BinaryIdOffset) + sizeof(Header::BinaryIdOffset);
   case 8ull:

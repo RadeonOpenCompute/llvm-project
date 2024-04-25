@@ -11,11 +11,11 @@ add_mlir_dialect_library(MLIRGPUTransformOps
   MLIRGPUDeviceMapperEnumsGen
   
   LINK_LIBS PUBLIC
-  MLIRIR
+  MLIRGPUDialect
   MLIRGPUTransforms
+  MLIRIR
   MLIRParser
-  MLIRPDLDialect
   MLIRSideEffectInterfaces
   MLIRTransformDialect
-  MLIRGPUOps
+  MLIRVectorDialect
   )  

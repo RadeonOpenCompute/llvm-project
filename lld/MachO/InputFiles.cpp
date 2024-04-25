@@ -89,8 +89,8 @@ std::string lld::toString(const InputFile *f) {
     return "<internal>";
 
   // Multiple dylibs can be defined in one .tbd file.
-  if (auto dylibFile = dyn_cast<DylibFile>(f))
-    if (f->getName().endswith(".tbd"))
+  if (const auto *dylibFile = dyn_cast<DylibFile>(f))
+    if (f->getName().ends_with(".tbd"))
       return (f->getName() + "(" + dylibFile->installName + ")").str();
 
   if (f->archiveName.empty())
@@ -655,6 +655,8 @@ static macho::Symbol *createDefined(const NList &sym, StringRef name,
   bool isWeakDefCanBeHidden =
       (sym.n_desc & (N_WEAK_DEF | N_WEAK_REF)) == (N_WEAK_DEF | N_WEAK_REF);
 
+  assert(!(sym.n_desc & N_ARM_THUMB_DEF) && "ARM32 arch is not supported");
+
   if (sym.n_type & N_EXT) {
     // -load_hidden makes us treat global symbols as linkage unit scoped.
     // Duplicates are reported but the symbol does not go in the export trie.
@@ -697,16 +699,14 @@ static macho::Symbol *createDefined(const NList &sym, StringRef name,
       isPrivateExtern = true;
     return symtab->addDefined(
         name, isec->getFile(), isec, value, size, sym.n_desc & N_WEAK_DEF,
-        isPrivateExtern, sym.n_desc & N_ARM_THUMB_DEF,
-        sym.n_desc & REFERENCED_DYNAMICALLY, sym.n_desc & N_NO_DEAD_STRIP,
-        isWeakDefCanBeHidden);
+        isPrivateExtern, sym.n_desc & REFERENCED_DYNAMICALLY,
+        sym.n_desc & N_NO_DEAD_STRIP, isWeakDefCanBeHidden);
   }
   bool includeInSymtab = !isPrivateLabel(name) && !isEhFrameSection(isec);
   return make<Defined>(
       name, isec->getFile(), isec, value, size, sym.n_desc & N_WEAK_DEF,
       /*isExternal=*/false, /*isPrivateExtern=*/false, includeInSymtab,
-      sym.n_desc & N_ARM_THUMB_DEF, sym.n_desc & REFERENCED_DYNAMICALLY,
-      sym.n_desc & N_NO_DEAD_STRIP);
+      sym.n_desc & REFERENCED_DYNAMICALLY, sym.n_desc & N_NO_DEAD_STRIP);
 }
 
 // Absolute symbols are defined symbols that do not have an associated
@@ -714,18 +714,20 @@ static macho::Symbol *createDefined(const NList &sym, StringRef name,
 template <class NList>
 static macho::Symbol *createAbsolute(const NList &sym, InputFile *file,
                                      StringRef name, bool forceHidden) {
+  assert(!(sym.n_desc & N_ARM_THUMB_DEF) && "ARM32 arch is not supported");
+
   if (sym.n_type & N_EXT) {
     bool isPrivateExtern = sym.n_type & N_PEXT || forceHidden;
-    return symtab->addDefined(
-        name, file, nullptr, sym.n_value, /*size=*/0,
-        /*isWeakDef=*/false, isPrivateExtern, sym.n_desc & N_ARM_THUMB_DEF,
-        /*isReferencedDynamically=*/false, sym.n_desc & N_NO_DEAD_STRIP,
-        /*isWeakDefCanBeHidden=*/false);
+    return symtab->addDefined(name, file, nullptr, sym.n_value, /*size=*/0,
+                              /*isWeakDef=*/false, isPrivateExtern,
+                              /*isReferencedDynamically=*/false,
+                              sym.n_desc & N_NO_DEAD_STRIP,
+                              /*isWeakDefCanBeHidden=*/false);
   }
   return make<Defined>(name, file, nullptr, sym.n_value, /*size=*/0,
                        /*isWeakDef=*/false,
                        /*isExternal=*/false, /*isPrivateExtern=*/false,
-                       /*includeInSymtab=*/true, sym.n_desc & N_ARM_THUMB_DEF,
+                       /*includeInSymtab=*/true,
                        /*isReferencedDynamically=*/false,
                        sym.n_desc & N_NO_DEAD_STRIP);
 }
@@ -753,7 +755,7 @@ macho::Symbol *ObjFile::parseNonSectionSymbol(const NList &sym,
     StringRef aliasedName = StringRef(strtab + sym.n_value);
     // isPrivateExtern is the only symbol flag that has an impact on the final
     // aliased symbol.
-    auto alias = make<AliasSymbol>(this, name, aliasedName, isPrivateExtern);
+    auto *alias = make<AliasSymbol>(this, name, aliasedName, isPrivateExtern);
     aliases.push_back(alias);
     return alias;
   }
@@ -1366,7 +1368,7 @@ void ObjFile::registerEhFrames(Section &ehFrameSection) {
       make<Defined>("EH_Frame", isec->getFile(), isec, /*value=*/0,
                     isec->getSize(), /*isWeakDef=*/false, /*isExternal=*/false,
                     /*isPrivateExtern=*/false, /*includeInSymtab=*/false,
-                    /*isThumb=*/false, /*isReferencedDynamically=*/false,
+                    /*isReferencedDynamically=*/false,
                     /*noDeadStrip=*/false);
     else if (isec->symbols[0]->value != 0)
       fatal("found symbol at unexpected offset in __eh_frame");
@@ -1539,7 +1541,7 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
     StringRef stem = path::stem(path);
     SmallString<128> frameworkName;
     path::append(frameworkName, path::Style::posix, stem + ".framework", stem);
-    bool isFramework = path.endswith(frameworkName);
+    bool isFramework = path.ends_with(frameworkName);
     if (isFramework) {
       for (StringRef dir : config->frameworkSearchPaths) {
         SmallString<128> candidate = dir;
@@ -1549,7 +1551,7 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
           return loadDylib(*dylibPath, umbrella);
       }
     } else if (std::optional<StringRef> dylibPath = findPathCombination(
-                   stem, config->librarySearchPaths, {".tbd", ".dylib"}))
+                   stem, config->librarySearchPaths, {".tbd", ".dylib", ".so"}))
       return loadDylib(*dylibPath, umbrella);
   }
 
@@ -1578,7 +1580,7 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
     path::remove_filename(newPath);
     path::append(newPath, path);
     path = newPath;
-  } else if (path.startswith("@rpath/")) {
+  } else if (path.starts_with("@rpath/")) {
     for (StringRef rpath : umbrella->rpaths) {
       newPath.clear();
       if (rpath.consume_front("@loader_path/")) {
@@ -1597,8 +1599,8 @@ static DylibFile *findDylib(StringRef path, DylibFile *umbrella,
          make_pointee_range(currentTopLevelTapi->documents())) {
       assert(child.documents().empty());
       if (path == child.getInstallName()) {
-        auto file = make<DylibFile>(child, umbrella, /*isBundleLoader=*/false,
-                                    /*explicitlyLinked=*/false);
+        auto *file = make<DylibFile>(child, umbrella, /*isBundleLoader=*/false,
+                                     /*explicitlyLinked=*/false);
         file->parseReexports(child);
         return file;
       }
@@ -1692,14 +1694,15 @@ DylibFile::DylibFile(MemoryBufferRef mb, DylibFile *umbrella,
     error(toString(this) +
           ": dylib has both LC_DYLD_INFO_ONLY and LC_DYLD_EXPORTS_TRIE");
     return;
-  } else if (dyldInfo) {
+  }
+
+  if (dyldInfo) {
     parseExportedSymbols(dyldInfo->export_off, dyldInfo->export_size);
   } else if (exportsTrie) {
     parseExportedSymbols(exportsTrie->dataoff, exportsTrie->datasize);
   } else {
     error("No LC_DYLD_INFO_ONLY or LC_DYLD_EXPORTS_TRIE found in " +
           toString(this));
-    return;
   }
 }
 
@@ -1946,7 +1949,7 @@ DylibFile *DylibFile::getSyntheticDylib(StringRef installName,
 // name, compatibility version or hide/add symbols) for specific target
 // versions.
 bool DylibFile::handleLDSymbol(StringRef originalName) {
-  if (!originalName.startswith("$ld$"))
+  if (!originalName.starts_with("$ld$"))
     return false;
 
   StringRef action;
@@ -2056,7 +2059,7 @@ void DylibFile::handleLDInstallNameSymbol(StringRef name,
 void DylibFile::handleLDHideSymbol(StringRef name, StringRef originalName) {
   StringRef symbolName;
   bool shouldHide = true;
-  if (name.startswith("os")) {
+  if (name.starts_with("os")) {
     // If it's hidden based on versions.
     name = name.drop_front(2);
     StringRef minVersion;
@@ -2183,7 +2186,6 @@ static macho::Symbol *createBitcodeSymbol(const lto::InputFile::Symbol &objSym,
 
   return symtab->addDefined(name, &file, /*isec=*/nullptr, /*value=*/0,
                             /*size=*/0, objSym.isWeak(), isPrivateExtern,
-                            /*isThumb=*/false,
                             /*isReferencedDynamically=*/false,
                             /*noDeadStrip=*/false,
                             /*isWeakDefCanBeHidden=*/false);
@@ -2206,10 +2208,9 @@ BitcodeFile::BitcodeFile(MemoryBufferRef mb, StringRef archiveName,
   MemoryBufferRef mbref(mb.getBuffer(),
                         saver().save(archiveName.empty()
                                          ? path
-                                         : archiveName +
-                                               sys::path::filename(path) +
+                                         : archiveName + "(" +
+                                               sys::path::filename(path) + ")" +
                                                utostr(offsetInArchive)));
-
   obj = check(lto::InputFile::create(mbref));
   if (lazy)
     parseLazy();

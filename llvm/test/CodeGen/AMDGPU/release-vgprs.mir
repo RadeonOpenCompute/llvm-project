@@ -31,15 +31,15 @@ body:             |
     ;
     ; OPT-LABEL: name: tbuffer_store1
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: TBUFFER_STORE_FORMAT_XYZW_OFFSET_exact killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, killed renamable $sgpr4, 42, 117, 0, 0, implicit $exec
     ; OPT-NEXT: S_NOP 0
     ; OPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: tbuffer_store1
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: TBUFFER_STORE_FORMAT_XYZW_OFFSET_exact killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, killed renamable $sgpr4, 42, 117, 0, 0, implicit $exec
+    ; NOOPT-NEXT: S_NOP 0
+    ; NOOPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; NOOPT-NEXT: S_ENDPGM 0
     TBUFFER_STORE_FORMAT_XYZW_OFFSET_exact killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, killed renamable $sgpr4, 42, 117, 0, 0, implicit $exec
     S_ENDPGM 0
@@ -52,15 +52,15 @@ body:             |
     ;
     ; OPT-LABEL: name: tbuffer_store2
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: TBUFFER_STORE_FORMAT_XYZW_OFFEN_exact killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $vgpr4, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 115, 0, 0, implicit $exec :: (dereferenceable store (s128), align 1, addrspace 7)
     ; OPT-NEXT: S_NOP 0
     ; OPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: tbuffer_store2
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: TBUFFER_STORE_FORMAT_XYZW_OFFEN_exact killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $vgpr4, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 115, 0, 0, implicit $exec :: (dereferenceable store (s128), align 1, addrspace 7)
+    ; NOOPT-NEXT: S_NOP 0
+    ; NOOPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; NOOPT-NEXT: S_ENDPGM 0
     TBUFFER_STORE_FORMAT_XYZW_OFFEN_exact killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $vgpr4, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 115, 0, 0, implicit $exec :: (dereferenceable store (s128), align 1, addrspace 7)
     S_ENDPGM 0
@@ -72,14 +72,10 @@ body:             |
   bb.0:
     ; OPT-LABEL: name: flat_store
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: FLAT_STORE_DWORDX4 $vgpr49_vgpr50, $vgpr26_vgpr27_vgpr28_vgpr29, 0, 0, implicit $exec, implicit $flat_scr
-    ; OPT-NEXT: S_NOP 0
-    ; OPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: flat_store
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: FLAT_STORE_DWORDX4 $vgpr49_vgpr50, $vgpr26_vgpr27_vgpr28_vgpr29, 0, 0, implicit $exec, implicit $flat_scr
     ; NOOPT-NEXT: S_ENDPGM 0
     FLAT_STORE_DWORDX4 $vgpr49_vgpr50, $vgpr26_vgpr27_vgpr28_vgpr29, 0, 0, implicit $exec, implicit $flat_scr
@@ -93,7 +89,6 @@ body:             |
     ;
     ; OPT-LABEL: name: global_store
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: GLOBAL_STORE_DWORD undef renamable $vgpr0_vgpr1, killed renamable $vgpr1, 0, 4, implicit $exec
     ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: S_NOP 0
@@ -101,9 +96,10 @@ body:             |
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: global_store
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: GLOBAL_STORE_DWORD undef renamable $vgpr0_vgpr1, killed renamable $vgpr1, 0, 4, implicit $exec
     ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
+    ; NOOPT-NEXT: S_NOP 0
+    ; NOOPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; NOOPT-NEXT: S_ENDPGM 0
     GLOBAL_STORE_DWORD undef renamable $vgpr0_vgpr1, killed renamable $vgpr1, 0, 4, implicit $exec
     S_WAITCNT_VSCNT undef $sgpr_null, 0
@@ -117,15 +113,15 @@ body:             |
     ;
     ; OPT-LABEL: name: buffer_store_format
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: BUFFER_STORE_FORMAT_D16_X_OFFEN_exact killed renamable $vgpr0, killed renamable $vgpr1, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, killed renamable $sgpr4, 0, 0, 0, implicit $exec
     ; OPT-NEXT: S_NOP 0
     ; OPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: buffer_store_format
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: BUFFER_STORE_FORMAT_D16_X_OFFEN_exact killed renamable $vgpr0, killed renamable $vgpr1, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, killed renamable $sgpr4, 0, 0, 0, implicit $exec
+    ; NOOPT-NEXT: S_NOP 0
+    ; NOOPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; NOOPT-NEXT: S_ENDPGM 0
     BUFFER_STORE_FORMAT_D16_X_OFFEN_exact killed renamable $vgpr0, killed renamable $vgpr1, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, killed renamable $sgpr4, 0, 0, 0, implicit $exec
     S_ENDPGM 0
@@ -139,7 +135,6 @@ body:             |
     ; CHECK: renamable $vgpr0 = IMPLICIT_DEF
     ; CHECK-NEXT: renamable $vgpr1 = IMPLICIT_DEF
     ; CHECK-NEXT: S_WAITCNT 0
-    ; CHECK-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; CHECK-NEXT: DS_WRITE_B32_gfx9 killed renamable $vgpr0, killed renamable $vgpr1, 12, 0, implicit $exec
     ; CHECK-NEXT: S_ENDPGM 0
     renamable $vgpr0 = IMPLICIT_DEF
@@ -159,7 +154,6 @@ body:             |
     ; OPT: liveins: $vgpr0, $sgpr0_sgpr1
     ; OPT-NEXT: {{  $}}
     ; OPT-NEXT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: renamable $vgpr0 = V_MAD_I32_I24_e64 killed $vgpr1, killed $vgpr0, killed $sgpr2, 0, implicit $exec
     ; OPT-NEXT: GLOBAL_STORE_DWORD_SADDR killed renamable $vgpr2, killed renamable $vgpr0, killed renamable $sgpr0_sgpr1, 0, 0, implicit $exec
     ; OPT-NEXT: S_NOP 0
@@ -169,9 +163,10 @@ body:             |
     ; NOOPT: liveins: $vgpr0, $sgpr0_sgpr1
     ; NOOPT-NEXT: {{  $}}
     ; NOOPT-NEXT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: renamable $vgpr0 = V_MAD_I32_I24_e64 killed $vgpr1, killed $vgpr0, killed $sgpr2, 0, implicit $exec
     ; NOOPT-NEXT: GLOBAL_STORE_DWORD_SADDR killed renamable $vgpr2, killed renamable $vgpr0, killed renamable $sgpr0_sgpr1, 0, 0, implicit $exec
+    ; NOOPT-NEXT: S_NOP 0
+    ; NOOPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; NOOPT-NEXT: S_ENDPGM 0
     renamable $vgpr0 = V_MAD_I32_I24_e64 killed $vgpr1, killed $vgpr0, killed $sgpr2, 0, implicit $exec
     GLOBAL_STORE_DWORD_SADDR killed renamable $vgpr2, killed renamable $vgpr0, killed renamable $sgpr0_sgpr1, 0, 0, implicit $exec
@@ -186,7 +181,6 @@ body:             |
   ; CHECK-NEXT:   successors: %bb.1(0x80000000)
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   S_WAITCNT 0
-  ; CHECK-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; CHECK-NEXT:   renamable $vgpr0 = BUFFER_LOAD_FORMAT_X_IDXEN killed renamable $vgpr0, renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 0, 0, implicit $exec
   ; CHECK-NEXT:   S_BRANCH %bb.1
   ; CHECK-NEXT: {{  $}}
@@ -231,7 +225,6 @@ body:             |
   ; OPT-NEXT:   successors: %bb.2(0x80000000)
   ; OPT-NEXT: {{  $}}
   ; OPT-NEXT:   S_WAITCNT 0
-  ; OPT-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; OPT-NEXT:   TBUFFER_STORE_FORMAT_X_OFFSET_exact killed renamable $vgpr0, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 125, 0, 0, implicit $exec
   ; OPT-NEXT:   $vgpr1 = V_ADD_U32_e32 $vgpr0, $vgpr2, implicit $exec
   ; OPT-NEXT:   S_BRANCH %bb.2
@@ -252,7 +245,6 @@ body:             |
   ; NOOPT-NEXT:   successors: %bb.2(0x80000000)
   ; NOOPT-NEXT: {{  $}}
   ; NOOPT-NEXT:   S_WAITCNT 0
-  ; NOOPT-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; NOOPT-NEXT:   TBUFFER_STORE_FORMAT_X_OFFSET_exact killed renamable $vgpr0, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 125, 0, 0, implicit $exec
   ; NOOPT-NEXT:   $vgpr1 = V_ADD_U32_e32 $vgpr0, $vgpr2, implicit $exec
   ; NOOPT-NEXT:   S_BRANCH %bb.2
@@ -265,6 +257,8 @@ body:             |
   ; NOOPT-NEXT:   S_BRANCH %bb.2
   ; NOOPT-NEXT: {{  $}}
   ; NOOPT-NEXT: bb.2:
+  ; NOOPT-NEXT:   S_NOP 0
+  ; NOOPT-NEXT:   S_SENDMSG 3, implicit $exec, implicit $m0
   ; NOOPT-NEXT:   S_ENDPGM 0
   ;
   bb.0:
@@ -295,7 +289,6 @@ body:             |
   ; OPT-NEXT:   successors: %bb.2(0x80000000)
   ; OPT-NEXT: {{  $}}
   ; OPT-NEXT:   S_WAITCNT 0
-  ; OPT-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; OPT-NEXT:   $vgpr1 = V_ADD_U32_e32 $vgpr0, $vgpr2, implicit $exec
   ; OPT-NEXT:   TBUFFER_STORE_FORMAT_X_OFFSET_exact killed renamable $vgpr0, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 125, 0, 0, implicit $exec
   ; OPT-NEXT:   S_BRANCH %bb.2
@@ -326,7 +319,6 @@ body:             |
   ; NOOPT-NEXT:   successors: %bb.2(0x80000000)
   ; NOOPT-NEXT: {{  $}}
   ; NOOPT-NEXT:   S_WAITCNT 0
-  ; NOOPT-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; NOOPT-NEXT:   $vgpr1 = V_ADD_U32_e32 $vgpr0, $vgpr2, implicit $exec
   ; NOOPT-NEXT:   TBUFFER_STORE_FORMAT_X_OFFSET_exact killed renamable $vgpr0, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 125, 0, 0, implicit $exec
   ; NOOPT-NEXT:   S_BRANCH %bb.2
@@ -349,6 +341,8 @@ body:             |
   ; NOOPT-NEXT:   S_BRANCH %bb.4
   ; NOOPT-NEXT: {{  $}}
   ; NOOPT-NEXT: bb.4:
+  ; NOOPT-NEXT:   S_NOP 0
+  ; NOOPT-NEXT:   S_SENDMSG 3, implicit $exec, implicit $m0
   ; NOOPT-NEXT:   S_ENDPGM 0
   ;
   bb.0:
@@ -387,7 +381,6 @@ body:             |
   ; CHECK-NEXT:   successors: %bb.1(0x80000000)
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   S_WAITCNT 0
-  ; CHECK-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; CHECK-NEXT:   renamable $vgpr0 = BUFFER_LOAD_FORMAT_X_IDXEN killed renamable $vgpr0, renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 0, 0, implicit $exec
   ; CHECK-NEXT:   S_BRANCH %bb.1
   ; CHECK-NEXT: {{  $}}
@@ -425,7 +418,6 @@ body:             |
   ; OPT-NEXT:   successors: %bb.1(0x80000000)
   ; OPT-NEXT: {{  $}}
   ; OPT-NEXT:   S_WAITCNT 0
-  ; OPT-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; OPT-NEXT:   renamable $vgpr0 = BUFFER_LOAD_FORMAT_X_IDXEN killed renamable $vgpr0, renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 0, 0, implicit $exec
   ; OPT-NEXT:   S_BRANCH %bb.1
   ; OPT-NEXT: {{  $}}
@@ -447,7 +439,6 @@ body:             |
   ; NOOPT-NEXT:   successors: %bb.1(0x80000000)
   ; NOOPT-NEXT: {{  $}}
   ; NOOPT-NEXT:   S_WAITCNT 0
-  ; NOOPT-NEXT:   S_WAITCNT_VSCNT undef $sgpr_null, 0
   ; NOOPT-NEXT:   renamable $vgpr0 = BUFFER_LOAD_FORMAT_X_IDXEN killed renamable $vgpr0, renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 0, 0, implicit $exec
   ; NOOPT-NEXT:   S_BRANCH %bb.1
   ; NOOPT-NEXT: {{  $}}
@@ -461,6 +452,8 @@ body:             |
   ; NOOPT-NEXT:   S_BRANCH %bb.2
   ; NOOPT-NEXT: {{  $}}
   ; NOOPT-NEXT: bb.2:
+  ; NOOPT-NEXT:   S_NOP 0
+  ; NOOPT-NEXT:   S_SENDMSG 3, implicit $exec, implicit $m0
   ; NOOPT-NEXT:   S_ENDPGM 0
   ;
   bb.0:
@@ -488,15 +481,15 @@ body:             |
     ;
     ; OPT-LABEL: name: image_store
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: IMAGE_STORE_V2_V1_gfx11 killed renamable $vgpr0_vgpr1, killed renamable $vgpr2, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7, 12, 0, 1, 0, 0, -1, 0, 0, 0, implicit $exec :: (dereferenceable store (<2 x s32>), addrspace 7)
     ; OPT-NEXT: S_NOP 0
     ; OPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: image_store
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: IMAGE_STORE_V2_V1_gfx11 killed renamable $vgpr0_vgpr1, killed renamable $vgpr2, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7, 12, 0, 1, 0, 0, -1, 0, 0, 0, implicit $exec :: (dereferenceable store (<2 x s32>), addrspace 7)
+    ; NOOPT-NEXT: S_NOP 0
+    ; NOOPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; NOOPT-NEXT: S_ENDPGM 0
   IMAGE_STORE_V2_V1_gfx11 killed renamable $vgpr0_vgpr1, killed renamable $vgpr2, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7, 12, 0, 1, 0, 0, -1, 0, 0, 0, implicit $exec :: (dereferenceable store (<2 x s32>), addrspace 7)
   S_ENDPGM 0
@@ -508,15 +501,11 @@ body:             |
   bb.0:
     ; OPT-LABEL: name: scratch_store
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: renamable $sgpr0 = S_AND_B32 killed renamable $sgpr0, -16, implicit-def dead $scc
     ; OPT-NEXT: SCRATCH_STORE_DWORD_SADDR killed renamable $vgpr0, killed renamable $sgpr0, 0, 0, implicit $exec, implicit $flat_scr
-    ; OPT-NEXT: S_NOP 0
-    ; OPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: scratch_store
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: renamable $sgpr0 = S_AND_B32 killed renamable $sgpr0, -16, implicit-def dead $scc
     ; NOOPT-NEXT: SCRATCH_STORE_DWORD_SADDR killed renamable $vgpr0, killed renamable $sgpr0, 0, 0, implicit $exec, implicit $flat_scr
     ; NOOPT-NEXT: S_ENDPGM 0
@@ -532,15 +521,15 @@ body:             |
     ;
     ; OPT-LABEL: name: buffer_atomic
     ; OPT: S_WAITCNT 0
-    ; OPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; OPT-NEXT: BUFFER_ATOMIC_ADD_F32_OFFEN killed renamable $vgpr0, killed renamable $vgpr2, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 0, implicit $exec :: (volatile dereferenceable load store (s64), align 1, addrspace 7)
     ; OPT-NEXT: S_NOP 0
     ; OPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; OPT-NEXT: S_ENDPGM 0
     ; NOOPT-LABEL: name: buffer_atomic
     ; NOOPT: S_WAITCNT 0
-    ; NOOPT-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; NOOPT-NEXT: BUFFER_ATOMIC_ADD_F32_OFFEN killed renamable $vgpr0, killed renamable $vgpr2, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 0, implicit $exec :: (volatile dereferenceable load store (s64), align 1, addrspace 7)
+    ; NOOPT-NEXT: S_NOP 0
+    ; NOOPT-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; NOOPT-NEXT: S_ENDPGM 0
     BUFFER_ATOMIC_ADD_F32_OFFEN killed renamable $vgpr0, killed renamable $vgpr2, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3, 0, 0, 0, implicit $exec :: (volatile dereferenceable load store (s64), align 1, addrspace 7)
     S_ENDPGM 0
@@ -552,7 +541,6 @@ body:             |
   bb.0:
     ; CHECK-LABEL: name: flat_atomic
     ; CHECK: S_WAITCNT 0
-    ; CHECK-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; CHECK-NEXT: renamable $vgpr0_vgpr1 = FLAT_ATOMIC_DEC_X2_RTN killed renamable $vgpr0_vgpr1, killed renamable $vgpr2_vgpr3, 40, 1, implicit $exec, implicit $flat_scr
     ; CHECK-NEXT: S_ENDPGM 0
     renamable $vgpr0_vgpr1 = FLAT_ATOMIC_DEC_X2_RTN killed renamable $vgpr0_vgpr1, killed renamable $vgpr2_vgpr3, 40, 1, implicit $exec, implicit $flat_scr
@@ -566,7 +554,6 @@ body:             |
   bb.0:
     ; CHECK-LABEL: name: global_atomic
     ; CHECK: S_WAITCNT 0
-    ; CHECK-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; CHECK-NEXT: renamable $vgpr0_vgpr1 = GLOBAL_ATOMIC_INC_X2_SADDR_RTN killed renamable $vgpr0, killed renamable $vgpr1_vgpr2, killed renamable $sgpr0_sgpr1, 40, 1, implicit $exec
     ; CHECK-NEXT: S_ENDPGM 0
     renamable $vgpr0_vgpr1 = GLOBAL_ATOMIC_INC_X2_SADDR_RTN killed renamable $vgpr0, killed renamable $vgpr1_vgpr2, killed renamable $sgpr0_sgpr1, 40, 1, implicit $exec
@@ -579,7 +566,6 @@ body:             |
   bb.0:
     ; CHECK-LABEL: name: image_atomic
     ; CHECK: S_WAITCNT 0
-    ; CHECK-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; CHECK-NEXT: renamable $vgpr0_vgpr1_vgpr2_vgpr3 = IMAGE_ATOMIC_CMPSWAP_V2_V1_gfx11 killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $vgpr4, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7, 15, 0, 1, 1, 0, 0, 0, 0, implicit $exec :: (volatile dereferenceable load store (s64), addrspace 7)
     ; CHECK-NEXT: S_ENDPGM 0
     renamable $vgpr0_vgpr1_vgpr2_vgpr3 = IMAGE_ATOMIC_CMPSWAP_V2_V1_gfx11 killed renamable $vgpr0_vgpr1_vgpr2_vgpr3, killed renamable $vgpr4, killed renamable $sgpr0_sgpr1_sgpr2_sgpr3_sgpr4_sgpr5_sgpr6_sgpr7, 15, 0, 1, 1, 0, 0, 0, 0, implicit $exec :: (volatile dereferenceable load store (s64), addrspace 7)
@@ -592,9 +578,10 @@ body:             |
   bb.0:
     ; CHECK-LABEL: name: global_store_optnone
     ; CHECK: S_WAITCNT 0
-    ; CHECK-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
     ; CHECK-NEXT: GLOBAL_STORE_DWORD undef renamable $vgpr0_vgpr1, killed renamable $vgpr1, 0, 4, implicit $exec
     ; CHECK-NEXT: S_WAITCNT_VSCNT undef $sgpr_null, 0
+    ; CHECK-NEXT: S_NOP 0
+    ; CHECK-NEXT: S_SENDMSG 3, implicit $exec, implicit $m0
     ; CHECK-NEXT: S_ENDPGM 0
     GLOBAL_STORE_DWORD undef renamable $vgpr0_vgpr1, killed renamable $vgpr1, 0, 4, implicit $exec
     S_WAITCNT_VSCNT undef $sgpr_null, 0

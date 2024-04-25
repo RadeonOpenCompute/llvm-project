@@ -167,6 +167,7 @@ TEST(ConfigParseTest, ParsesConfigurationBools) {
   CHECK_PARSE_BOOL(IndentWrappedFunctionNames);
   CHECK_PARSE_BOOL(InsertBraces);
   CHECK_PARSE_BOOL(InsertNewlineAtEOF);
+  CHECK_PARSE_BOOL(KeepEmptyLinesAtEOF);
   CHECK_PARSE_BOOL(KeepEmptyLinesAtTheStartOfBlocks);
   CHECK_PARSE_BOOL(ObjCSpaceAfterProperty);
   CHECK_PARSE_BOOL(ObjCSpaceBeforeProtocolList);
@@ -247,6 +248,8 @@ TEST(ConfigParseTest, ParsesConfiguration) {
               SpacesBeforeTrailingComments, 1234u);
   CHECK_PARSE("IndentWidth: 32", IndentWidth, 32u);
   CHECK_PARSE("ContinuationIndentWidth: 11", ContinuationIndentWidth, 11u);
+  CHECK_PARSE("BracedInitializerIndentWidth: 34", BracedInitializerIndentWidth,
+              34);
   CHECK_PARSE("CommentPragmas: '// abc$'", CommentPragmas, "// abc$");
 
   Style.QualifierAlignment = FormatStyle::QAS_Right;
@@ -472,20 +475,20 @@ TEST(ConfigParseTest, ParsesConfiguration) {
 
   CHECK_PARSE("AlignTrailingComments: Leave", AlignTrailingComments,
               FormatStyle::TrailingCommentsAlignmentStyle(
-                  {FormatStyle::TCAS_Leave, 1}));
+                  {FormatStyle::TCAS_Leave, 0}));
   CHECK_PARSE("AlignTrailingComments: Always", AlignTrailingComments,
               FormatStyle::TrailingCommentsAlignmentStyle(
-                  {FormatStyle::TCAS_Always, 1}));
+                  {FormatStyle::TCAS_Always, 0}));
   CHECK_PARSE("AlignTrailingComments: Never", AlignTrailingComments,
               FormatStyle::TrailingCommentsAlignmentStyle(
-                  {FormatStyle::TCAS_Never, 1}));
+                  {FormatStyle::TCAS_Never, 0}));
   // For backwards compatibility
   CHECK_PARSE("AlignTrailingComments: true", AlignTrailingComments,
               FormatStyle::TrailingCommentsAlignmentStyle(
-                  {FormatStyle::TCAS_Always, 1}));
+                  {FormatStyle::TCAS_Always, 0}));
   CHECK_PARSE("AlignTrailingComments: false", AlignTrailingComments,
               FormatStyle::TrailingCommentsAlignmentStyle(
-                  {FormatStyle::TCAS_Never, 1}));
+                  {FormatStyle::TCAS_Never, 0}));
   CHECK_PARSE_NESTED_VALUE("Kind: Always", AlignTrailingComments, Kind,
                            FormatStyle::TCAS_Always);
   CHECK_PARSE_NESTED_VALUE("Kind: Never", AlignTrailingComments, Kind,
@@ -914,6 +917,13 @@ TEST(ConfigParseTest, ParsesConfiguration) {
               LineEnding, FormatStyle::LE_CRLF);
   Style.LineEnding = DefaultLineEnding;
   CHECK_PARSE("UseCRLF: true", LineEnding, FormatStyle::LE_DeriveCRLF);
+
+  CHECK_PARSE("RemoveParentheses: MultipleParentheses", RemoveParentheses,
+              FormatStyle::RPS_MultipleParentheses);
+  CHECK_PARSE("RemoveParentheses: ReturnStatement", RemoveParentheses,
+              FormatStyle::RPS_ReturnStatement);
+  CHECK_PARSE("RemoveParentheses: Leave", RemoveParentheses,
+              FormatStyle::RPS_Leave);
 }
 
 TEST(ConfigParseTest, ParsesConfigurationWithLanguages) {
@@ -1020,6 +1030,23 @@ TEST(ConfigParseTest, ParsesConfigurationWithLanguages) {
             ParseError::Error);
 
   EXPECT_EQ(FormatStyle::LK_Cpp, Style.Language);
+
+  Style.Language = FormatStyle::LK_Verilog;
+  CHECK_PARSE("---\n"
+              "Language: Verilog\n"
+              "IndentWidth: 12\n"
+              "---\n"
+              "Language: Cpp\n"
+              "IndentWidth: 34\n"
+              "...\n",
+              IndentWidth, 12u);
+  CHECK_PARSE("---\n"
+              "IndentWidth: 78\n"
+              "---\n"
+              "Language: Verilog\n"
+              "IndentWidth: 56\n"
+              "...\n",
+              IndentWidth, 56u);
 }
 
 TEST(ConfigParseTest, UsesLanguageForBasedOnStyle) {

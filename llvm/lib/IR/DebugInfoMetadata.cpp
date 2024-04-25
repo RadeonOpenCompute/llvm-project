@@ -95,14 +95,13 @@ DILocation *DILocation::getImpl(LLVMContext &Context, unsigned Line,
                    Storage, Context.pImpl->DILocations);
 }
 
-const DILocation *
-DILocation::getMergedLocations(ArrayRef<const DILocation *> Locs) {
+DILocation *DILocation::getMergedLocations(ArrayRef<DILocation *> Locs) {
   if (Locs.empty())
     return nullptr;
   if (Locs.size() == 1)
     return Locs[0];
   auto *Merged = Locs[0];
-  for (const DILocation *L : llvm::drop_begin(Locs)) {
+  for (DILocation *L : llvm::drop_begin(Locs)) {
     Merged = getMergedLocation(Merged, L);
     if (Merged == nullptr)
       break;
@@ -110,8 +109,7 @@ DILocation::getMergedLocations(ArrayRef<const DILocation *> Locs) {
   return Merged;
 }
 
-const DILocation *DILocation::getMergedLocation(const DILocation *LocA,
-                                                const DILocation *LocB) {
+DILocation *DILocation::getMergedLocation(DILocation *LocA, DILocation *LocB) {
   if (!LocA || !LocB)
     return nullptr;
 
@@ -971,6 +969,7 @@ DICompileUnit::getNameTableKind(StringRef Str) {
   return StringSwitch<std::optional<DebugNameTableKind>>(Str)
       .Case("Default", DebugNameTableKind::Default)
       .Case("GNU", DebugNameTableKind::GNU)
+      .Case("Apple", DebugNameTableKind::Apple)
       .Case("None", DebugNameTableKind::None)
       .Default(std::nullopt);
 }
@@ -995,6 +994,8 @@ const char *DICompileUnit::nameTableKindString(DebugNameTableKind NTK) {
     return nullptr;
   case DebugNameTableKind::GNU:
     return "GNU";
+  case DebugNameTableKind::Apple:
+    return "Apple";
   case DebugNameTableKind::None:
     return "None";
   }
@@ -1476,6 +1477,12 @@ bool DIExpression::isValid() const {
     case dwarf::DW_OP_push_object_address:
     case dwarf::DW_OP_over:
     case dwarf::DW_OP_consts:
+    case dwarf::DW_OP_eq:
+    case dwarf::DW_OP_ne:
+    case dwarf::DW_OP_gt:
+    case dwarf::DW_OP_ge:
+    case dwarf::DW_OP_lt:
+    case dwarf::DW_OP_le:
       break;
     }
   }
@@ -2025,11 +2032,11 @@ DIExpression *DIExpression::appendExt(const DIExpression *Expr,
 }
 
 StringRef DIOp::getAsmName(const Variant &V) {
-  return visit(makeVisitor([](auto &&Op) { return Op.getAsmName(); }), V);
+  return std::visit(makeVisitor([](auto &&Op) { return Op.getAsmName(); }), V);
 }
 
 unsigned DIOp::getBitcodeID(const Variant &V) {
-  return visit(makeVisitor([](auto &&Op) { return Op.getBitcodeID(); }), V);
+  return std::visit(makeVisitor([](auto &&Op) { return Op.getBitcodeID(); }), V);
 }
 
 namespace llvm {
@@ -2078,13 +2085,13 @@ DIExpr *DIExprBuilder::intoExpr() {
 
 DIExprBuilder &DIExprBuilder::removeReferrerIndirection(Type *PointeeType) {
   for (auto &&I = begin(); I != end(); ++I) {
-    if (auto *ReferrerOp = I->getIf<DIOp::Referrer>()) {
+    if (auto *ReferrerOp = std::get_if<DIOp::Referrer>(&*I)) {
       auto *ResultType = ReferrerOp->getResultType();
       assert(ResultType->isPointerTy() &&
              "Expected pointer type for translated alloca");
       ReferrerOp->setResultType(PointeeType);
       ++I;
-      if (I != end() && I->holdsAlternative<DIOp::Deref>())
+      if (I != end() && std::holds_alternative<DIOp::Deref>(*I))
         I = erase(I) - 1;
       else
         I = insert<DIOp::AddrOf>(I, ResultType->getPointerAddressSpace());
@@ -2183,7 +2190,7 @@ void DIArgList::handleChangedOperand(void *Ref, Metadata *New) {
       if (NewVM)
         VM = NewVM;
       else
-        VM = ValueAsMetadata::get(UndefValue::get(VM->getValue()->getType()));
+        VM = ValueAsMetadata::get(PoisonValue::get(VM->getValue()->getType()));
     }
   }
   if (Uniq) {

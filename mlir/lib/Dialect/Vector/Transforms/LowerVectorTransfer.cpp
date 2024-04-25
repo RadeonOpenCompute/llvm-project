@@ -29,7 +29,7 @@ inverseTransposeInBoundsAttr(OpBuilder &builder, ArrayAttr attr,
   size_t index = 0;
   for (unsigned pos : permutation)
     newInBoundsValues[pos] =
-        attr.getValue()[index++].cast<BoolAttr>().getValue();
+        cast<BoolAttr>(attr.getValue()[index++]).getValue();
   return builder.getBoolArrayAttr(newInBoundsValues);
 }
 
@@ -37,13 +37,28 @@ inverseTransposeInBoundsAttr(OpBuilder &builder, ArrayAttr attr,
 /// dimensions.
 static Value extendVectorRank(OpBuilder &builder, Location loc, Value vec,
                               int64_t addedRank) {
-  auto originalVecType = vec.getType().cast<VectorType>();
+  auto originalVecType = cast<VectorType>(vec.getType());
   SmallVector<int64_t> newShape(addedRank, 1);
   newShape.append(originalVecType.getShape().begin(),
                   originalVecType.getShape().end());
   VectorType newVecType =
       VectorType::get(newShape, originalVecType.getElementType());
   return builder.create<vector::BroadcastOp>(loc, newVecType, vec);
+}
+
+/// Extend the rank of a vector Value by `addedRanks` by adding inner unit
+/// dimensions.
+static Value extendMaskRank(OpBuilder &builder, Location loc, Value vec,
+                            int64_t addedRank) {
+  Value broadcasted = extendVectorRank(builder, loc, vec, addedRank);
+  SmallVector<int64_t> permutation;
+  for (int64_t i = addedRank,
+               e = broadcasted.getType().cast<VectorType>().getRank();
+       i < e; ++i)
+    permutation.push_back(i);
+  for (int64_t i = 0; i < addedRank; ++i)
+    permutation.push_back(i);
+  return builder.create<vector::TransposeOp>(loc, broadcasted, permutation);
 }
 
 //===----------------------------------------------------------------------===//
@@ -246,24 +261,26 @@ struct TransferWriteNonPermutationLowering
       missingInnerDim.push_back(i);
       exprs.push_back(rewriter.getAffineDimExpr(i));
     }
-    // Add unit dims at the beginning of the shape.
+    // Vector: add unit dims at the beginning of the shape.
     Value newVec = extendVectorRank(rewriter, op.getLoc(), op.getVector(),
                                     missingInnerDim.size());
+    // Mask: add unit dims at the end of the shape.
+    Value newMask;
+    if (op.getMask())
+      newMask = extendMaskRank(rewriter, op.getLoc(), op.getMask(),
+                               missingInnerDim.size());
     exprs.append(map.getResults().begin(), map.getResults().end());
     AffineMap newMap =
         AffineMap::get(map.getNumDims(), 0, exprs, op.getContext());
-    ArrayAttr newInBoundsAttr;
-    if (op.getInBounds()) {
-      // All the new dimensions added are inbound.
-      SmallVector<bool> newInBoundsValues(missingInnerDim.size(), true);
-      for (Attribute attr : op.getInBounds().value().getValue()) {
-        newInBoundsValues.push_back(attr.cast<BoolAttr>().getValue());
-      }
-      newInBoundsAttr = rewriter.getBoolArrayAttr(newInBoundsValues);
+    // All the new dimensions added are inbound.
+    SmallVector<bool> newInBoundsValues(missingInnerDim.size(), true);
+    for (int64_t i = 0, e = op.getVectorType().getRank(); i < e; ++i) {
+      newInBoundsValues.push_back(op.isDimInBounds(i));
     }
+    ArrayAttr newInBoundsAttr = rewriter.getBoolArrayAttr(newInBoundsValues);
     rewriter.replaceOpWithNewOp<vector::TransferWriteOp>(
         op, newVec, op.getSource(), op.getIndices(), AffineMapAttr::get(newMap),
-        op.getMask(), newInBoundsAttr);
+        newMask, newInBoundsAttr);
     return success();
   }
 };
@@ -315,7 +332,7 @@ struct TransferOpReduceRank : public OpRewritePattern<vector::TransferReadOp> {
     // In the meantime, lower these to a scalar load when they pop up.
     if (reducedShapeRank == 0) {
       Value newRead;
-      if (op.getShapedType().isa<TensorType>()) {
+      if (isa<TensorType>(op.getShapedType())) {
         newRead = rewriter.create<tensor::ExtractOp>(
             op.getLoc(), op.getSource(), op.getIndices());
       } else {
@@ -397,12 +414,12 @@ struct TransferReadToVectorLoadLowering
             &broadcastedDims))
       return rewriter.notifyMatchFailure(read, "not minor identity + bcast");
 
-    auto memRefType = read.getShapedType().dyn_cast<MemRefType>();
+    auto memRefType = dyn_cast<MemRefType>(read.getShapedType());
     if (!memRefType)
       return rewriter.notifyMatchFailure(read, "not a memref source");
 
     // Non-unit strides are handled by VectorToSCF.
-    if (!vector::isLastMemrefDimUnitStride(memRefType))
+    if (!isLastMemrefDimUnitStride(memRefType))
       return rewriter.notifyMatchFailure(read, "!= 1 stride needs VectorToSCF");
 
     // If there is broadcasting involved then we first load the unbroadcasted
@@ -418,11 +435,11 @@ struct TransferReadToVectorLoadLowering
     // `vector.load` supports vector types as memref's elements only when the
     // resulting vector type is the same as the element type.
     auto memrefElTy = memRefType.getElementType();
-    if (memrefElTy.isa<VectorType>() && memrefElTy != unbroadcastedVectorType)
+    if (isa<VectorType>(memrefElTy) && memrefElTy != unbroadcastedVectorType)
       return rewriter.notifyMatchFailure(read, "incompatible element type");
 
     // Otherwise, element types of the memref and the vector must match.
-    if (!memrefElTy.isa<VectorType>() &&
+    if (!isa<VectorType>(memrefElTy) &&
         memrefElTy != read.getVectorType().getElementType())
       return rewriter.notifyMatchFailure(read, "non-matching element type");
 
@@ -543,14 +560,14 @@ struct TransferWriteToVectorStoreLowering
         diag << "permutation map is not minor identity: " << write;
       });
 
-    auto memRefType = write.getShapedType().dyn_cast<MemRefType>();
+    auto memRefType = dyn_cast<MemRefType>(write.getShapedType());
     if (!memRefType)
       return rewriter.notifyMatchFailure(write.getLoc(), [=](Diagnostic &diag) {
         diag << "not a memref type: " << write;
       });
 
     // Non-unit strides are handled by VectorToSCF.
-    if (!vector::isLastMemrefDimUnitStride(memRefType))
+    if (!isLastMemrefDimUnitStride(memRefType))
       return rewriter.notifyMatchFailure(write.getLoc(), [=](Diagnostic &diag) {
         diag << "most minor stride is not 1: " << write;
       });
@@ -558,13 +575,13 @@ struct TransferWriteToVectorStoreLowering
     // `vector.store` supports vector types as memref's elements only when the
     // type of the vector value being written is the same as the element type.
     auto memrefElTy = memRefType.getElementType();
-    if (memrefElTy.isa<VectorType>() && memrefElTy != write.getVectorType())
+    if (isa<VectorType>(memrefElTy) && memrefElTy != write.getVectorType())
       return rewriter.notifyMatchFailure(write.getLoc(), [=](Diagnostic &diag) {
         diag << "elemental type mismatch: " << write;
       });
 
     // Otherwise, element types of the memref and the vector must match.
-    if (!memrefElTy.isa<VectorType>() &&
+    if (!isa<VectorType>(memrefElTy) &&
         memrefElTy != write.getVectorType().getElementType())
       return rewriter.notifyMatchFailure(write.getLoc(), [=](Diagnostic &diag) {
         diag << "elemental type mismatch: " << write;

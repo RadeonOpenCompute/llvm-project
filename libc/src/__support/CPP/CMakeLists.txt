@@ -60,11 +60,12 @@ add_header_library(
   HDRS
     string.h
   DEPENDS
+    libc.include.stdlib
     .string_view
     libc.src.__support.common
     libc.src.__support.integer_to_string
-    libc.src.string.memory_utils.memcpy_implementation
-    libc.src.string.memory_utils.memset_implementation
+    libc.src.string.memory_utils.inline_memcpy
+    libc.src.string.memory_utils.inline_memset
     libc.src.string.string_utils
 )
 

@@ -128,6 +128,11 @@ BinaryContext::createBinaryContext(const ObjectFile *File, bool IsPIC,
     ArchName = "aarch64";
     FeaturesStr = "+all";
     break;
+  case llvm::Triple::riscv64:
+    ArchName = "riscv64";
+    // RV64GC
+    FeaturesStr = "+m,+a,+f,+d,+zicsr,+zifencei,+c";
+    break;
   default:
     return createStringError(std::errc::not_supported,
                              "BOLT-ERROR: Unrecognized machine in ELF file");
@@ -506,17 +511,6 @@ bool BinaryContext::analyzeJumpTable(const uint64_t Address,
       EntriesAsAddress->emplace_back(EntryAddress);
   };
 
-  auto doesBelongToFunction = [&](const uint64_t Addr,
-                                  const BinaryFunction *TargetBF) -> bool {
-    if (BF.containsAddress(Addr))
-      return true;
-    // Nothing to do if we failed to identify the containing function.
-    if (!TargetBF)
-      return false;
-    // Check if BF is a fragment of TargetBF or vice versa.
-    return BF.isChildOf(*TargetBF) || TargetBF->isChildOf(BF);
-  };
-
   ErrorOr<const BinarySection &> Section = getSectionForAddress(Address);
   if (!Section)
     return false;
@@ -576,8 +570,11 @@ bool BinaryContext::analyzeJumpTable(const uint64_t Address,
     // Function or one of its fragments.
     const BinaryFunction *TargetBF = getBinaryFunctionContainingAddress(Value);
 
+    bool DoesBelongToFunction = BF.containsAddress(Value) ||
+                                (TargetBF && TargetBF->isParentOrChildOf(BF));
+
     // We assume that a jump table cannot have function start as an entry.
-    if (!doesBelongToFunction(Value, TargetBF) || Value == BF.getAddress()) {
+    if (!DoesBelongToFunction || Value == BF.getAddress()) {
       LLVM_DEBUG({
         if (!BF.containsAddress(Value)) {
           dbgs() << "FAIL: function doesn't contain this address\n";
@@ -766,8 +763,7 @@ BinaryContext::getOrCreateJumpTable(BinaryFunction &Function, uint64_t Address,
     // Prevent associating a jump table to a specific fragment twice.
     // This simple check arises from the assumption: no more than 2 fragments.
     if (JT->Parents.size() == 1 && JT->Parents[0] != &Function) {
-      assert((JT->Parents[0]->isChildOf(Function) ||
-              Function.isChildOf(*JT->Parents[0])) &&
+      assert(JT->Parents[0]->isParentOrChildOf(Function) &&
              "cannot re-use jump table of a different function");
       // Duplicate the entry for the parent function for easy access
       JT->Parents.push_back(&Function);
@@ -1984,7 +1980,9 @@ void BinaryContext::deregisterUnusedSections() {
   ErrorOr<BinarySection &> AbsSection = getUniqueSectionByName("<absolute>");
   for (auto SI = Sections.begin(); SI != Sections.end();) {
     BinarySection *Section = *SI;
-    if (Section->hasSectionRef() || Section->getOutputSize() ||
+    // We check getOutputData() instead of getOutputSize() because sometimes
+    // zero-sized .text.cold sections are allocated.
+    if (Section->hasSectionRef() || Section->getOutputData() ||
         (AbsSection && Section == &AbsSection.get())) {
       ++SI;
       continue;
@@ -2109,8 +2107,9 @@ const Relocation *BinaryContext::getRelocationAt(uint64_t Address) const {
   return Section->getRelocationAt(Address - Section->getAddress());
 }
 
-const Relocation *BinaryContext::getDynamicRelocationAt(uint64_t Address) {
-  ErrorOr<BinarySection &> Section = getSectionForAddress(Address);
+const Relocation *
+BinaryContext::getDynamicRelocationAt(uint64_t Address) const {
+  ErrorOr<const BinarySection &> Section = getSectionForAddress(Address);
   if (!Section)
     return nullptr;
 
@@ -2289,9 +2288,8 @@ bool BinaryContext::validateInstructionEncoding(
 
   SmallString<256> Code;
   SmallVector<MCFixup, 4> Fixups;
-  raw_svector_ostream VecOS(Code);
 
-  MCE->encodeInstruction(Inst, VecOS, Fixups, *STI);
+  MCE->encodeInstruction(Inst, Code, Fixups, *STI);
   auto OutputSequence = ArrayRef<uint8_t>((uint8_t *)Code.data(), Code.size());
   if (InputSequence != OutputSequence) {
     if (opts::Verbosity > 1) {

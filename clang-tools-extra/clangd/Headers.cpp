@@ -21,6 +21,7 @@
 #include "llvm/Support/Path.h"
 #include <cstring>
 #include <optional>
+#include <string>
 
 namespace clang {
 namespace clangd {
@@ -29,7 +30,7 @@ class IncludeStructure::RecordHeaders : public PPCallbacks {
 public:
   RecordHeaders(const CompilerInstance &CI, IncludeStructure *Out)
       : SM(CI.getSourceManager()),
-        HeaderInfo(CI.getPreprocessor().getHeaderSearchInfo()), Out(Out) {}
+        Out(Out) {}
 
   // Record existing #includes - both written and resolved paths. Only #includes
   // in the main file are collected.
@@ -53,8 +54,9 @@ public:
       auto &Inc = Out->MainFileIncludes.back();
       Inc.Written =
           (IsAngled ? "<" + FileName + ">" : "\"" + FileName + "\"").str();
-      Inc.Resolved =
-          std::string(File ? File->getFileEntry().tryGetRealPathName() : "");
+      Inc.Resolved = std::string(
+          File ? getCanonicalPath(*File, SM.getFileManager()).value_or("")
+               : "");
       Inc.HashOffset = SM.getFileOffset(HashLoc);
       Inc.HashLine =
           SM.getLineNumber(SM.getFileID(HashLoc), Inc.HashOffset) - 1;
@@ -119,7 +121,6 @@ private:
   bool inMainFile() const { return Level == 1; }
 
   const SourceManager &SM;
-  HeaderSearch &HeaderInfo;
   // Set after entering the <built-in> file.
   FileID BuiltinFile;
   // Indicates whether <built-in> file is part of include stack.

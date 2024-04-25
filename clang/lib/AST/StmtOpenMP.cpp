@@ -2374,10 +2374,6 @@ OMPTeamsGenericLoopDirective *OMPTeamsGenericLoopDirective::Create(
   Dir->setNextLowerBound(Exprs.NLB);
   Dir->setNextUpperBound(Exprs.NUB);
   Dir->setNumIterations(Exprs.NumIterations);
-  Dir->setPrevLowerBoundVariable(Exprs.PrevLB);
-  Dir->setPrevUpperBoundVariable(Exprs.PrevUB);
-  Dir->setDistInc(Exprs.DistInc);
-  Dir->setPrevEnsureUpperBound(Exprs.PrevEUB);
   Dir->setCounters(Exprs.Counters);
   Dir->setPrivateCounters(Exprs.PrivateCounters);
   Dir->setInits(Exprs.Inits);
@@ -2387,15 +2383,6 @@ OMPTeamsGenericLoopDirective *OMPTeamsGenericLoopDirective::Create(
   Dir->setDependentInits(Exprs.DependentInits);
   Dir->setFinalsConditions(Exprs.FinalsConditions);
   Dir->setPreInits(Exprs.PreInits);
-  Dir->setCombinedLowerBoundVariable(Exprs.DistCombinedFields.LB);
-  Dir->setCombinedUpperBoundVariable(Exprs.DistCombinedFields.UB);
-  Dir->setCombinedEnsureUpperBound(Exprs.DistCombinedFields.EUB);
-  Dir->setCombinedInit(Exprs.DistCombinedFields.Init);
-  Dir->setCombinedCond(Exprs.DistCombinedFields.Cond);
-  Dir->setCombinedNextLowerBound(Exprs.DistCombinedFields.NLB);
-  Dir->setCombinedNextUpperBound(Exprs.DistCombinedFields.NUB);
-  Dir->setCombinedDistCond(Exprs.DistCombinedFields.DistCond);
-  Dir->setCombinedParForInDistCond(Exprs.DistCombinedFields.ParForInDistCond);
   return Dir;
 }
 

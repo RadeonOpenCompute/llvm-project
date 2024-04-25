@@ -215,7 +215,6 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   initializeAArch64ConditionOptimizerPass(*PR);
   initializeAArch64DeadRegisterDefinitionsPass(*PR);
   initializeAArch64ExpandPseudoPass(*PR);
-  initializeAArch64KCFIPass(*PR);
   initializeAArch64LoadStoreOptPass(*PR);
   initializeAArch64MIPeepholeOptPass(*PR);
   initializeAArch64SIMDInstrOptPass(*PR);
@@ -230,6 +229,7 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeAArch64Target() {
   initializeFalkorHWPFFixPass(*PR);
   initializeFalkorMarkStridedAccessesLegacyPass(*PR);
   initializeLDTLSCleanupPass(*PR);
+  initializeKCFIPass(*PR);
   initializeSMEABIPass(*PR);
   initializeSVEIntrinsicOptsPass(*PR);
   initializeAArch64SpeculationHardeningPass(*PR);
@@ -391,10 +391,10 @@ AArch64TargetMachine::getSubtargetImpl(const Function &F) const {
   StringRef TuneCPU = TuneAttr.isValid() ? TuneAttr.getValueAsString() : CPU;
   StringRef FS = FSAttr.isValid() ? FSAttr.getValueAsString() : TargetFS;
 
-  bool StreamingSVEModeDisabled =
-      !F.hasFnAttribute("aarch64_pstate_sm_enabled") &&
-      !F.hasFnAttribute("aarch64_pstate_sm_compatible") &&
-      !F.hasFnAttribute("aarch64_pstate_sm_body");
+  bool StreamingSVEMode = F.hasFnAttribute("aarch64_pstate_sm_enabled") ||
+                          F.hasFnAttribute("aarch64_pstate_sm_body");
+  bool StreamingCompatibleSVEMode =
+      F.hasFnAttribute("aarch64_pstate_sm_compatible");
 
   unsigned MinSVEVectorSize = 0;
   unsigned MaxSVEVectorSize = 0;
@@ -427,8 +427,11 @@ AArch64TargetMachine::getSubtargetImpl(const Function &F) const {
 
   SmallString<512> Key;
   raw_svector_ostream(Key) << "SVEMin" << MinSVEVectorSize << "SVEMax"
-                           << MaxSVEVectorSize << "StreamingSVEModeDisabled="
-                           << StreamingSVEModeDisabled << CPU << TuneCPU << FS;
+                           << MaxSVEVectorSize
+                           << "StreamingSVEMode=" << StreamingSVEMode
+                           << "StreamingCompatibleSVEMode="
+                           << StreamingCompatibleSVEMode << CPU << TuneCPU
+                           << FS;
 
   auto &I = SubtargetMap[Key];
   if (!I) {
@@ -438,8 +441,14 @@ AArch64TargetMachine::getSubtargetImpl(const Function &F) const {
     resetTargetOptions(F);
     I = std::make_unique<AArch64Subtarget>(
         TargetTriple, CPU, TuneCPU, FS, *this, isLittle, MinSVEVectorSize,
-        MaxSVEVectorSize, StreamingSVEModeDisabled);
+        MaxSVEVectorSize, StreamingSVEMode, StreamingCompatibleSVEMode);
   }
+
+  assert((!StreamingSVEMode || I->hasSME()) &&
+         "Expected SME to be available");
+  assert((!StreamingCompatibleSVEMode || I->hasSVEorSME()) &&
+         "Expected SVE or SME to be available");
+
   return I.get();
 }
 
@@ -772,7 +781,7 @@ void AArch64PassConfig::addPreSched2() {
       addPass(createAArch64LoadStoreOptimizationPass());
   }
   // Emit KCFI checks for indirect calls.
-  addPass(createAArch64KCFIPass());
+  addPass(createKCFIPass());
 
   // The AArch64SpeculationHardeningPass destroys dominator tree and natural
   // loop info, which is needed for the FalkorHWPFFixPass and also later on.

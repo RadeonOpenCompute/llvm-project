@@ -66,6 +66,7 @@ void ScalarEnumerationTraits<COFF::MachineTypes>::enumeration(
   ECase(IMAGE_FILE_MACHINE_ARMNT);
   ECase(IMAGE_FILE_MACHINE_ARM64);
   ECase(IMAGE_FILE_MACHINE_ARM64EC);
+  ECase(IMAGE_FILE_MACHINE_ARM64X);
   ECase(IMAGE_FILE_MACHINE_EBC);
   ECase(IMAGE_FILE_MACHINE_I386);
   ECase(IMAGE_FILE_MACHINE_IA64);
@@ -430,8 +431,7 @@ void MappingTraits<COFFYAML::Relocation>::mapping(IO &IO,
     MappingNormalization<NType<COFF::RelocationTypesARM>, uint16_t> NT(
         IO, Rel.Type);
     IO.mapRequired("Type", NT->Type);
-  } else if (H.Machine == COFF::IMAGE_FILE_MACHINE_ARM64 ||
-             H.Machine == COFF::IMAGE_FILE_MACHINE_ARM64EC) {
+  } else if (COFF::isAnyArm64(H.Machine)) {
     MappingNormalization<NType<COFF::RelocationTypesARM64>, uint16_t> NT(
         IO, Rel.Type);
     IO.mapRequired("Type", NT->Type);
@@ -547,6 +547,12 @@ void MappingTraits<COFF::AuxiliaryCLRToken>::mapping(
   IO.mapRequired("SymbolTableIndex", ACT.SymbolTableIndex);
 }
 
+void MappingTraits<COFFYAML::SectionDataEntry>::mapping(
+    IO &IO, COFFYAML::SectionDataEntry &E) {
+  IO.mapOptional("UInt32", E.UInt32);
+  IO.mapOptional("Binary", E.Binary);
+}
+
 void MappingTraits<COFFYAML::Symbol>::mapping(IO &IO, COFFYAML::Symbol &S) {
   MappingNormalization<NStorageClass, uint8_t> NS(IO, S.Header.StorageClass);
 
@@ -586,9 +592,16 @@ void MappingTraits<COFFYAML::Section>::mapping(IO &IO, COFFYAML::Section &Sec) {
   else if (Sec.Name == ".debug$H")
     IO.mapOptional("GlobalHashes", Sec.DebugH);
 
+  IO.mapOptional("StructuredData", Sec.StructuredData);
+
+  if (!Sec.StructuredData.empty() && Sec.SectionData.binary_size()) {
+    IO.setError("StructuredData and SectionData can't be used together");
+    return;
+  }
+
   // Uninitialized sections, such as .bss, typically have no data, but the size
   // is carried in SizeOfRawData, even though PointerToRawData is zero.
-  if (Sec.SectionData.binary_size() == 0 &&
+  if (Sec.SectionData.binary_size() == 0 && Sec.StructuredData.empty() &&
       NC->Characteristics & COFF::IMAGE_SCN_CNT_UNINITIALIZED_DATA)
     IO.mapOptional("SizeOfRawData", Sec.Header.SizeOfRawData);
 

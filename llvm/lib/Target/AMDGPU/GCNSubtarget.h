@@ -66,7 +66,6 @@ protected:
   unsigned MaxPrivateElementSize = 0;
 
   // Possibly statically set by tablegen, but may want to be overridden.
-  bool FastFMAF32 = false;
   bool FastDenormalF32 = false;
   bool HalfRate64Ops = false;
   bool FullRate64Ops = false;
@@ -328,10 +327,6 @@ public:
 
   bool hasHWFP64() const {
     return FP64;
-  }
-
-  bool hasFastFMAF32() const {
-    return FastFMAF32;
   }
 
   bool hasHalfRate64Ops() const {

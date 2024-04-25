@@ -217,7 +217,7 @@ define ptr addrspace(3) @ret_constant_cast_group_gv_gep_to_flat_to_group() #1 {
 ; AKF_HSA-NEXT:    ret ptr addrspace(3) addrspacecast (ptr addrspace(4) getelementptr ([256 x i32], ptr addrspace(4) addrspacecast (ptr addrspace(3) @lds.arr to ptr addrspace(4)), i64 0, i64 8) to ptr addrspace(3))
 ;
 ; ATTRIBUTOR_HSA-LABEL: define {{[^@]+}}@ret_constant_cast_group_gv_gep_to_flat_to_group
-; ATTRIBUTOR_HSA-SAME: () #[[ATTR2]] {
+; ATTRIBUTOR_HSA-SAME: () #[[ATTR3:[0-9]+]] {
 ; ATTRIBUTOR_HSA-NEXT:    ret ptr addrspace(3) addrspacecast (ptr addrspace(4) getelementptr ([256 x i32], ptr addrspace(4) addrspacecast (ptr addrspace(3) @lds.arr to ptr addrspace(4)), i64 0, i64 8) to ptr addrspace(3))
 ;
   ret ptr addrspace(3) addrspacecast (ptr addrspace(4) getelementptr ([256 x i32], ptr addrspace(4) addrspacecast (ptr addrspace(3) @lds.arr to ptr addrspace(4)), i64 0, i64 8) to ptr addrspace(3))
