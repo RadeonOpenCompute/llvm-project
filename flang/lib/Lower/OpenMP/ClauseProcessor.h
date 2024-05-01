@@ -133,7 +133,8 @@ public:
       const;
   bool processTo(llvm::SmallVectorImpl<DeclareTargetCapturePair> &result) const;
   bool
-  processUseDeviceAddr(mlir::omp::UseDeviceClauseOps &result,
+  processUseDeviceAddr(Fortran::lower::StatementContext &stmtCtx,
+                       llvm::SmallVectorImpl<mlir::Value> &operands,
                        llvm::SmallVectorImpl<mlir::Type> &useDeviceTypes,
                        llvm::SmallVectorImpl<mlir::Location> &useDeviceLocs,
                        llvm::SmallVectorImpl<const Fortran::semantics::Symbol *>
