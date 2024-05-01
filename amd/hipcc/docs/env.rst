@@ -17,7 +17,4 @@ The environment variable ``HIP_PLATFORM`` can be used to specify ``amd`` or ``nv
 
 Additional environment variable controls:
 
-* ``HIP_PATH``        : Path to HIP directory. The default is one dir level above the location of ``hipcc``.
 * ``CUDA_PATH``       : Path to the CUDA SDK. The default is ``/usr/local/cuda``. This is only used for NVIDIA platforms.
-* ``HIP_ROCCLR_HOME`` : Path to ``HIP/ROCclr`` directory. This is only used for AMD platforms.
-* ``HIP_CLANG_PATH``  : Path to HIP-Clang. The default is ``../../llvm/bin`` relative to the absolute path of ``hipcc``). This is only used for AMD platforms.
