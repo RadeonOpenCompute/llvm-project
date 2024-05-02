@@ -12,8 +12,6 @@ HIPCC documentation
 
 There is both a Perl version, and a C++ executable version of the ``hipcc`` and ``hipconfig`` compiler driver utilities provided. By default the Perl version is used when ``hipcc`` is run. To enable the C++ versions, set the environment variable ``HIP_USE_PERL_SCRIPTS=0``.
 
-.. note:: 
-  This is a deprecated, read-only mirror. It is kept up-to-date to facilitate transition to its new home under the ``amd/`` subdirectory in the `llvm-project <https://github.com/ROCm/llvm-project>`_ repository. Refer to that location for additional details.
 
 The documentation is structured as follows:
 
