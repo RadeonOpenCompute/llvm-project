@@ -30,7 +30,7 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
     * :doc:`API library <../doxygen/html/files>`
     * :doc:`Functions <../doxygen/html/globals>`
     * :doc:`Data structures <../doxygen/html/annotated>`
-
+    * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
     * :doc:`OpenMP FAQ <./reference/faq>`
 
   .. grid-item-card:: Tutorials
