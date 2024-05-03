@@ -1,139 +1,44 @@
-.. title:: Welcome to the documentation of OpenMP in LLVM!
-
-.. note::
-   This document is a work in progress and most of the expected content is not
-   yet available. While you can expect changes, we always welcome feedback and
-   additions. Please post on the `Discourse forums (Runtimes - 
-   OpenMP) <https://discourse.llvm.org/c/runtimes/openmp/35>`__..
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   LLVM/OpenMP Documentation <self>
+.. meta::
+  :description: OpenMP
+  :keywords: install, openmp, llvm, aomp, AMD, ROCm
 
 
-LLVM/OpenMP Design & Overview
-=============================
+The ROCm™ installation includes an LLVM-based implementation that fully supports the OpenMP 4.5 standard and a subset of OpenMP 5.0, 5.1, and 5.2 standards. Fortran, C/C++ compilers, and corresponding runtime libraries are included.
+Along with host APIs, the OpenMP compilers support offloading code and data onto GPU devices. This document briefly describes the installation location of the OpenMP toolchain, example usage of device offloading, and usage of `rocprof` with OpenMP applications. The GPUs supported are the same as those supported by this ROCm release. See the list of supported GPUs for {doc}`Linux<rocm-install-on-linux:reference/system-requirements>` and {doc}`Windows<rocm-install-on-windows:reference/system-requirements>`.
 
-OpenMP impacts various parts of the LLVM project, from the frontends (`Clang
-<https://clang.llvm.org/docs/OpenMPSupport.html>`_ and Flang), through
-middle-end :ref:`optimizations <llvm_openmp_optimizations>`, up to the
-multitude of available :ref:`OpenMP runtimes <openmp_runtimes>`.
+The ROCm OpenMP compiler is implemented using LLVM compiler technology. The following image illustrates the internal steps taken to translate a user’s application into an executable that can offload computation to the AMDGPU. The compilation is a two-pass process. Pass 1 compiles the application to generate the CPU code and Pass 2 links the CPU code to the AMDGPU device code.
 
-A high-level overview of OpenMP in LLVM can be found :doc:`here <design/Overview>`.
+You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-project>`_.
 
-.. toctree::
-   :hidden:
-   :maxdepth: 1
+.. grid:: 2
+  :gutter: 3
 
-   design/Overview
+  .. grid-item-card:: Install
 
-OpenACC Support
-===============
+    * :doc:`OpenMP installation <./install/install>`
 
-:doc:`OpenACC support <openacc/Overview>` is under development for
-both Flang and Clang.  For this purpose, LLVM's OpenMP runtimes are
-being extended to serve as OpenACC runtimes.  In some cases, Clang
-supports :doc:`OpenMP extensions <openacc/OpenMPExtensions>` to make
-the additional functionality also available in OpenMP applications.
+  .. grid-item-card:: Reference
 
-.. toctree::
-   :hidden:
-   :maxdepth: 1
+    * :doc:`API library <../doxygen/html/files>`
+    * :doc:`Functions <../doxygen/html/globals>`
+    * :doc:`Data structures <../doxygen/html/annotated>`
 
-   openacc/Overview
+    * :doc:`OpenMP FAQ <./reference/faq>`
 
-LLVM/OpenMP Optimizations
-=========================
+  .. grid-item-card:: How to
 
-LLVM, since `version 11 <https://releases.llvm.org/download.html#11.0.0>`_ (12 Oct
-2020), has an :doc:`OpenMP-Aware optimization pass <optimizations/OpenMPOpt>`
-as well as the ability to :doc:`perform "scalar optimizations" across OpenMP region
-boundaries <optimizations/OpenMPUnawareOptimizations>`.
+    * :doc:`<how-to/>`
 
-In-depth discussion of the topic can be found :doc:`here <optimizations/Overview>`.
+  .. grid-item-card:: Conceptual
 
-.. toctree::
-   :hidden:
-   :maxdepth: 1
+     * :doc:`OpenMP features <./conceptual/openmp-features>`
 
-   optimizations/Overview
+  .. grid-item-card:: Tutorials
 
-LLVM/OpenMP Optimization Remarks
-================================
+    * `GitHub samples <https://github.com/ROCm/rocDecode/tree/develop/samples>`_
 
-LLVM has an elaborate ecosystem around `analysis and optimization remarks
-<https://llvm.org/docs/Remarks.html>`_ issues during
-compilation. The remarks can be enabled from the clang frontend `[1]`_ `[2]`_
-in various formats `[3]`_ `[4]`_ to be used by tools, i.a., `opt-viewer` or
-`llvm-opt-report` (dated).
+To contribute to the documentation, refer to
+`Contributing to ROCm <https://rocm.docs.amd.com/en/latest/contribute/contributing.html>`_.
 
-The OpenMP optimizations in LLVM have been developed with remark support as a
-priority. For a list of OpenMP specific remarks and more information on them,
-please refer to :doc:`remarks/OptimizationRemarks`.
-
-
-.. _`[1]`: https://clang.llvm.org/docs/UsersManual.html#options-to-emit-optimization-reports
-.. _`[2]`: https://clang.llvm.org/docs/ClangCommandLineReference.html#diagnostic-flags
-.. _`[3]`: https://clang.llvm.org/docs/ClangCommandLineReference.html#cmdoption-clang-foptimization-record-file
-.. _`[4]`: https://clang.llvm.org/docs/ClangCommandLineReference.html#cmdoption-clang1-fsave-optimization-record
-
-+ `[1]`_ https://clang.llvm.org/docs/UsersManual.html#options-to-emit-optimization-reports
-+ `[2]`_ https://clang.llvm.org/docs/ClangCommandLineReference.html#diagnostic-flags
-+ `[3]`_ https://clang.llvm.org/docs/ClangCommandLineReference.html#cmdoption-clang-foptimization-record-file
-+ `[4]`_ https://clang.llvm.org/docs/ClangCommandLineReference.html#cmdoption-clang1-fsave-optimization-record
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   remarks/OptimizationRemarks
-
-OpenMP Command-Line Argument Reference
-======================================
-In addition to the 
-`Clang command-line argument reference <https://clang.llvm.org/docs/ClangCommandLineReference.html>`_ 
-we also recommend the OpenMP 
-:doc:`command-line argument reference <CommandLineArgumentReference>` 
-page that offers a detailed overview of options specific to OpenMP. It also 
-contains a list of OpenMP offloading related command-line arguments.
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   CommandLineArgumentReference
-
-Support, Getting Involved, and Frequently Asked Questions (FAQ)
-===============================================================
-
-Dealing with OpenMP can be complicated. For help with the setup of an OpenMP
-(offload) capable compiler toolchain, its usage, and common problems, consult
-the :doc:`Support and FAQ <SupportAndFAQ>` page.
-
-We also encourage everyone interested in OpenMP in LLVM to :doc:`get involved
-<SupportAndFAQ>`.
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   SupportAndFAQ
-
-Release Notes
-=============
-
-The current (in-progress) release notes can be found :doc:`here <ReleaseNotes>` while
-release notes for releases, starting with LLVM 12, will be available on `the
-Download Page <https://releases.llvm.org/download.html>`_.
-
-
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   In-Progress ReleaseNotes <ReleaseNotes>
+You can find licensing information on the
+`Licensing <https://rocm.docs.amd.com/en/latest/about/license.html>`_ page.
