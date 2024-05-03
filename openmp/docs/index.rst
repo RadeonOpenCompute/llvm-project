@@ -17,6 +17,14 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
 
     * :doc:`OpenMP installation <./install/install>`
 
+  .. grid-item-card:: Conceptual
+
+     * :doc:`OpenMP features <./conceptual/openmp-features>`
+
+  .. grid-item-card:: How to
+
+    * :doc:`<how-to/>`
+
   .. grid-item-card:: Reference
 
     * :doc:`API library <../doxygen/html/files>`
@@ -24,14 +32,6 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
     * :doc:`Data structures <../doxygen/html/annotated>`
 
     * :doc:`OpenMP FAQ <./reference/faq>`
-
-  .. grid-item-card:: How to
-
-    * :doc:`<how-to/>`
-
-  .. grid-item-card:: Conceptual
-
-     * :doc:`OpenMP features <./conceptual/openmp-features>`
 
   .. grid-item-card:: Tutorials
 
