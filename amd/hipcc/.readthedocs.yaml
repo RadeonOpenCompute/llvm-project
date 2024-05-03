@@ -11,4 +11,4 @@ formats: [htmlzip]
 python:
    version: "3.10"
    install:
-   - requirements: docs/.sphinx/requirements.txt
+   - requirements: docs/sphinx/requirements.txt
