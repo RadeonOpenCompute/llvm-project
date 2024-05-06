@@ -36,7 +36,7 @@ subtrees:
 - caption: Tutorials
   entries:
   - url: https://github.com/ROCm/aomp/tree/aomp-dev/examples
-    title: OpenMP samples
+    title: AOMP samples
 
 - caption: About
   entries:
