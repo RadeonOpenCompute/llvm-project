@@ -1,7 +1,9 @@
-! RUN: %not_todo_cmd bbc -emit-fir -fopenmp -o - %s 2>&1 | FileCheck %s
-! RUN: %not_todo_cmd %flang_fc1 -emit-fir -fopenmp -o - %s 2>&1 | FileCheck %s
+! RUN: bbc -emit-fir -fopenmp -o - %s | FileCheck %s
+! RUN: %flang_fc1 -emit-fir -fopenmp -o - %s | FileCheck %s
+! XFAIL: *
 
-! CHECK: not yet implemented: Unhandled clause REDUCTION in TEAMS construct
+! CHECK:       omp.teams
+! CHECK-SAME:  reduction
 subroutine reduction_teams()
   integer :: i
   i = 0

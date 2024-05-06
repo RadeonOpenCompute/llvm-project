@@ -24,10 +24,10 @@ end subroutine
 subroutine simd_with_if_clause(n, threshold)
   integer :: i, n, threshold
   !$OMP SIMD IF( n .GE. threshold )
+  ! CHECK: %[[COND:.*]] = arith.cmpi sge
   ! CHECK: %[[LB:.*]] = arith.constant 1 : i32
   ! CHECK: %[[UB:.*]] = fir.load %arg0
   ! CHECK: %[[STEP:.*]] = arith.constant 1 : i32
-  ! CHECK: %[[COND:.*]] = arith.cmpi sge
   ! CHECK: omp.simd if(%[[COND:.*]]) {
   ! CHECK-NEXT: omp.loop_nest (%[[I:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
   do i = 1, n

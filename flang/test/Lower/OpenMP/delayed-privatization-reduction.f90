@@ -21,11 +21,11 @@ subroutine red_and_delayed_private
     !$omp end parallel
 end subroutine
 
-! CHECK-LABEL: omp.private {type = private}
-! CHECK-SAME: @[[PRIVATIZER_SYM:.*]] : !fir.ref<i32> alloc {
-
 ! CHECK-LABEL: omp.declare_reduction
 ! CHECK-SAME: @[[REDUCTION_SYM:.*]] : i32 init
+
+! CHECK-LABEL: omp.private {type = private}
+! CHECK-SAME: @[[PRIVATIZER_SYM:.*]] : !fir.ref<i32> alloc {
 
 ! CHECK-LABEL: _QPred_and_delayed_private
 ! CHECK: omp.parallel

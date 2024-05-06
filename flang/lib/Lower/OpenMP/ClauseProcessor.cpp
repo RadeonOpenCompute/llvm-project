@@ -968,6 +968,17 @@ bool ClauseProcessor::processSectionsReduction(
       });
 }
 
+bool ClauseProcessor::processTargetReduction(
+    llvm::SmallVectorImpl<const Fortran::semantics::Symbol *> &reductionSymbols)
+    const {
+  return findRepeatableClause<omp::clause::Reduction>(
+      [&](const omp::clause::Reduction &clause,
+          const Fortran::parser::CharBlock &) {
+        ReductionProcessor rp;
+        rp.addReductionSym(clause, reductionSymbols);
+      });
+}
+
 bool ClauseProcessor::processTo(
     llvm::SmallVectorImpl<DeclareTargetCapturePair> &result) const {
   return findRepeatableClause<omp::clause::To>(

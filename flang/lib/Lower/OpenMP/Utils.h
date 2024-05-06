@@ -22,6 +22,12 @@ namespace fir {
 class FirOpBuilder;
 } // namespace fir
 
+namespace mlir {
+class OpBuilder;
+namespace omp {
+class TargetOp;
+} // namespace omp
+} // namespace mlir
 namespace Fortran {
 
 namespace semantics {

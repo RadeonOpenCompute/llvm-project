@@ -26,10 +26,10 @@ subroutine simd_with_if_clause(n, threshold)
   ! CHECK: %[[ARG_N:.*]]:2 = hlfir.declare %{{.*}} {uniq_name = "_QFsimd_with_if_clauseEn"} : (!fir.ref<i32>) -> (!fir.ref<i32>, !fir.ref<i32>)
   integer :: i, n, threshold
   !$OMP SIMD IF( n .GE. threshold )
+  ! CHECK: %[[COND:.*]] = arith.cmpi sge
   ! CHECK: %[[LB:.*]] = arith.constant 1 : i32
   ! CHECK: %[[UB:.*]] = fir.load %[[ARG_N]]#0
   ! CHECK: %[[STEP:.*]] = arith.constant 1 : i32
-  ! CHECK: %[[COND:.*]] = arith.cmpi sge
   ! CHECK: omp.simd if(%[[COND:.*]]) {
   ! CHECK-NEXT: omp.loop_nest (%[[I:.*]]) : i32 = (%[[LB]]) to (%[[UB]]) inclusive step (%[[STEP]]) {
   do i = 1, n

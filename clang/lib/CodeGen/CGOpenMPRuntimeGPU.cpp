@@ -770,14 +770,13 @@ void CGOpenMPRuntimeGPU::emitNonSPMDKernel(const OMPExecutableDirective &D,
 void CGOpenMPRuntimeGPU::emitKernelInit(const OMPExecutableDirective &D,
                                         CodeGenFunction &CGF,
                                         EntryFunctionState &EST, bool IsSPMD) {
-  int32_t MinThreadsVal = 1, MaxThreadsVal = -1, MinTeamsVal = 1,
-          MaxTeamsVal = -1;
-  computeMinAndMaxThreadsAndTeams(D, CGF, MinThreadsVal, MaxThreadsVal,
-                                  MinTeamsVal, MaxTeamsVal);
+  // Get NumTeams and ThreadLimit attributes.
+  llvm::OpenMPIRBuilder::TargetKernelDefaultBounds Bounds;
+  computeMinAndMaxThreadsAndTeams(D, CGF, Bounds.MinThreads, Bounds.MaxThreads,
+                                  Bounds.MinTeams, Bounds.MaxTeams);
 
   CGBuilderTy &Bld = CGF.Builder;
-  Bld.restoreIP(OMPBuilder.createTargetInit(
-      Bld, IsSPMD, MinThreadsVal, MaxThreadsVal, MinTeamsVal, MaxTeamsVal));
+  Bld.restoreIP(OMPBuilder.createTargetInit(Bld, IsSPMD, Bounds));
   if (!IsSPMD)
     emitGenericVarsProlog(CGF, EST.Loc);
 }

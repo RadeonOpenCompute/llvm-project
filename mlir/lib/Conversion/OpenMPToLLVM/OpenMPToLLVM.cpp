@@ -251,11 +251,11 @@ void mlir::configureOpenMPToLLVMConversionLegality(
   });
   target.addDynamicallyLegalOp<
       mlir::omp::AtomicUpdateOp, mlir::omp::CriticalOp, mlir::omp::TargetOp,
-      mlir::omp::TargetDataOp, mlir::omp::LoopNestOp,
-      mlir::omp::OrderedRegionOp, mlir::omp::ParallelOp, mlir::omp::WsloopOp,
-      mlir::omp::SimdOp, mlir::omp::MasterOp, mlir::omp::SectionOp,
-      mlir::omp::SectionsOp, mlir::omp::SingleOp, mlir::omp::TaskgroupOp,
-      mlir::omp::TaskOp, mlir::omp::DeclareReductionOp,
+      mlir::omp::TeamsOp, mlir::omp::DistributeOp, mlir::omp::TargetDataOp,
+      mlir::omp::LoopNestOp, mlir::omp::OrderedRegionOp, mlir::omp::ParallelOp,
+      mlir::omp::WsloopOp, mlir::omp::SimdOp, mlir::omp::MasterOp,
+      mlir::omp::SectionOp, mlir::omp::SectionsOp, mlir::omp::SingleOp,
+      mlir::omp::TaskgroupOp, mlir::omp::TaskOp, mlir::omp::DeclareReductionOp,
       mlir::omp::PrivateClauseOp>([&](Operation *op) {
     return std::all_of(op->getRegions().begin(), op->getRegions().end(),
                        [&](Region &region) {
@@ -286,6 +286,7 @@ void mlir::populateOpenMPToLLVMConversionPatterns(LLVMTypeConverter &converter,
       RegionOpConversion<omp::SimdOp>, RegionOpConversion<omp::SingleOp>,
       RegionOpConversion<omp::TaskgroupOp>, RegionOpConversion<omp::TaskOp>,
       RegionOpConversion<omp::TargetDataOp>, RegionOpConversion<omp::TargetOp>,
+      RegionOpConversion<omp::TeamsOp>, RegionOpConversion<omp::DistributeOp>,
       RegionLessOpWithVarOperandsConversion<omp::AtomicWriteOp>,
       RegionOpWithVarOperandsConversion<omp::AtomicUpdateOp>,
       RegionLessOpWithVarOperandsConversion<omp::FlushOp>,

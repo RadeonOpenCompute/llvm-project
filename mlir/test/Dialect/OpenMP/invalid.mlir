@@ -11,8 +11,8 @@ func.func @unknown_clause() {
 // -----
 
 func.func @not_wrapper() {
+  // expected-error@+1 {{op must be a loop wrapper}}
   omp.distribute {
-    // expected-error@+1 {{op must take a loop wrapper role if nested inside of 'omp.distribute'}}
     omp.parallel {
       %0 = arith.constant 0 : i32
       omp.terminator
@@ -363,12 +363,16 @@ func.func @omp_simd() -> () {
 
 // -----
 
-func.func @omp_simd_nested_wrapper() -> () {
+func.func @omp_simd_nested_wrapper(%lb : index, %ub : index, %step : index) -> () {
   // expected-error @below {{op must wrap an 'omp.loop_nest' directly}}
   omp.simd {
     omp.distribute {
+      omp.loop_nest (%iv) : index = (%lb) to (%ub) step (%step) {
+        omp.yield
+      }
       omp.terminator
     }
+    omp.terminator
   }
   return
 }
@@ -1362,24 +1366,18 @@ func.func @omp_teams_allocate(%data_var : memref<i32>) {
 // -----
 
 func.func @omp_teams_num_teams1(%lb : i32) {
-  omp.target {
-    // expected-error @below {{expected num_teams upper bound to be defined if the lower bound is defined}}
-    "omp.teams" (%lb) ({
-      omp.terminator
-    }) {operandSegmentSizes = array<i32: 1,0,0,0,0,0,0>} : (i32) -> ()
+  // expected-error @below {{expected num_teams upper bound to be defined if the lower bound is defined}}
+  "omp.teams" (%lb) ({
     omp.terminator
-  }
+  }) {operandSegmentSizes = array<i32: 1,0,0,0,0,0,0>} : (i32) -> ()
   return
 }
 
 // -----
 
 func.func @omp_teams_num_teams2(%lb : i32, %ub : i16) {
-  omp.target {
-    // expected-error @below {{expected num_teams upper bound and lower bound to be the same type}}
-    omp.teams num_teams(%lb : i32 to %ub : i16) {
-      omp.terminator
-    }
+  // expected-error @below {{expected num_teams upper bound and lower bound to be the same type}}
+  omp.teams num_teams(%lb : i32 to %ub : i16) {
     omp.terminator
   }
   return
@@ -1923,6 +1921,7 @@ func.func @taskloop(%lb: i32, %ub: i32, %step: i32) {
       }
       omp.terminator
     }
+    omp.terminator
   }
   return
 }
@@ -2087,7 +2086,7 @@ func.func @omp_target_depend(%data_var: memref<i32>) {
   // expected-error @below {{op expected as many depend values as depend variables}}
     "omp.target"(%data_var) ({
       "omp.terminator"() : () -> ()
-    }) {depends = [], operandSegmentSizes = array<i32: 0, 0, 0, 1, 0, 0, 0>} : (memref<i32>) -> ()
+    }) {depends = [], operandSegmentSizes = array<i32: 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0>} : (memref<i32>) -> ()
    "func.return"() : () -> ()
 }
 
@@ -2121,11 +2120,13 @@ func.func @omp_distribute_wrapper() -> () {
 
 // -----
 
-func.func @omp_distribute_nested_wrapper(%data_var : memref<i32>) -> () {
+func.func @omp_distribute_nested_wrapper(%lb: index, %ub: index, %step: index) -> () {
   // expected-error @below {{only supported nested wrappers are 'omp.parallel' and 'omp.simd'}}
   "omp.distribute"() ({
       "omp.wsloop"() ({
-        %0 = arith.constant 0 : i32
+        omp.loop_nest (%iv) : index = (%lb) to (%ub) step (%step) {
+          omp.yield
+        }
         "omp.terminator"() : () -> ()
       }) : () -> ()
       "omp.terminator"() : () -> ()

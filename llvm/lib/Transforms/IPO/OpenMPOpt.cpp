@@ -287,6 +287,20 @@ struct OMPInformationCache : public InformationCache {
         OpenMPPostLink(OpenMPPostLink) {
 
     OMPBuilder.Config.IsTargetDevice = isOpenMPDevice(OMPBuilder.M);
+    const Triple T(OMPBuilder.M.getTargetTriple());
+    switch (T.getArch()) {
+    case llvm::Triple::nvptx:
+    case llvm::Triple::nvptx64:
+    case llvm::Triple::amdgcn:
+      assert(OMPBuilder.Config.IsTargetDevice &&
+             "OpenMP AMDGPU/NVPTX is only prepared to deal with device code.");
+      OMPBuilder.Config.IsGPU = true;
+      break;
+    default:
+      OMPBuilder.Config.IsGPU = false;
+      break;
+    }
+
     OMPBuilder.initialize();
     initializeRuntimeFunctions(M);
     initializeInternalControlVars();
@@ -535,6 +549,7 @@ struct OMPInformationCache : public InformationCache {
   void recollectUses() {
     for (int Idx = 0; Idx < RFIs.size(); ++Idx)
       recollectUsesForFunction(static_cast<RuntimeFunction>(Idx));
+    OMPBuilder.Config.IsTargetDevice = isOpenMPDevice(OMPBuilder.M);
   }
 
   // Helper function to inherit the calling convention of the function callee.

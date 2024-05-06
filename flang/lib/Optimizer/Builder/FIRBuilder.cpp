@@ -248,14 +248,45 @@ mlir::Block *fir::FirOpBuilder::getAllocaBlock() {
   if (auto ompOutlineableIface =
           getRegion()
               .getParentOfType<mlir::omp::OutlineableOpenMPOpInterface>()) {
-    return ompOutlineableIface.getAllocaBlock();
+    // omp.parallel can work as a block construct but it can also be a loop
+    // wrapper when part of a composite construct. Make sure it's only treated
+    // as a block if it's not a wrapper.
+    auto parallelOp =
+        llvm::dyn_cast<mlir::omp::ParallelOp>(*ompOutlineableIface);
+    if (!parallelOp || !llvm::isa_and_present<mlir::omp::DistributeOp>(
+                           parallelOp->getParentOp()))
+      return ompOutlineableIface.getAllocaBlock();
   }
+
+  // All allocations associated with an OpenMP loop wrapper must happen outside
+  // of all wrappers.
+  mlir::Operation *currentOp = getRegion().getParentOp();
+  auto wrapperIface =
+      llvm::isa<mlir::omp::LoopNestOp>(currentOp)
+          ? llvm::cast<mlir::omp::LoopWrapperInterface>(
+                currentOp->getParentOp())
+          : llvm::dyn_cast<mlir::omp::LoopWrapperInterface>(currentOp);
+  if (wrapperIface) {
+    // Cannot use LoopWrapperInterface methods here because the whole nest may
+    // not have been created at this point. Manually traverse parents instead.
+    mlir::omp::LoopWrapperInterface lastWrapperOp = wrapperIface;
+    while (true) {
+      if (auto nextWrapper =
+              llvm::dyn_cast_if_present<mlir::omp::LoopWrapperInterface>(
+                  lastWrapperOp->getParentOp()))
+        lastWrapperOp = nextWrapper;
+      else
+        break;
+    }
+    return &lastWrapperOp->getParentRegion()->front();
+  }
+
   if (getRegion().getParentOfType<mlir::omp::DeclareReductionOp>())
     return &getRegion().front();
+
   if (auto accRecipeIface =
-          getRegion().getParentOfType<mlir::acc::RecipeInterface>()) {
+          getRegion().getParentOfType<mlir::acc::RecipeInterface>())
     return accRecipeIface.getAllocaBlock(getRegion());
-  }
 
   return getEntryBlock();
 }
@@ -266,9 +297,15 @@ mlir::Value fir::FirOpBuilder::createTemporaryAlloc(
     llvm::ArrayRef<mlir::NamedAttribute> attrs) {
   assert(!type.isa<fir::ReferenceType>() && "cannot be a reference");
   // If the alloca is inside an OpenMP Op which will be outlined then pin
-  // the alloca here.
-  const bool pinned =
+  // the alloca here. Make sure that an omp.parallel operation that is taking
+  // a loop wrapper role is not detected as outlineable here.
+  auto iface =
       getRegion().getParentOfType<mlir::omp::OutlineableOpenMPOpInterface>();
+  auto parallelOp =
+      iface ? llvm::dyn_cast<mlir::omp::ParallelOp>(*iface) : nullptr;
+  const bool pinned =
+      iface && (!parallelOp || !llvm::isa_and_present<mlir::omp::DistributeOp>(
+                                   parallelOp->getParentOp()));
   mlir::Value temp =
       create<fir::AllocaOp>(loc, type, /*unique_name=*/llvm::StringRef{}, name,
                             pinned, lenParams, shape, attrs);

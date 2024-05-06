@@ -23,17 +23,24 @@ namespace Fortran {
 namespace lower {
 namespace omp {
 
-void DataSharingProcessor::processStep1(
-    mlir::omp::PrivateClauseOps *clauseOps,
-    llvm::SmallVectorImpl<const Fortran::semantics::Symbol *> *privateSyms) {
+void DataSharingProcessor::processStep1() {
   collectSymbolsForPrivatization();
   collectDefaultSymbols();
+}
+
+void DataSharingProcessor::processStep2(mlir::omp::PrivateClauseOps *clauseOps,
+    llvm::SmallVectorImpl<const Fortran::semantics::Symbol *> *privateSyms) {
+  if (privatizationDone)
+    return;
+
   privatize(clauseOps, privateSyms);
   defaultPrivatize(clauseOps, privateSyms);
   insertBarrier();
+
+  privatizationDone = true;
 }
 
-void DataSharingProcessor::processStep2(mlir::Operation *op, bool isLoop) {
+void DataSharingProcessor::processStep3(mlir::Operation *op, bool isLoop) {
   insPt = firOpBuilder.saveInsertionPoint();
   copyLastPrivatize(op);
   firOpBuilder.restoreInsertionPoint(insPt);
@@ -43,11 +50,8 @@ void DataSharingProcessor::processStep2(mlir::Operation *op, bool isLoop) {
     firOpBuilder.setInsertionPointAfter(op);
     insertDeallocs();
   } else {
-    // insert dummy instruction to mark the insertion position
-    mlir::Value undefMarker = firOpBuilder.create<fir::UndefOp>(
-        op->getLoc(), firOpBuilder.getIndexType());
+    mlir::OpBuilder::InsertionGuard guard(firOpBuilder);
     insertDeallocs();
-    firOpBuilder.setInsertionPointAfter(undefMarker.getDefiningOp());
   }
 }
 

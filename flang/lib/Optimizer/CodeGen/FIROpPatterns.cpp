@@ -239,9 +239,16 @@ mlir::Value ConvertFIRToLLVMPattern::genBoxAttributeCheck(
 // 3. The first ancestor that is an OpenMP Op or a LLVMFuncOp
 mlir::Block *
 ConvertFIRToLLVMPattern::getBlockForAllocaInsert(mlir::Operation *op) const {
-  if (auto iface = mlir::dyn_cast<mlir::omp::OutlineableOpenMPOpInterface>(op))
-    return iface.getAllocaBlock();
-  if (auto llvmFuncOp = mlir::dyn_cast<mlir::LLVM::LLVMFuncOp>(op))
+  if (auto iface =
+          mlir::dyn_cast<mlir::omp::OutlineableOpenMPOpInterface>(op)) {
+    // omp.parallel can work as a block construct but it can also be a loop
+    // wrapper when it's part of a composite construct. Make sure it's only
+    // treated as a block if it's not a wrapper.
+    auto parallelOp = llvm::dyn_cast<mlir::omp::ParallelOp>(*iface);
+    if (!parallelOp || !llvm::isa_and_present<mlir::omp::DistributeOp>(
+                           parallelOp->getParentOp()))
+      return iface.getAllocaBlock();
+  } else if (auto llvmFuncOp = mlir::dyn_cast<mlir::LLVM::LLVMFuncOp>(op))
     return &llvmFuncOp.front();
   return getBlockForAllocaInsert(op->getParentOp());
 }

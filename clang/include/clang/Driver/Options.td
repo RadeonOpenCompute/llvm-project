@@ -6575,6 +6575,10 @@ defm stack_arrays : BoolOptionWithoutMarshalling<"f", "stack-arrays",
 defm loop_versioning : BoolOptionWithoutMarshalling<"f", "version-loops-for-stride",
   PosFlag<SetTrue, [], [ClangOption], "Create unit-strided versions of loops">,
    NegFlag<SetFalse, [], [ClangOption], "Do not create unit-strided loops (default)">>;
+
+def do_concurrent_parallel_EQ : Joined<["-"], "fdo-concurrent-parallel=">,
+  HelpText<"Try to map `do concurrent` loops to OpenMP (on host or device)">,
+      Values<"none,host,device">;
 } // let Visibility = [FC1Option, FlangOption]
 
 def J : JoinedOrSeparate<["-"], "J">,

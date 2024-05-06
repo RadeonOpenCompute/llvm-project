@@ -129,6 +129,14 @@ public:
   /// transformation.
   OptRemark OptimizationRemarkAnalysis;
 
+  /// Optionally map `do concurrent` loops to OpenMP. This is only valid of
+  /// OpenMP is enabled.
+  enum class DoConcurrentMappingKind {
+    DCMK_None,  // Do not lower `do concurrent` to OpenMP.
+    DCMK_Host,  // Lower to run in parallel on the CPU.
+    DCMK_Device // Lower to run in parallel on the GPU.
+  };
+
   // Define accessors/mutators for code generation options of enumeration type.
 #define CODEGENOPT(Name, Bits, Default)
 #define ENUM_CODEGENOPT(Name, Type, Bits, Default)                             \

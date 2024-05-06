@@ -155,6 +155,32 @@ static bool parseDebugArgs(Fortran::frontend::CodeGenOptions &opts,
   return true;
 }
 
+static bool parseDoConcurrentMapping(Fortran::frontend::CodeGenOptions &opts,
+                                     llvm::opt::ArgList &args,
+                                     clang::DiagnosticsEngine &diags) {
+  llvm::opt::Arg *arg =
+      args.getLastArg(clang::driver::options::OPT_do_concurrent_parallel_EQ);
+  if (!arg)
+    return true;
+
+  using DoConcurrentMappingKind = Fortran::frontend::CodeGenOptions::DoConcurrentMappingKind;
+  std::optional<DoConcurrentMappingKind> val =
+      llvm::StringSwitch<std::optional<DoConcurrentMappingKind>>(
+          arg->getValue())
+          .Case("none", DoConcurrentMappingKind::DCMK_None)
+          .Case("host", DoConcurrentMappingKind::DCMK_Host)
+          .Case("device", DoConcurrentMappingKind::DCMK_Device)
+          .Default(std::nullopt);
+
+  if (!val.has_value()) {
+    diags.Report(clang::diag::err_drv_invalid_value)
+        << arg->getAsString(args) << arg->getValue();
+    return false;
+  }
+  opts.setDoConcurrentMapping(val.value());
+  return true;
+}
+
 static bool parseVectorLibArg(Fortran::frontend::CodeGenOptions &opts,
                               llvm::opt::ArgList &args,
                               clang::DiagnosticsEngine &diags) {
@@ -386,6 +412,8 @@ static void parseCodeGenArgs(Fortran::frontend::CodeGenOptions &opts,
                    clang::driver::options::OPT_funderscoring, false)) {
     opts.Underscoring = 0;
   }
+
+  parseDoConcurrentMapping(opts, args, diags);
 }
 
 /// Parses all target input arguments and populates the target
