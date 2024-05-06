@@ -6,7 +6,7 @@ subtrees:
   entries:
   - file: install/install.rst
     title: OpenMP installation
-  - file: install/build.md
+  - file: install/build.rst
     title: Build OpenMP
 
   - caption: Conceptual
