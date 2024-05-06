@@ -8,9 +8,9 @@ OpenMP features
   
 The OpenMP programming model is greatly enhanced with the following new features implemented in the past releases.
 
-.. image:: ./images/OpenMP-toolchain.png
+.. image:: ./data/images/OpenMP-toolchain.png
   :width: 400
-  :alt: OpenMP Clang Compile and Link Drivers
+  :alt: OpenMP Clang compile and link drivers
 
 
 Asynchronous behavior in OpenMP target regions
