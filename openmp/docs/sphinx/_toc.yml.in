@@ -16,16 +16,14 @@ subtrees:
 
 - caption: Reference
   entries:
-  - file: doxygen/html/files
-    title: API library
-  - file: doxygen/html/globals
-    title: Functions
-  - file: doxygen/html/annotated
-    title: Data structures
+  - url: https://www.openmp.org/specifications/
+    title: OpenMP API specification for parallel programming 
   - file: reference/faq
     title: OpenMP FAQ
   - file: reference/CommandLineArgumentReference
     title: Command line argument reference 
+
+    
 
 - caption: How to
   entries:
