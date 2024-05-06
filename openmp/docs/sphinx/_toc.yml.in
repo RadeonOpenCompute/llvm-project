@@ -2,10 +2,44 @@ defaults:
   numbered: False
 root: index
 subtrees:
+- caption: Install
+  entries:
+  - file: install/install.rst
+    title: OpenMP installation
+  - file: install/build.md
+    title: Build OpenMP
+
+  - caption: Conceptual
+  entries:
+  - file: conceptual/openmp-features
+    title: OpenMP features
+
 - caption: Reference
   entries:
-    - file: CommandLineArgumentReference
+  - file: doxygen/html/files
+    title: API library
+  - file: doxygen/html/globals
+    title: Functions
+  - file: doxygen/html/annotated
+    title: Data structures
+  - file: reference/faq
+    title: OpenMP FAQ
+
+- caption: How to
+  entries:
+  - file: how-to/use-openmp
+    title: Use OpenMP
+  - file: how-to/use-rocprof
+    title: Use ROCProf in OpenMP
+  - file: how-to/use-openmp
+    title: Use tracing options in OpenMP
+
+
+- caption: Tutorials
+  entries:
+  - url: https://github.com/ROCm/rocDecode/tree/develop/samples
+    title: GitHub samples
+
 - caption: About
   entries:
-    - file: ReleaseNotes
-    - file: SupportAndFAQ
+  - file: license.md
