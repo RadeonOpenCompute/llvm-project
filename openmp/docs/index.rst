@@ -32,8 +32,7 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
     * `OpenMP API specification for parallel programming <https://www.openmp.org/specifications/>`_    
     * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
     * :doc:`OpenMP FAQ <./reference/faq>`
-    * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
-
+    
   .. grid-item-card:: Tutorials
 
     * `AOMP samples <https://github.com/ROCm/aomp/tree/aomp-dev/examples>`_
