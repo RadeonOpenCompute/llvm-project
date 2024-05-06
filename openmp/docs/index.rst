@@ -29,9 +29,7 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
 
   .. grid-item-card:: Reference
 
-    * :doc:`API library <../doxygen/html/files>`
-    * :doc:`Functions <../doxygen/html/globals>`
-    * :doc:`Data structures <../doxygen/html/annotated>`
+    * `OpenMP API specification for parallel programming <https://www.openmp.org/specifications/>`_    
     * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
     * :doc:`OpenMP FAQ <./reference/faq>`
     * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
