@@ -34,6 +34,7 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
     * :doc:`Data structures <../doxygen/html/annotated>`
     * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
     * :doc:`OpenMP FAQ <./reference/faq>`
+    * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
 
   .. grid-item-card:: Tutorials
 
