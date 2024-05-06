@@ -10,7 +10,7 @@ subtrees:
     title: Build OpenMP
 
   - caption: Conceptual
-  entries:
+    entries:
   - file: conceptual/openmp-features
     title: OpenMP features
 
