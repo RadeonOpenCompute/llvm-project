@@ -16,7 +16,7 @@ subtrees:
 
 - caption: Reference
   entries:
-  - url: https://www.openmp.org/specifications/
+  - file: reference/api
     title: OpenMP API specification for parallel programming 
   - file: reference/faq
     title: OpenMP FAQ
