@@ -9,8 +9,8 @@ subtrees:
   - file: install/build.rst
     title: Build OpenMP
 
-  - caption: Conceptual
-    entries:
+- caption: Conceptual
+  entries:
   - file: conceptual/openmp-features.rst
     title: OpenMP features
 
