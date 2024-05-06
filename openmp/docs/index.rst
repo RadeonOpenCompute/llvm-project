@@ -16,6 +16,7 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
   .. grid-item-card:: Install
 
     * :doc:`OpenMP installation <./install/install>`
+    * :doc:`Build OpenMP <./install/build>`
 
   .. grid-item-card:: Conceptual
 
