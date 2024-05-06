@@ -11,25 +11,25 @@ subtrees:
 
   - caption: Conceptual
     entries:
-  - file: conceptual/openmp-features
+  - file: conceptual/openmp-features.rst
     title: OpenMP features
 
 - caption: Reference
   entries:
-  - file: reference/api
+  - file: reference/api.rst
     title: OpenMP API specification for parallel programming 
-  - file: reference/faq
+  - file: reference/faq.rst
     title: OpenMP FAQ
-  - file: reference/CommandLineArgumentReference
+  - file: reference/CommandLineArgumentReference.rst
     title: Command line argument reference     
 
 - caption: How to
   entries:
-  - file: how-to/use-openmp
+  - file: how-to/use-openmp.rst
     title: Use OpenMP
-  - file: how-to/use-rocprof
+  - file: how-to/use-rocprof.rst
     title: Use ROCProf in OpenMP
-  - file: how-to/use-tracing-options
+  - file: how-to/use-tracing-options.md
     title: Use tracing options in OpenMP
 
 
