@@ -31,7 +31,7 @@ subtrees:
     title: Use OpenMP
   - file: how-to/use-rocprof
     title: Use ROCProf in OpenMP
-  - file: how-to/use-openmp
+  - file: how-to/use-tracing-options
     title: Use tracing options in OpenMP
 
 
