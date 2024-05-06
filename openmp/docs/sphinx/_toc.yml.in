@@ -21,9 +21,7 @@ subtrees:
   - file: reference/faq
     title: OpenMP FAQ
   - file: reference/CommandLineArgumentReference
-    title: Command line argument reference 
-
-    
+    title: Command line argument reference     
 
 - caption: How to
   entries:
@@ -37,8 +35,8 @@ subtrees:
 
 - caption: Tutorials
   entries:
-  - url: https://github.com/ROCm/rocDecode/tree/develop/samples
-    title: GitHub samples
+  - url: https://github.com/ROCm/aomp/tree/aomp-dev/examples
+    title: OpenMP samples
 
 - caption: About
   entries:
