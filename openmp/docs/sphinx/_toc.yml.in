@@ -24,6 +24,8 @@ subtrees:
     title: Data structures
   - file: reference/faq
     title: OpenMP FAQ
+  - file: reference/CommandLineArgumentReference
+    title: Command line argument reference 
 
 - caption: How to
   entries:
