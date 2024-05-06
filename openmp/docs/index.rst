@@ -23,7 +23,9 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
 
   .. grid-item-card:: How to
 
-    * :doc:`<how-to/>`
+    * :doc:`<how-to/use-openmp>`
+    * :doc:`<how-to/use-rocprof>`
+    * :doc:`<how-to/use-tracing-options>`
 
   .. grid-item-card:: Reference
 
