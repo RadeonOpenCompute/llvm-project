@@ -3,7 +3,7 @@
   :keywords: install, openmp, llvm, aomp, AMD, ROCm
 
 
-OpenMP: usage
+Using OpenMP
 ---------------
 
 The example programs can be compiled and run by pointing the environment variable `ROCM_PATH` to the ROCm install directory.
@@ -12,6 +12,7 @@ Example
 ========
 
 .. code-block:: bash
+
     export ROCM_PATH=/opt/rocm-{version}
     cd $ROCM_PATH/share/openmp-extras/examples/openmp/veccopy
     sudo make run
