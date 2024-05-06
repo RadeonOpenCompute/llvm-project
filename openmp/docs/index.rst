@@ -36,7 +36,7 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
 
   .. grid-item-card:: Tutorials
 
-    * `GitHub samples <https://github.com/ROCm/rocDecode/tree/develop/samples>`_
+    * `AOMP samples <https://github.com/ROCm/aomp/tree/aomp-dev/examples>`_
 
 To contribute to the documentation, refer to
 `Contributing to ROCm <https://rocm.docs.amd.com/en/latest/contribute/contributing.html>`_.
