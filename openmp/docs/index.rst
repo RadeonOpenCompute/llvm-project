@@ -29,7 +29,7 @@ You can access  code on the `GitHub repository <https://github.com/ROCm/llvm-pro
 
   .. grid-item-card:: Reference
 
-    * `OpenMP API specification for parallel programming <https://www.openmp.org/specifications/>`_    
+    * :doc:`OpenMP API specification for parallel programming <./reference/api>`
     * :doc:`Command line argument reference <./reference/CommandLineArgumentReference>`
     * :doc:`OpenMP FAQ <./reference/faq>`
     
