@@ -32,6 +32,11 @@ subtrees:
   - file: how-to/use-tracing-options.md
     title: Use tracing options in OpenMP
 
+- caption: Tutorials
+  entries:
+  - url: https://github.com/ROCm/aomp/tree/aomp-dev/examples
+    title: AOMP samples
+
 - caption: About
   entries:
   - file: license.md
