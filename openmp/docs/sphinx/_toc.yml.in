@@ -2,15 +2,6 @@ defaults:
   numbered: False
 root: index
 subtrees:
-- caption: Reference
-  entries:
-  - file: reference/api.rst
-    title: OpenMP API specification for parallel programming 
-  - file: reference/faq.rst
-    title: OpenMP FAQ
-  - file: reference/CommandLineArgumentReference.rst
-    title: Command line argument reference     
-
 - caption: How to
   entries:
   - file: how-to/use-openmp.rst
