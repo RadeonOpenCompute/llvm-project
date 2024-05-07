@@ -2,13 +2,6 @@ defaults:
   numbered: False
 root: index
 subtrees:
-- caption: Install
-  entries:
-  - file: install/install.rst
-    title: OpenMP installation
-  - file: install/build.rst
-    title: Build OpenMP
-
 - caption: Conceptual
   entries:
   - file: conceptual/openmp-features.rst
