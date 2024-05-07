@@ -2,16 +2,6 @@ defaults:
   numbered: False
 root: index
 subtrees:
-- caption: How to
-  entries:
-  - file: how-to/use-openmp.rst
-    title: Use OpenMP
-  - file: how-to/use-rocprof.rst
-    title: Use ROCProf in OpenMP
-  - file: how-to/use-tracing-options.md
-    title: Use tracing options in OpenMP
-
-
 - caption: Tutorials
   entries:
   - url: https://github.com/ROCm/aomp/tree/aomp-dev/examples
