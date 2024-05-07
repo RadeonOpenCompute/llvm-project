@@ -7,6 +7,3 @@ subtrees:
   - url: https://github.com/ROCm/aomp/tree/aomp-dev/examples
     title: AOMP samples
 
-- caption: About
-  entries:
-  - file: license.md
