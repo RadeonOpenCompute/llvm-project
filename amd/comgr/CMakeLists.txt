@@ -405,6 +405,13 @@ if (NOT UNIX)
     PRIVATE version)
 endif()
 
+target_link_libraries(amd_comgr
+  PRIVATE
+    pthread
+    rt
+    c
+    ${CMAKE_DL_LIBS})
+
 include(CTest)
 if(BUILD_TESTING)
   add_custom_target(check-comgr COMMAND ${CMAKE_CTEST_COMMAND} DEPENDS amd_comgr)
@@ -420,6 +427,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # Only libraries required for ASAN Package
     set(CPACK_COMPONENTS_ALL asan)
     set(PKG_DESC_SUMMARY "AddressSanitizer Instrumented Libraries to provide support functions for ROCm code objects.")
+  elseif(NOT COMGR_BUILD_SHARED_LIBS)
+    set(CPACK_COMPONENTS_ALL amd-comgr)
+    set(PKG_DESC_SUMMARY "Static Library to provide support functions for ROCm code objects.")
   else()
     set(CPACK_COMPONENTS_ALL amd-comgr)
     set(PKG_DESC_SUMMARY "Library to provide support functions for ROCm code objects.")
@@ -454,7 +464,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   # Debian package specific variables
   set(CPACK_DEB_COMPONENT_INSTALL ON)
-  set(CPACK_DEBIAN_AMD-COMGR_PACKAGE_NAME comgr)
+  if(COMGR_BUILD_SHARED_LIBS)
+    set(CPACK_DEBIAN_AMD-COMGR_PACKAGE_NAME comgr)
+  else()
+    set(CPACK_DEBIAN_AMD-COMGR_PACKAGE_NAME comgr-static-dev)
+  endif()
   set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/RadeonOpenCompute/ROCm-CompilerSupport")
   if (LLVM_LINK_LLVM_DYLIB)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libtinfo-dev, rocm-core, rocm-llvm-core")
@@ -471,7 +485,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   # RPM package specific variables
   set(CPACK_RPM_COMPONENT_INSTALL ON)
-  set(CPACK_RPM_AMD-COMGR_PACKAGE_NAME comgr)
+  if(COMGR_BUILD_SHARED_LIBS)
+    set(CPACK_RPM_AMD-COMGR_PACKAGE_NAME comgr)
+  else()
+    set(CPACK_RPM_AMD-COMGR_PACKAGE_NAME comgr-static-devel)
+  endif()
   if (LLVM_LINK_LLVM_DYLIB)
     set(CPACK_RPM_PACKAGE_REQUIRES "ncurses, rocm-core, rocm-llvm-core")
     set(CPACK_RPM_ASAN_PACKAGE_REQUIRES "ncurses, rocm-core-asan, rocm-llvm-core")
