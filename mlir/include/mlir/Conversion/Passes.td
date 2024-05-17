@@ -708,6 +708,27 @@ def ConvertMathToLLVMPass : Pass<"convert-math-to-llvm"> {
 }
 
 //===----------------------------------------------------------------------===//
+// MathToROCDL
+//===----------------------------------------------------------------------===//
+
+def ConvertMathToROCDL : Pass<"convert-math-to-rocdl", "ModuleOp"> {
+  let summary = "Convert Math dialect to rocdl calls";
+  let description = [{
+    This pass converts supported Math ops to rocdl calls.
+  }];
+  let constructor = "mlir::createConvertMathToROCDLPass()";
+  let dependentDialects = [
+    "func::FuncDialect",
+    "math::MathDialect",
+    "vector::VectorDialect",
+  ];
+  let options = [Option<"chipset", "chipset", "std::string",
+                        /*default=*/"\"gfx000\"",
+                        "Chipset that these operations will run on">];
+
+}
+
+//===----------------------------------------------------------------------===//
 // MathToSPIRV
 //===----------------------------------------------------------------------===//
 
