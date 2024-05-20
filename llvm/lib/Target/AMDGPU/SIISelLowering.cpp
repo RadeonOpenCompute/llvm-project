@@ -14245,13 +14245,6 @@ SDValue SITargetLowering::performAddCombine(SDNode *N,
     Opc = (Opc == ISD::SIGN_EXTEND) ? ISD::USUBO_CARRY : ISD::UADDO_CARRY;
     return DAG.getNode(Opc, SL, VTList, Args);
   }
-  case ISD::UADDO_CARRY: {
-    // add x, (uaddo_carry y, 0, cc) => uaddo_carry x, y, cc
-    if (!isNullConstant(RHS.getOperand(1)))
-      break;
-    SDValue Args[] = { LHS, RHS.getOperand(0), RHS.getOperand(2) };
-    return DAG.getNode(ISD::UADDO_CARRY, SDLoc(N), RHS->getVTList(), Args);
-  }
   }
   return SDValue();
 }
@@ -14288,37 +14281,6 @@ SDValue SITargetLowering::performSubCombine(SDNode *N,
   }
   }
 
-  if (LHS.getOpcode() == ISD::USUBO_CARRY) {
-    // sub (usubo_carry x, 0, cc), y => usubo_carry x, y, cc
-    if (!isNullConstant(LHS.getOperand(1)))
-      return SDValue();
-    SDValue Args[] = { LHS.getOperand(0), RHS, LHS.getOperand(2) };
-    return DAG.getNode(ISD::USUBO_CARRY, SDLoc(N), LHS->getVTList(), Args);
-  }
-  return SDValue();
-}
-
-SDValue SITargetLowering::performAddCarrySubCarryCombine(SDNode *N,
-  DAGCombinerInfo &DCI) const {
-
-  if (N->getValueType(0) != MVT::i32)
-    return SDValue();
-
-  if (!isNullConstant(N->getOperand(1)))
-    return SDValue();
-
-  SelectionDAG &DAG = DCI.DAG;
-  SDValue LHS = N->getOperand(0);
-
-  // uaddo_carry (add x, y), 0, cc => uaddo_carry x, y, cc
-  // usubo_carry (sub x, y), 0, cc => usubo_carry x, y, cc
-  unsigned LHSOpc = LHS.getOpcode();
-  unsigned Opc = N->getOpcode();
-  if ((LHSOpc == ISD::ADD && Opc == ISD::UADDO_CARRY) ||
-      (LHSOpc == ISD::SUB && Opc == ISD::USUBO_CARRY)) {
-    SDValue Args[] = { LHS.getOperand(0), LHS.getOperand(1), N->getOperand(2) };
-    return DAG.getNode(Opc, SDLoc(N), N->getVTList(), Args);
-  }
   return SDValue();
 }
 
@@ -14702,9 +14664,6 @@ SDValue SITargetLowering::PerformDAGCombine(SDNode *N,
     return performAddCombine(N, DCI);
   case ISD::SUB:
     return performSubCombine(N, DCI);
-  case ISD::UADDO_CARRY:
-  case ISD::USUBO_CARRY:
-    return performAddCarrySubCarryCombine(N, DCI);
   case ISD::FADD:
     return performFAddCombine(N, DCI);
   case ISD::FSUB:
