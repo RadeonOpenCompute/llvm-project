@@ -1,0 +1,64 @@
+//===- OMPFunctionFiltering.cpp -------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This file implements transforms to filter out functions intended for the host
+// when compiling for the device and vice versa.
+//
+//===----------------------------------------------------------------------===//
+
+#include "flang/Optimizer/Dialect/FIRDialect.h"
+#include "flang/Optimizer/Dialect/FIROpsSupport.h"
+#include "flang/Optimizer/Transforms/Passes.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/OpenMP/OpenMPDialect.h"
+#include "mlir/Dialect/OpenMP/OpenMPInterfaces.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/SmallVector.h"
+
+namespace fir {
+#define GEN_PASS_DEF_OMPGLOBALFILTERING
+#include "flang/Optimizer/Transforms/Passes.h.inc"
+} // namespace fir
+
+using namespace mlir;
+
+namespace {
+class OMPGlobalFilteringPass
+    : public fir::impl::OMPGlobalFilteringBase<OMPGlobalFilteringPass> {
+public:
+  OMPGlobalFilteringPass() = default;
+
+  void runOnOperation() override {
+    auto op = dyn_cast<omp::OffloadModuleInterface>(getOperation());
+    if (!op || !op.getIsTargetDevice())
+      return;
+
+    op->walk<WalkOrder::PreOrder>([&](fir::GlobalOp globalOp) {
+      bool symbolUnused = true;
+      SymbolTable::UseRange globalUses = *globalOp.getSymbolUses(op);
+      for (SymbolTable::SymbolUse use : globalUses) {
+        if (use.getUser() == globalOp)
+          continue;
+        symbolUnused = false;
+        break;
+      }
+
+      // Remove unused host symbols with external linkage
+      // TODO: Add support for declare target global variables
+      if (symbolUnused && !globalOp.getLinkName())
+        globalOp.erase();
+      return WalkResult::advance();
+    });
+  }
+};
+} // namespace
+
+std::unique_ptr<Pass> fir::createOMPGlobalFilteringPass() {
+  return std::make_unique<OMPGlobalFilteringPass>();
+}

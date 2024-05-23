@@ -349,6 +349,16 @@ def OMPFunctionFiltering : Pass<"omp-function-filtering"> {
   ];
 }
 
+def OMPGlobalFiltering : Pass<"omp-global-filtering"> {
+  let summary = "Filters out globals intended for the host when compiling "
+                "for the target device.";
+  let constructor = "::fir::createOMPGlobalFilteringPass()";
+  let dependentDialects = [
+    "mlir::func::FuncDialect",
+    "fir::FIROpsDialect"
+  ];
+}
+
 def VScaleAttr : Pass<"vscale-attr", "mlir::func::FuncOp"> {
   let summary = "Add vscale_range attribute to functions";
   let description = [{
