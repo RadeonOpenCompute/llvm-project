@@ -5,7 +5,6 @@ static_library("Support") {
     "//llvm/include/llvm/Config:config",
     "//llvm/lib/Demangle",
     "//llvm/utils/gn/build/libs/pthread",
-    "//llvm/utils/gn/build/libs/terminfo",
     "//llvm/utils/gn/build/libs/zlib",
   ]
 
