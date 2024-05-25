@@ -3560,6 +3560,13 @@ public:
     // as passes here.
     mlir::OpPassManager mathConvertionPM("builtin.module");
 
+    bool isAMDGCN = fir::getTargetTriple(mod).isAMDGCN();
+    // Some math functions need to be translated to ocml calls, others can be
+    // converted to LLVM intrinsics, which is handled in the mathToLLVM
+    // conversion.
+    if (isAMDGCN) {
+      mathConvertionPM.addPass(mlir::createConvertMathToROCDL());
+    }
     // Convert math::FPowI operations to inline implementation
     // only if the exponent's width is greater than 32, otherwise,
     // it will be lowered to LLVM intrinsic operation by a later conversion.
@@ -3571,13 +3578,11 @@ public:
 
     // If compiling for AMD target, math operations must be lowered to ocml
     // library calls.
-    bool isAMDGCN = fir::getTargetTriple(mod).isAMDGCN();
 
     // Convert Math dialect operations into LLVM dialect operations.
     // There is no way to prefer MathToLLVM patterns over MathToLibm
     // patterns (applied below), so we have to run MathToLLVM conversion here.
-    if (!isAMDGCN)
-      mathConvertionPM.addNestedPass<mlir::func::FuncOp>(
+    mathConvertionPM.addNestedPass<mlir::func::FuncOp>(
           mlir::createConvertMathToLLVMPass());
     if (mlir::failed(runPipeline(mathConvertionPM, mod)))
       return signalPassFailure();
@@ -3605,9 +3610,7 @@ public:
                                                           pattern);
     // Math operations that have not been converted yet must be converted
     // to Libm.
-    if (isAMDGCN)
-      mlir::populateMathToROCDLConversionPatterns(typeConverter, pattern);
-    else
+    if (!isAMDGCN)
       mlir::populateMathToLibmConversionPatterns(pattern);
     mlir::populateComplexToLLVMConversionPatterns(typeConverter, pattern);
     mlir::populateVectorToLLVMConversionPatterns(typeConverter, pattern);

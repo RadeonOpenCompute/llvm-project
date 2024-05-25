@@ -6,10 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "mlir/Conversion/MathToROCDL/MathToROCDL.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/LLVMCommon/LoweringOptions.h"
-#include "mlir/Conversion/MathToROCDL/MathToROCDL.h"
-
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -32,6 +31,9 @@ namespace mlir {
 
 using namespace mlir;
 
+#define DEBUG_TYPE "math-to-rocdl"
+#define DBGS() (llvm::dbgs() << "[" DEBUG_TYPE "]: ")
+
 template <typename OpTy>
 static void populateOpPatterns(LLVMTypeConverter &converter,
                                RewritePatternSet &patterns, StringRef f32Func,
@@ -40,8 +42,8 @@ static void populateOpPatterns(LLVMTypeConverter &converter,
   patterns.add<OpToFuncCallLowering<OpTy>>(converter, f32Func, f64Func);
 }
 
-void mlir::populateMathToROCDLConversionPatterns(LLVMTypeConverter &converter,
-                                                 RewritePatternSet &patterns) {
+static void populateMathToROCDLConversionPatterns(LLVMTypeConverter &converter,
+                                                  RewritePatternSet &patterns) {
   // FIXME: math::AbsIOp
   // FIXME: math::CopySignOp
   // FIXME: math::CountLeadingZerosOp
@@ -118,6 +120,7 @@ void mlir::populateMathToROCDLConversionPatterns(LLVMTypeConverter &converter,
 namespace {
 struct ConvertMathToROCDLPass
     : public impl::ConvertMathToROCDLBase<ConvertMathToROCDLPass> {
+  ConvertMathToROCDLPass() = default;
   void runOnOperation() override;
 };
 } // namespace
@@ -134,16 +137,11 @@ void ConvertMathToROCDLPass::runOnOperation() {
 
   ConversionTarget target(getContext());
   target.addLegalDialect<arith::ArithDialect, BuiltinDialect, func::FuncDialect,
-                         vector::VectorDialect>();
+                         vector::VectorDialect, LLVM::LLVMDialect>();
   target.addIllegalOp<LLVM::CosOp, LLVM::ExpOp, LLVM::Exp2Op, LLVM::FAbsOp,
                       LLVM::FCeilOp, LLVM::FFloorOp, LLVM::FRemOp, LLVM::LogOp,
                       LLVM::Log10Op, LLVM::Log2Op, LLVM::PowOp, LLVM::SinOp,
                       LLVM::SqrtOp>();
-  //  target.addIllegalDialect<math::MathDialect>();
   if (failed(applyPartialConversion(m, target, std::move(patterns))))
     signalPassFailure();
-}
-
-std::unique_ptr<OperationPass<ModuleOp>> mlir::createConvertMathToROCDLPass() {
-  return std::make_unique<ConvertMathToROCDLPass>();
 }

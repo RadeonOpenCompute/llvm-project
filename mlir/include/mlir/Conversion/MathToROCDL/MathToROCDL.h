@@ -8,22 +8,13 @@
 #ifndef MLIR_CONVERSION_MATHTOROCDL_MATHTOROCDL_H_
 #define MLIR_CONVERSION_MATHTOROCDL_MATHTOROCDL_H_
 
-#include "mlir/IR/PatternMatch.h"
+#include <memory>
 
 namespace mlir {
-template <typename T>
-class OperationPass;
+class Pass;
 
 #define GEN_PASS_DECL_CONVERTMATHTOROCDL
 #include "mlir/Conversion/Passes.h.inc"
-
-/// Populate the given list with patterns that convert from Math to Rocdl calls.
-/// If log1pBenefit is present, use it instead of benefit for the Log1p op.
-void populateMathToROCDLConversionPatterns(LLVMTypeConverter &converter,
-                                           RewritePatternSet &patterns);
-
-/// Create a pass to convert Math operations to rocdl calls.
-std::unique_ptr<OperationPass<ModuleOp>> createConvertMathToROCDLPass();
 
 } // namespace mlir
 
