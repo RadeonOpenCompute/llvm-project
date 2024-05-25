@@ -3561,9 +3561,10 @@ public:
     mlir::OpPassManager mathConvertionPM("builtin.module");
 
     bool isAMDGCN = fir::getTargetTriple(mod).isAMDGCN();
-    // Some math functions need to be translated to ocml calls, others can be
-    // converted to LLVM intrinsics, which is handled in the mathToLLVM
-    // conversion.
+    // If compiling for AMD target some math operations must be lowered to ocml
+    // library calls, the rest can be converted to LLVM intrinsics, which is
+    // handled in the mathToLLVM conversion. The lowering to libm calls is not
+    // needed since all math operations are handled this way.
     if (isAMDGCN) {
       mathConvertionPM.addPass(mlir::createConvertMathToROCDL());
     }
@@ -3576,14 +3577,11 @@ public:
         mlir::createConvertMathToFuncs(mathToFuncsOptions));
     mathConvertionPM.addPass(mlir::createConvertComplexToStandardPass());
 
-    // If compiling for AMD target, math operations must be lowered to ocml
-    // library calls.
-
     // Convert Math dialect operations into LLVM dialect operations.
     // There is no way to prefer MathToLLVM patterns over MathToLibm
     // patterns (applied below), so we have to run MathToLLVM conversion here.
     mathConvertionPM.addNestedPass<mlir::func::FuncOp>(
-          mlir::createConvertMathToLLVMPass());
+        mlir::createConvertMathToLLVMPass());
     if (mlir::failed(runPipeline(mathConvertionPM, mod)))
       return signalPassFailure();
 

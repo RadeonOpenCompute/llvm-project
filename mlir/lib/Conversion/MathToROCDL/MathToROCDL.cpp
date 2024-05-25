@@ -44,17 +44,17 @@ static void populateOpPatterns(LLVMTypeConverter &converter,
 
 static void populateMathToROCDLConversionPatterns(LLVMTypeConverter &converter,
                                                   RewritePatternSet &patterns) {
-  // FIXME: math::AbsIOp
-  // FIXME: math::CopySignOp
-  // FIXME: math::CountLeadingZerosOp
-  // FIXME: math::CountTrailingZerosOp
-  // FIXME: math::CgPopOp
-  // FIXME: math::FmaOp
+  // Handled by mathToLLVM: math::AbsIOp
+  // Handled by mathToLLVM: math::CopySignOp
+  // Handled by mathToLLVM: math::CountLeadingZerosOp
+  // Handled by mathToLLVM: math::CountTrailingZerosOp
+  // Handled by mathToLLVM: math::CgPopOp
+  // Handled by mathToLLVM: math::FmaOp
   // FIXME: math::IPowIOp
   // FIXME: math::FPowIOp
-  // FIXME: math::RoundEvenOp
-  // FIXME: math::RoundOp
-  // FIXME: math::TruncOp
+  // Handled by mathToLLVM: math::RoundEvenOp
+  // Handled by mathToLLVM: math::RoundOp
+  // Handled by mathToLLVM: math::TruncOp
 
   populateOpPatterns<math::AbsFOp>(converter, patterns, "__ocml_fabs_f32",
                                    "__ocml_fabs_f64");
