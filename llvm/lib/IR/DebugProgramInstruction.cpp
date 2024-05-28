@@ -216,11 +216,12 @@ void DPValue::replaceVariableLocationOp(unsigned OpIdx, Value *NewValue) {
 }
 
 void DPValue::addVariableLocationOps(ArrayRef<Value *> NewValues,
-                                     DIExpression *NewExpr) {
-  assert(NewExpr->hasAllLocationOps(getNumVariableLocationOps() +
+                                               DIExpression *NewExpr) {
+  assert(NewExpr->holdsNewElements() ||
+         NewExpr->hasAllLocationOps(getNumVariableLocationOps() +
                                     NewValues.size()) &&
-         "NewExpr for debug variable intrinsic does not reference every "
-         "location operand.");
+             "NewExpr for debug variable intrinsic does not reference every "
+             "location operand.");
   assert(!is_contained(NewValues, nullptr) && "New values must be non-null");
   setExpression(NewExpr);
   SmallVector<ValueAsMetadata *, 4> MDs;

@@ -155,6 +155,8 @@ StringRef llvm::dwarf::OperationEncodingString(unsigned Encoding) {
     return "DW_OP_LLVM_implicit_pointer";
   case DW_OP_LLVM_arg:
     return "DW_OP_LLVM_arg";
+  case DW_OP_LLVM_poisoned:
+    return "DW_OP_LLVM_poisoned";
   }
 }
 
@@ -169,6 +171,7 @@ unsigned llvm::dwarf::getOperationEncoding(StringRef OperationEncodingString) {
       .Case("DW_OP_LLVM_entry_value", DW_OP_LLVM_entry_value)
       .Case("DW_OP_LLVM_implicit_pointer", DW_OP_LLVM_implicit_pointer)
       .Case("DW_OP_LLVM_arg", DW_OP_LLVM_arg)
+      .Case("DW_OP_LLVM_poisoned", DW_OP_LLVM_poisoned)
       .Default(0);
 }
 

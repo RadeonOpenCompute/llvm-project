@@ -1679,6 +1679,41 @@ static void insertDbgValueOrDPValueAfter(DIBuilder &Builder, Value *DV,
   }
 }
 
+// \p In is an expression that takes a pointer argument. Attempt to create an
+// equivalent expression that takes a value by replacing the type field to the
+// DIOpArg and adding a DIOpAddrOf after it.
+static DIExpression *tryRemoveNewDIExpressionIndirection(DIExpression *In,
+                                                         Type *ArgType) {
+  if (!In->holdsNewElements())
+    return In;
+
+  auto Elements = In->getNewElementsRef();
+  DIExprBuilder ExprBuilder(In->getContext());
+  unsigned NumReplacedArgs = 0;
+  for (auto Iter = Elements->begin(), End = Elements->end(); Iter != End;
+       ++Iter) {
+    auto *Arg = std::get_if<DIOp::Arg>(&*Iter);
+    if (!Arg) {
+      ExprBuilder.append(*Iter);
+      continue;
+    }
+
+    ++NumReplacedArgs;
+    ExprBuilder.append<DIOp::Arg>(Arg->getIndex(), ArgType);
+    auto *PointerTy = dyn_cast<PointerType>(Arg->getResultType());
+    if (!PointerTy)
+      return nullptr;
+
+    auto Next = std::next(Iter);
+    if (Next == Elements->end() || !std::holds_alternative<DIOp::Deref>(*Next))
+      ExprBuilder.append<DIOp::AddrOf>(PointerTy->getAddressSpace());
+    else
+      Iter = Next;
+  }
+
+  return NumReplacedArgs == 1 ? ExprBuilder.intoExpression() : nullptr;
+}
+
 /// Inserts a llvm.dbg.value intrinsic before a store to an alloca'd value
 /// that has an associated llvm.dbg.declare intrinsic.
 void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
@@ -1688,6 +1723,10 @@ void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
   assert(DIVar && "Missing variable");
   auto *DIExpr = DII->getExpression();
   Value *DV = SI->getValueOperand();
+
+  DIExpr = tryRemoveNewDIExpressionIndirection(DIExpr, DV->getType());
+  if (!DIExpr)
+    return;
 
   DebugLoc NewLoc = getDebugValueLoc(DII);
 
@@ -1706,6 +1745,11 @@ void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
   bool CanConvert =
       DIExpr->isDeref() || (!DIExpr->startsWithDeref() &&
                             valueCoversEntireFragment(DV->getType(), DII));
+
+  // There are no such limitations on new DIExpressions.
+  if (DIExpr->holdsNewElements())
+    CanConvert = true;
+
   if (CanConvert) {
     insertDbgValueOrDPValue(Builder, DV, DIVar, DIExpr, NewLoc,
                             SI->getIterator());
@@ -1746,7 +1790,12 @@ void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
   auto *DIExpr = DII->getExpression();
   assert(DIVar && "Missing variable");
 
-  if (!valueCoversEntireFragment(LI->getType(), DII)) {
+  DIExpr = tryRemoveNewDIExpressionIndirection(DIExpr, LI->getType());
+  if (!DIExpr)
+    return;
+
+  if (!DIExpr->holdsNewElements() &&
+      !valueCoversEntireFragment(LI->getType(), DII)) {
     // FIXME: If only referring to a part of the variable described by the
     // dbg.declare, then we want to insert a dbg.value for the corresponding
     // fragment.
@@ -1775,6 +1824,10 @@ void llvm::ConvertDebugDeclareToDebugValue(DPValue *DPV, StoreInst *SI,
 
   DebugLoc NewLoc = getDebugValueLoc(DPV);
 
+  DIExpr = tryRemoveNewDIExpressionIndirection(DIExpr, DV->getType());
+  if (!DIExpr)
+    return;
+
   // If the alloca describes the variable itself, i.e. the expression in the
   // dbg.declare doesn't start with a dereference, we can perform the
   // conversion if the value covers the entire fragment of DII.
@@ -1790,6 +1843,11 @@ void llvm::ConvertDebugDeclareToDebugValue(DPValue *DPV, StoreInst *SI,
   bool CanConvert =
       DIExpr->isDeref() || (!DIExpr->startsWithDeref() &&
                             valueCoversEntireFragment(DV->getType(), DPV));
+
+  // There are no such limitations on new DIExpressions.
+  if (DIExpr->holdsNewElements())
+    CanConvert = true;
+
   if (CanConvert) {
     insertDbgValueOrDPValue(Builder, DV, DIVar, DIExpr, NewLoc,
                             SI->getIterator());
@@ -1819,10 +1877,15 @@ void llvm::ConvertDebugDeclareToDebugValue(DbgVariableIntrinsic *DII,
   auto *DIExpr = DII->getExpression();
   assert(DIVar && "Missing variable");
 
+  DIExpr = tryRemoveNewDIExpressionIndirection(DIExpr, APN->getType());
+  if (!DIExpr)
+    return;
+
   if (PhiHasDebugValue(DIVar, DIExpr, APN))
     return;
 
-  if (!valueCoversEntireFragment(APN->getType(), DII)) {
+  if (!DIExpr->holdsNewElements() &&
+      !valueCoversEntireFragment(APN->getType(), DII)) {
     // FIXME: If only referring to a part of the variable described by the
     // dbg.declare, then we want to insert a dbg.value for the corresponding
     // fragment.
@@ -1850,7 +1913,8 @@ void llvm::ConvertDebugDeclareToDebugValue(DPValue *DPV, LoadInst *LI,
   auto *DIExpr = DPV->getExpression();
   assert(DIVar && "Missing variable");
 
-  if (!valueCoversEntireFragment(LI->getType(), DPV)) {
+  if (!DIExpr->holdsNewElements() &&
+      !valueCoversEntireFragment(LI->getType(), DPV)) {
     // FIXME: If only referring to a part of the variable described by the
     // dbg.declare, then we want to insert a DPValue for the corresponding
     // fragment.
@@ -1858,6 +1922,10 @@ void llvm::ConvertDebugDeclareToDebugValue(DPValue *DPV, LoadInst *LI,
                       << '\n');
     return;
   }
+
+  DIExpr = tryRemoveNewDIExpressionIndirection(DIExpr, LI->getType());
+  if (!DIExpr)
+    return;
 
   DebugLoc NewLoc = getDebugValueLoc(DPV);
 
@@ -1889,10 +1957,15 @@ void llvm::ConvertDebugDeclareToDebugValue(DPValue *DPV, PHINode *APN,
   auto *DIExpr = DPV->getExpression();
   assert(DIVar && "Missing variable");
 
+  DIExpr = tryRemoveNewDIExpressionIndirection(DIExpr, APN->getType());
+  if (!DIExpr)
+    return;
+
   if (PhiHasDebugValue(DIVar, DIExpr, APN))
     return;
 
-  if (!valueCoversEntireFragment(APN->getType(), DPV)) {
+  if (!DIExpr->holdsNewElements() &&
+      !valueCoversEntireFragment(APN->getType(), DPV)) {
     // FIXME: If only referring to a part of the variable described by the
     // dbg.declare, then we want to insert a DPValue for the corresponding
     // fragment.
@@ -1974,10 +2047,19 @@ bool llvm::LowerDbgDeclare(Function &F) {
           // the variable by dereferencing the alloca.
           if (!CI->isLifetimeStartOrEnd()) {
             DebugLoc NewLoc = getDebugValueLoc(DDI);
-            auto *DerefExpr =
-                DIExpression::append(DDI->getExpression(), dwarf::DW_OP_deref);
-            insertDbgValueOrDPValue(DIB, AI, DDI->getVariable(), DerefExpr,
-                                    NewLoc, CI->getIterator());
+            if (DDI->getExpression()->holdsNewElements()) {
+              // In DIOp-based DIExpressions it's okay for a dbg.value to
+              // produce a memory location descriptor, so there isn't any need
+              // to change the expression.
+              insertDbgValueOrDPValue(DIB, AI, DDI->getVariable(),
+                                      DDI->getExpression(), NewLoc,
+                                      CI->getIterator());
+            } else {
+              auto *DerefExpr = DIExpression::append(DDI->getExpression(),
+                                                     dwarf::DW_OP_deref);
+              insertDbgValueOrDPValue(DIB, AI, DDI->getVariable(), DerefExpr,
+                                      NewLoc, CI->getIterator());
+            }
           }
         } else if (BitCastInst *BI = dyn_cast<BitCastInst>(U)) {
           if (BI->getType()->isPointerTy())
@@ -2237,6 +2319,139 @@ static void salvageDbgAssignAddress(DbgAssignIntrinsic *DAI) {
   }
 }
 
+/// This is a port of getSalvageOpsForBinOp() to DIOp-based DIExpressions.
+static Value *
+getNewSalvageOpsForBinOp(BinaryOperator *BI, uint64_t CurrentLocOps,
+                         SmallVectorImpl<DIOp::Variant> &Ops,
+                         SmallVectorImpl<Value *> &AdditionalValues) {
+  // Handle binary operations with constant integer operands as a special case.
+  auto *ConstInt = dyn_cast<ConstantInt>(BI->getOperand(1));
+
+  if (ConstInt) {
+    // Values wider than 64 bits cannot be represented within a DIExpression.
+    if (ConstInt->getBitWidth() > 64)
+      return nullptr;
+    Ops.emplace_back(DIOp::Constant(ConstInt));
+  } else {
+    Ops.emplace_back(DIOp::Arg(CurrentLocOps, BI->getOperand(1)->getType()));
+    AdditionalValues.push_back(BI->getOperand(1));
+  }
+
+  switch (BI->getOpcode()) {
+  default:
+    // FIXME: Some binary operators aren't representable in DIOp-based
+    // DIExpressions.
+    return nullptr;
+  case Instruction::Add:
+    Ops.emplace_back(DIOp::Add());
+    break;
+  case Instruction::Sub:
+    Ops.emplace_back(DIOp::Sub());
+    break;
+  case Instruction::Mul:
+    Ops.emplace_back(DIOp::Mul());
+    break;
+  case Instruction::SDiv:
+    Ops.emplace_back(DIOp::Div());
+    break;
+  case Instruction::Shl:
+    Ops.emplace_back(DIOp::Shl());
+    break;
+  case Instruction::LShr:
+    Ops.emplace_back(DIOp::LShr());
+    break;
+  case Instruction::AShr:
+    Ops.emplace_back(DIOp::AShr());
+    break;
+  }
+
+  return BI->getOperand(0);
+}
+
+/// This is a port of getSalvageOpsForGEP() to DIOp-based DIExpressions.
+static Value *
+getNewSalvageOpsForGEP(GetElementPtrInst *GEP, const DataLayout &DL,
+                       uint64_t CurrentLocOps,
+                       SmallVectorImpl<DIOp::Variant> &Ops,
+                       SmallVectorImpl<Value *> &AdditionalValues) {
+  LLVMContext &Ctx = GEP->getContext();
+  Type *PointerTy = GEP->getPointerOperand()->getType();
+  auto *IntPtrTy = IntegerType::get(Ctx, DL.getPointerTypeSizeInBits(PointerTy));
+  unsigned BitWidth = DL.getIndexSizeInBits(GEP->getPointerAddressSpace());
+
+  // Rewrite a GEP into a DIExpression.
+  MapVector<Value *, APInt> VariableOffsets;
+  APInt ConstantOffset(BitWidth, 0);
+  if (!GEP->collectOffset(DL, BitWidth, VariableOffsets, ConstantOffset))
+    return nullptr;
+
+  Ops.emplace_back(DIOp::Reinterpret(IntPtrTy));
+
+  for (const auto &Offset : VariableOffsets) {
+    AdditionalValues.push_back(Offset.first);
+    assert(Offset.second.isStrictlyPositive() &&
+           "Expected strictly positive multiplier for offset.");
+    ConstantInt *ConstOffset =
+        ConstantInt::get(IntPtrTy, Offset.second.getZExtValue());
+    DIOp::Variant NewOps[] = {
+        DIOp::Arg(CurrentLocOps++, ConstOffset->getType()),
+        DIOp::Constant(ConstOffset), DIOp::Mul(), DIOp::Add()};
+    Ops.append(std::begin(NewOps), std::end(NewOps));
+  }
+
+  Ops.emplace_back(DIOp::Constant(
+      ConstantInt::get(IntPtrTy, ConstantOffset.getZExtValue())));
+  Ops.emplace_back(DIOp::Add());
+  Ops.emplace_back(DIOp::Reinterpret(PointerTy));
+  return GEP->getOperand(0);
+}
+
+/// This is a port of salvageDebugInfoImpl() to DIOp-based DIExpressions.
+///
+/// \param I is an instruction that's about to be deleted, used as a location op
+/// to a debug intrinsic. \p Ops will be populated with DIOps that have the same
+/// semantics as I.
+/// \param CurrentLocOps is the number of location ops the debug intrinsic
+/// currently uses.
+/// \param AdditionalValues is populated with any additional location ops we
+/// need to add to the intrinsic to salvage this instruction.
+/// \returns a Value to replace I with in the debug intrinsic's location ops.
+static Value *salvageNewDebugInfo(Instruction &I, uint64_t CurrentLocOps,
+                                  SmallVectorImpl<Value *> &AdditionalValues,
+                                  SmallVectorImpl<DIOp::Variant> &Ops) {
+  auto &M = *I.getModule();
+  auto &DL = M.getDataLayout();
+
+  if (auto *CI = dyn_cast<CastInst>(&I)) {
+    Value *FromValue = CI->getOperand(0);
+    Type *Type = CI->getType();
+
+    if (CI->isNoopCast(DL))
+      Ops.emplace_back(DIOp::Reinterpret(Type));
+    // FIXME(diexpression-poison): relax restriction to integer type to match IR
+    // instruction
+    else if (isa<SExtInst>(&I) && Type->isIntegerTy())
+      Ops.emplace_back(DIOp::SExt(Type));
+    // FIXME(diexpression-poison): relax restriction to integer type to match IR
+    // instruction
+    else if (isa<ZExtInst>(&I) && Type->isIntegerTy())
+      Ops.emplace_back(DIOp::ZExt(Type));
+    else if (isa<TruncInst>(&I))
+      Ops.emplace_back(DIOp::Convert(Type));
+    else
+      return nullptr;
+
+    return FromValue;
+  }
+
+  if (auto *BI = dyn_cast<BinaryOperator>(&I))
+    return getNewSalvageOpsForBinOp(BI, CurrentLocOps, Ops, AdditionalValues);
+  if (auto *GEP = dyn_cast<GetElementPtrInst>(&I))
+    return getNewSalvageOpsForGEP(GEP, DL, CurrentLocOps, Ops, AdditionalValues);
+
+  return nullptr;
+}
+
 void llvm::salvageDebugInfoForDbgValues(
     Instruction &I, ArrayRef<DbgVariableIntrinsic *> DbgUsers,
     ArrayRef<DPValue *> DPUsers) {
@@ -2272,6 +2487,25 @@ void llvm::salvageDebugInfoForDbgValues(
     Value *Op0 = nullptr;
     DIExpression *SalvagedExpr = DII->getExpression();
     auto LocItr = find(DIILocation, &I);
+
+    if (SalvagedExpr->holdsNewElements()) {
+      while (SalvagedExpr && LocItr != DIILocation.end()) {
+        SmallVector<DIOp::Variant, 16> Ops;
+        unsigned LocNo = std::distance(DIILocation.begin(), LocItr);
+        uint64_t CurrentLocOps = SalvagedExpr->getNewNumLocationOperands();
+        Op0 = salvageNewDebugInfo(I, CurrentLocOps, AdditionalValues, Ops);
+        if (!Op0)
+          break;
+        SalvagedExpr = DIExpression::appendNewOpsToArg(SalvagedExpr, Ops, LocNo,
+                                                       Op0->getType());
+        LocItr = std::find(++LocItr, DIILocation.end(), &I);
+      }
+      // salvageDebugInfoImpl should fail on examining the first element of
+      // DbgUsers, or none of them.
+      if (!Op0)
+        break;
+    }
+
     while (SalvagedExpr && LocItr != DIILocation.end()) {
       SmallVector<uint64_t, 16> Ops;
       unsigned LocNo = std::distance(DIILocation.begin(), LocItr);
@@ -2323,6 +2557,25 @@ void llvm::salvageDebugInfoForDbgValues(
     Value *Op0 = nullptr;
     DIExpression *SalvagedExpr = DPV->getExpression();
     auto LocItr = find(DPVLocation, &I);
+
+    if (SalvagedExpr->holdsNewElements()) {
+      while (SalvagedExpr && LocItr != DPVLocation.end()) {
+        SmallVector<DIOp::Variant, 16> Ops;
+        unsigned LocNo = std::distance(DPVLocation.begin(), LocItr);
+        uint64_t CurrentLocOps = SalvagedExpr->getNewNumLocationOperands();
+        Op0 = salvageNewDebugInfo(I, CurrentLocOps, AdditionalValues, Ops);
+        if (!Op0)
+          break;
+        SalvagedExpr = DIExpression::appendNewOpsToArg(SalvagedExpr, Ops, LocNo,
+                                                       Op0->getType());
+        LocItr = std::find(++LocItr, DPVLocation.end(), &I);
+      }
+      // salvageDebugInfoImpl should fail on examining the first element of
+      // DbgUsers, or none of them.
+      if (!Op0)
+        break;
+    }
+
     while (SalvagedExpr && LocItr != DPVLocation.end()) {
       SmallVector<uint64_t, 16> Ops;
       unsigned LocNo = std::distance(DPVLocation.begin(), LocItr);
@@ -2697,6 +2950,93 @@ static bool isBitCastSemanticsPreserving(const DataLayout &DL, Type *FromTy,
   return false;
 }
 
+/// Generate new DIOps for a conversion from \param SourceTy to \param DestTy.
+/// Returns true if the conversion was successful.
+static bool getNewDIConversionOps(const DataLayout &DL, Type *SourceTy,
+                                  Type *DestTy,
+                                  std::optional<DIBasicType::Signedness> Sign,
+                                  SmallVectorImpl<DIOp::Variant> &Ops) {
+  if (SourceTy == DestTy)
+    return true; // No conversion necessary.
+
+  TypeSize SourceBits = DL.getTypeSizeInBits(SourceTy);
+  TypeSize DestBits = DL.getTypeSizeInBits(DestTy);
+
+  if (SourceBits == DestBits && !DL.isNonIntegralPointerType(SourceTy) &&
+      !DL.isNonIntegralPointerType(DestTy) &&
+      ((SourceTy->isPointerTy() && DestTy->isIntegerTy()) ||
+       (SourceTy->isIntegerTy() && DestTy->isPointerTy()))) {
+    Ops.emplace_back(DIOp::Reinterpret(DestTy));
+    return true;
+  }
+
+  if (!SourceTy->isIntegerTy() || !DestTy->isIntegerTy())
+    return false;
+
+  if (SourceBits < DestBits) {
+    if (!Sign)
+      return false;
+
+    if (*Sign == DIBasicType::Signedness::Signed)
+      Ops.emplace_back(DIOp::SExt(DestTy));
+    else
+      Ops.emplace_back(DIOp::ZExt(DestTy));
+    return true;
+  }
+
+  Ops.emplace_back(DIOp::Convert(DestTy));
+  return true;
+}
+
+/// Convert the type of all DIOpArgs that refer to \param LocOp to \param NewTy.
+/// This is done by replacing the DIOpArg type and adding an appropriate
+/// conversion operator back to the original type. e.g, the following
+/// expression:
+///
+///   DIExpression(DIOpArg(ptr), DIOpDeref(i32))
+///
+/// Becomes:
+///
+///   DIExpression(DIOpArg(i64), DIOpReinterpret(ptr), DIOpDeref(i32))
+///
+/// If NewTy is i64. After this function returns, DII must be updated with a new
+/// value of the correct type.
+template <class IntrinsicOrRecord>
+static std::optional<DIExpression *>
+updateNewDIExpressionArgType(IntrinsicOrRecord &DII, Value *LocOp,
+                             Type *NewTy) {
+  DIExpression *Expr = DII.getExpression();
+  assert(Expr->holdsNewElements() && "expected a new DIExpression!");
+
+  // If the types are the same, then the expression is already correct.
+  if (LocOp->getType() == NewTy)
+    return Expr;
+
+  const DataLayout &DL = DII.getModule()->getDataLayout();
+  auto LocOps = DII.location_ops();
+  for (auto Iter = LocOps.begin(); Iter != LocOps.end(); ++Iter) {
+    Value *V = *Iter;
+    if (V != LocOp)
+      continue;
+
+    // Use the signedness of the variable to determine whether we should use
+    // ZExt/SExt for integer promotions. This isn't necessarily correct, but
+    // it's probably the best we can do given replaceAllDbgUsesWith()'s API.
+    SmallVector<DIOp::Variant, 1> ConversionOps;
+    if (!getNewDIConversionOps(DL, NewTy, LocOp->getType(),
+                               DII.getVariable()->getSignedness(),
+                               ConversionOps))
+      return std::nullopt;
+
+    unsigned LocNo = std::distance(LocOps.begin(), Iter);
+    Expr = DIExpression::appendNewOpsToArg(Expr, ConversionOps, LocNo, NewTy);
+    if (!Expr)
+      return std::nullopt;
+  }
+
+  return Expr;
+}
+
 bool llvm::replaceAllDbgUsesWith(Instruction &From, Value &To,
                                  Instruction &DomPoint, DominatorTree &DT) {
   // Exit early if From has no debug users.
@@ -2709,9 +3049,13 @@ bool llvm::replaceAllDbgUsesWith(Instruction &From, Value &To,
   Type *ToTy = To.getType();
 
   auto Identity = [&](DbgVariableIntrinsic &DII) -> DbgValReplacement {
+    if (DII.getExpression()->holdsNewElements())
+      return updateNewDIExpressionArgType(DII, &From, ToTy);
     return DII.getExpression();
   };
   auto IdentityDPV = [&](DPValue &DPV) -> DbgValReplacement {
+    if (DPV.getExpression()->holdsNewElements())
+      return updateNewDIExpressionArgType(DPV, &From, ToTy);
     return DPV.getExpression();
   };
 
@@ -2736,6 +3080,9 @@ bool llvm::replaceAllDbgUsesWith(Instruction &From, Value &To,
     // The width of the result has shrunk. Use sign/zero extension to describe
     // the source variable's high bits.
     auto SignOrZeroExt = [&](DbgVariableIntrinsic &DII) -> DbgValReplacement {
+      if (DII.getExpression()->holdsNewElements())
+        return updateNewDIExpressionArgType(DII, &From, ToTy);
+
       DILocalVariable *Var = DII.getVariable();
 
       // Without knowing signedness, sign/zero extension isn't possible.
@@ -2747,9 +3094,12 @@ bool llvm::replaceAllDbgUsesWith(Instruction &From, Value &To,
       return DIExpression::appendExt(DII.getExpression(), ToBits, FromBits,
                                      Signed);
     };
-    // RemoveDIs: duplicate implementation working on DPValues rather than on
-    // dbg.value intrinsics.
+    // RemoveDIs: duplicate implementation working on DbgVariableRecords rather
+    // than on dbg.value intrinsics.
     auto SignOrZeroExtDPV = [&](DPValue &DPV) -> DbgValReplacement {
+      if (DPV.getExpression()->holdsNewElements())
+        return updateNewDIExpressionArgType(DPV, &From, ToTy);
+
       DILocalVariable *Var = DPV.getVariable();
 
       // Without knowing signedness, sign/zero extension isn't possible.
