@@ -8,9 +8,11 @@
 HIPCC environment variables
 ******************************************
 
-The environment variable ``HIP_PLATFORM`` can be used to specify ``amd`` or ``nvidia`` depending on the available backend tool flows:
+The environment variable ``HIP_PLATFORM`` can be used to specify ``amd`` or ``nvidia`` depending on the available backend tool flows. For example:
 
-* ``HIP_PLATFORM``='amd' or ``HIP_PLATFORM``='nvidia'.
+.. code-block:: shell
+
+   export HIP_PLATFORM=amd
 
 .. note:: 
     If ``HIP_PLATFORM`` is not set, then ``hipcc`` will attempt to auto-detect based on if the ``nvcc`` tool is found.
