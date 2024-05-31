@@ -414,6 +414,15 @@ struct AMDGPUMemoryPoolTy {
     return Plugin::check(Status, "Error in hsa_amd_memory_pool_free: %s");
   }
 
+  /// Returns if the \p Agent can access the memory pool.
+  bool canAccess(hsa_agent_t Agent) {
+    hsa_amd_memory_pool_access_t Access;
+    if (hsa_amd_agent_memory_pool_get_info(
+            Agent, MemoryPool, HSA_AMD_AGENT_MEMORY_POOL_INFO_ACCESS, &Access))
+      return false;
+    return Access != HSA_AMD_MEMORY_POOL_ACCESS_NEVER_ALLOWED;
+  }
+
   /// Allow the device to access a specific allocation.
   Error enableAccess(void *Ptr, int64_t Size,
                      const llvm::SmallVector<hsa_agent_t> &Agents) const {
@@ -4726,10 +4735,15 @@ void *AMDGPUMemoryManagerTy::allocate(size_t Size, void *HstPtr,
   }
   assert(Ptr && "Invalid pointer");
 
-  auto &KernelAgents = Plugin::get<AMDGPUPluginTy>().getKernelAgents();
+  // Get a list of agents that can access this memory pool.
+  llvm::SmallVector<hsa_agent_t> Agents;
+  llvm::copy_if(
+      Plugin::get<AMDGPUPluginTy>().getKernelAgents(),
+       std::back_inserter(Agents),
+      [&](hsa_agent_t Agent) { return MemoryPool->canAccess(Agent); });
 
-  // Allow all kernel agents to access the allocation.
-  if (auto Err = MemoryPool->enableAccess(Ptr, Size, KernelAgents)) {
+  // Allow all valid kernel agents to access the allocation.
+  if (auto Err = MemoryPool->enableAccess(Ptr, Size, Agents)) {
     REPORT("%s\n", toString(std::move(Err)).data());
     return nullptr;
   }
@@ -4769,12 +4783,18 @@ void *AMDGPUDeviceTy::allocate(size_t Size, void *, TargetAllocTy Kind) {
   }
 
   if (Alloc) {
-    auto &KernelAgents = Plugin::get<AMDGPUPluginTy>().getKernelAgents();
-    // Inherently necessary for host or shared allocations
-    // Also enabled for device memory to allow device to device memcpy
+    // Get a list of agents that can access this memory pool. Inherently
+    // necessary for host or shared allocations Also enabled for device memory
+    // to allow device to device memcpy
+    llvm::SmallVector<hsa_agent_t> Agents;
+    llvm::copy_if(static_cast<AMDGPUPluginTy &>
+                  (Plugin::get<AMDGPUPluginTy>()).getKernelAgents(),
+                  std::back_inserter(Agents), [&](hsa_agent_t Agent) {
+                    return MemoryPool->canAccess(Agent);
+                  });
 
-    // Enable all kernel agents to access the buffer.
-    if (auto Err = MemoryPool->enableAccess(Alloc, Size, KernelAgents)) {
+    // Enable all valid kernel agents to access the buffer.
+    if (auto Err = MemoryPool->enableAccess(Alloc, Size, Agents)) {
       REPORT("%s\n", toString(std::move(Err)).data());
       return nullptr;
     }
