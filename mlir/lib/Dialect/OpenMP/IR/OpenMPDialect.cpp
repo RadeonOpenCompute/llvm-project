@@ -1543,6 +1543,15 @@ Operation *TargetOp::getInnermostCapturedOmpOp() {
 
 bool TargetOp::isTargetSPMDLoop() {
   Operation *capturedOp = getInnermostCapturedOmpOp();
+
+  // Allow an omp.atomic_update to be captured inside of the loop and still
+  // consider the parent omp.target operation to be potentially defining an SPMD
+  // loop.
+  // TODO: Potentially accept other captured OpenMP dialect operations as well,
+  // if they are allowed inside of an SPMD loop.
+  if (isa_and_present<AtomicUpdateOp>(capturedOp))
+    capturedOp = capturedOp->getParentOp();
+
   if (!isa_and_present<LoopNestOp>(capturedOp))
     return false;
 
