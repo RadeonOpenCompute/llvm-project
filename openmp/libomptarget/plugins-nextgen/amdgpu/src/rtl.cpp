@@ -1403,6 +1403,9 @@ private:
   /// Mutex to protect stream's management.
   mutable std::mutex Mutex;
 
+  /// Use synchronous copy back.
+  bool UseSyncCopyBack;
+
   /// Timeout hint for HSA actively waiting for signal value to change
   const uint64_t StreamBusyWaitMicroseconds;
 
@@ -1625,18 +1628,19 @@ public:
     // Consume stream slot and compute dependencies.
     auto [Curr, InputSignal] = consume(OutputSignal1);
 
-    // Avoid defining the input dependency if already satisfied.
-    if (InputSignal && !InputSignal->load())
-      InputSignal = nullptr;
-
     // Setup the post action for releasing the intermediate buffer.
     if (auto Err = Slots[Curr].schedReleaseBuffer(Inter, MemoryManager))
       return Err;
 
+    // Wait for kernel to finish before scheduling the asynchronous copy.
+    if (UseSyncCopyBack && InputSignal && InputSignal->load())
+      if (auto Err = InputSignal->wait(StreamBusyWaitMicroseconds, RPCHandle))
+        return Err;
+
     // Issue the first step: device to host transfer. Avoid defining the input
     // dependency if already satisfied.
     hsa_status_t Status;
-    if (InputSignal) {
+    if (InputSignal && InputSignal->load()) {
       hsa_signal_t InputSignalRaw = InputSignal->get();
       Status = hsa_amd_memory_async_copy(Inter, Agent, Src, Agent, CopySize, 1,
                                          &InputSignalRaw, OutputSignal1->get());
@@ -2075,11 +2079,15 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
                                64),
         OMPX_ForceSyncRegions("OMPX_FORCE_SYNC_REGIONS", 0),
         OMPX_StreamBusyWait("LIBOMPTARGET_AMDGPU_STREAM_BUSYWAIT", 2000000),
+        OMPX_SyncCopyBack("LIBOMPTARGET_SYNC_COPY_BACK", true),
         AMDGPUStreamManager(*this), AMDGPUEventManager(*this),
         AMDGPUSignalManager(*this), Agent(Agent), HostDevice(HostDevice),
         Queues() {}
 
   ~AMDGPUDeviceTy() {}
+
+  /// Return synchronous copy back status variable.
+  bool syncCopyBack() const { return OMPX_SyncCopyBack; }
 
   /// Returns the maximum of HSA queues to create
   /// This reads a non-cached environment variable, don't call everywhere.
@@ -3141,6 +3149,9 @@ private:
   /// are microseconds.
   UInt32Envar OMPX_StreamBusyWait;
 
+  // Variable to hold synchronous copy back
+  BoolEnvar OMPX_SyncCopyBack;
+
   /// Stream manager for AMDGPU streams.
   AMDGPUStreamManagerTy AMDGPUStreamManager;
 
@@ -3280,7 +3291,7 @@ AMDGPUStreamTy::AMDGPUStreamTy(AMDGPUDeviceTy &Device)
       // Initialize the std::deque with some empty positions.
       Slots(32), NextSlot(0), SyncCycle(0), RPCHandle(nullptr),
       StreamBusyWaitMicroseconds(Device.getStreamBusyWaitMicroseconds()),
-      Device(Device) {}
+      UseSyncCopyBack(Device.syncCopyBack()), Device(Device) {}
 
 /// Class implementing the AMDGPU-specific functionalities of the global
 /// handler.

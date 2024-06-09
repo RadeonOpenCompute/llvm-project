@@ -59,10 +59,7 @@ lld::elf::link in Comgr's linkWithLLD()
 - Added -x assembler option to assembly compilation. Before, if an assembly file
 did not end with a .s file extension, it was not handled properly by the Comgr
 ASSEMBLE\_SOURCE\_TO\_RELOCATABLE action.
-- Added new -relink-builtin-bitcode-postop LLVM option to device library. This
-fixes an issue with the \*COMPILE\_SOURCE\_WITH\_DEVICE\_LIBRARIES\_TO\_BC where
-OpenCL applications that leveraged AMDGPUSimplifyLibCalls optimizations would
-need to re-link bitcodes separately to avoid errors at runtime.
+
 
 New APIs
 --------
