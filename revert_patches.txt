@@ -1,5 +1,5 @@
-revert: breaks MIOpen composableKernel build 
-[clang][Sema] Add -Wswitch-default warning option (#73077)  
+revert: breaks MIOpen composableKernel build
+[clang][Sema] Add -Wswitch-default warning option (#73077)
    https://ontrack-internal.amd.com/browse/SWDEV-436625
 
 Revert: breaks build of hipCUB
