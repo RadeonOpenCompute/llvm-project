@@ -2103,63 +2103,124 @@ llvm::Value *getSizeInBytes(DataLayout &dl, const mlir::Type &type,
   return builder.getInt64(underlyingTypeSzInBits / 8);
 }
 
-void collectMapDataFromMapOperands(MapInfoData &mapData,
-                                   llvm::SmallVectorImpl<Value> &mapOperands,
-                                   LLVM::ModuleTranslation &moduleTranslation,
-                                   DataLayout &dl,
-                                   llvm::IRBuilderBase &builder) {
+void collectMapDataFromMapOperands(
+    MapInfoData &mapData, llvm::SmallVectorImpl<Value> &mapOperands,
+    LLVM::ModuleTranslation &moduleTranslation, DataLayout &dl,
+    llvm::IRBuilderBase &builder,
+    const llvm::ArrayRef<Value> &useDevPtrOperands = {},
+    const llvm::ArrayRef<Value> &useDevAddrOperands = {}) {
+  // Process MapOperands
   for (mlir::Value mapValue : mapOperands) {
-    if (auto mapOp = mlir::dyn_cast_if_present<mlir::omp::MapInfoOp>(
-            mapValue.getDefiningOp())) {
-      mlir::Value offloadPtr =
-          mapOp.getVarPtrPtr() ? mapOp.getVarPtrPtr() : mapOp.getVarPtr();
-      mapData.OriginalValue.push_back(
-          moduleTranslation.lookupValue(offloadPtr));
-      mapData.Pointers.push_back(mapData.OriginalValue.back());
+    auto mapOp = mlir::cast<mlir::omp::MapInfoOp>(mapValue.getDefiningOp());
+    mlir::Value offloadPtr =
+        mapOp.getVarPtrPtr() ? mapOp.getVarPtrPtr() : mapOp.getVarPtr();
+    mapData.OriginalValue.push_back(moduleTranslation.lookupValue(offloadPtr));
+    mapData.Pointers.push_back(mapData.OriginalValue.back());
 
-      if (llvm::Value *refPtr =
-              getRefPtrIfDeclareTarget(offloadPtr,
-                                       moduleTranslation)) { // declare target
-        mapData.IsDeclareTarget.push_back(true);
-        mapData.BasePointers.push_back(refPtr);
-      } else { // regular mapped variable
-        mapData.IsDeclareTarget.push_back(false);
-        mapData.BasePointers.push_back(mapData.OriginalValue.back());
-      }
+    if (llvm::Value *refPtr =
+            getRefPtrIfDeclareTarget(offloadPtr,
+                                     moduleTranslation)) { // declare target
+      mapData.IsDeclareTarget.push_back(true);
+      mapData.BasePointers.push_back(refPtr);
+    } else { // regular mapped variable
+      mapData.IsDeclareTarget.push_back(false);
+      mapData.BasePointers.push_back(mapData.OriginalValue.back());
+    }
 
-      mapData.BaseType.push_back(
-          moduleTranslation.convertType(mapOp.getVarType()));
-      mapData.Sizes.push_back(
-          getSizeInBytes(dl, mapOp.getVarType(), mapOp, mapData.Pointers.back(),
-                         mapData.BaseType.back(), builder, moduleTranslation));
-      mapData.MapClause.push_back(mapOp.getOperation());
-      mapData.Types.push_back(
-          llvm::omp::OpenMPOffloadMappingFlags(mapOp.getMapType().value()));
-      mapData.Names.push_back(LLVM::createMappingInformation(
-          mapOp.getLoc(), *moduleTranslation.getOpenMPBuilder()));
-      mapData.DevicePointers.push_back(
-          llvm::OpenMPIRBuilder::DeviceInfoTy::None);
+    mapData.BaseType.push_back(
+        moduleTranslation.convertType(mapOp.getVarType()));
+    mapData.Sizes.push_back(
+        getSizeInBytes(dl, mapOp.getVarType(), mapOp, mapData.Pointers.back(),
+                       mapData.BaseType.back(), builder, moduleTranslation));
+    mapData.MapClause.push_back(mapOp.getOperation());
+    mapData.Types.push_back(
+        llvm::omp::OpenMPOffloadMappingFlags(mapOp.getMapType().value()));
+    mapData.Names.push_back(LLVM::createMappingInformation(
+        mapOp.getLoc(), *moduleTranslation.getOpenMPBuilder()));
+    mapData.DevicePointers.push_back(llvm::OpenMPIRBuilder::DeviceInfoTy::None);
 
-      // Check if this is a member mapping and correctly assign that it is, if
-      // it is a member of a larger object.
-      // TODO: Need better handling of members, and distinguishing of members
-      // that are implicitly allocated on device vs explicitly passed in as
-      // arguments.
-      // TODO: May require some further additions to support nested record
-      // types, i.e. member maps that can have member maps.
-      mapData.IsAMember.push_back(false);
-      for (mlir::Value mapValue : mapOperands) {
-        if (auto map = mlir::dyn_cast_if_present<mlir::omp::MapInfoOp>(
-                mapValue.getDefiningOp())) {
-          for (auto member : map.getMembers()) {
-            if (member == mapOp) {
-              mapData.IsAMember.back() = true;
-            }
+    // Check if this is a member mapping and correctly assign that it is, if
+    // it is a member of a larger object.
+    // TODO: Need better handling of members, and distinguishing of members
+    // that are implicitly allocated on device vs explicitly passed in as
+    // arguments.
+    // TODO: May require some further additions to support nested record
+    // types, i.e. member maps that can have member maps.
+    mapData.IsAMember.push_back(false);
+    for (mlir::Value mapValue : mapOperands) {
+      if (auto map = mlir::dyn_cast_if_present<mlir::omp::MapInfoOp>(
+              mapValue.getDefiningOp())) {
+        for (auto member : map.getMembers()) {
+          if (member == mapOp) {
+            mapData.IsAMember.back() = true;
           }
         }
       }
     }
   }
+
+  auto findMapInfo = [&mapData](llvm::Value *val, unsigned &index) {
+    index = 0;
+    for (llvm::Value *basePtr : mapData.OriginalValue) {
+      if (basePtr == val)
+        return true;
+      index++;
+    }
+    return false;
+  };
+
+  // Process useDevPtr(Addr)Operands
+  auto addDevInfos = [&](const llvm::ArrayRef<Value> &useDevOperands,
+                         llvm::OpenMPIRBuilder::DeviceInfoTy devInfoTy) {
+    for (mlir::Value mapValue : useDevOperands) {
+      auto mapOp = mlir::cast<mlir::omp::MapInfoOp>(mapValue.getDefiningOp());
+
+      mlir::Value offloadPtr =
+          mapOp.getVarPtrPtr() ? mapOp.getVarPtrPtr() : mapOp.getVarPtr();
+
+      // Check if map info is already present for this entry.
+      unsigned infoIndex;
+
+      if (findMapInfo(moduleTranslation.lookupValue(offloadPtr), infoIndex)) {
+        mapData.Types[infoIndex] |=
+            llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_RETURN_PARAM;
+        mapData.DevicePointers[infoIndex] = devInfoTy;
+      } else {
+        mapData.OriginalValue.push_back(
+            moduleTranslation.lookupValue(offloadPtr));
+        mapData.Pointers.push_back(mapData.OriginalValue.back());
+        mapData.IsDeclareTarget.push_back(false);
+        mapData.BasePointers.push_back(mapData.OriginalValue.back());
+        mapData.BaseType.push_back(
+            moduleTranslation.convertType(mapOp.getVarType()));
+        mapData.Sizes.push_back(builder.getInt64(0));
+        mapData.MapClause.push_back(mapOp.getOperation());
+        mapData.Types.push_back(
+            llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_RETURN_PARAM);
+        mapData.Names.push_back(LLVM::createMappingInformation(
+            mapOp.getLoc(), *moduleTranslation.getOpenMPBuilder()));
+        mapData.DevicePointers.push_back(devInfoTy);
+
+        // Check if this is a member mapping and correctly assign that it is, if
+        // it is a member of a larger object.
+        // TODO: Need better handling of members, and distinguishing of members
+        // that are implicitly allocated on device vs explicitly passed in as
+        // arguments.
+        // TODO: May require some further additions to support nested record
+        // types, i.e. member maps that can have member maps.
+        mapData.IsAMember.push_back(false);
+        for (mlir::Value mapValue : useDevOperands)
+          if (auto map = mlir::dyn_cast_if_present<mlir::omp::MapInfoOp>(
+                  mapValue.getDefiningOp()))
+            for (auto member : map.getMembers())
+              if (member == mapOp)
+                mapData.IsAMember.back() = true;
+      }
+    }
+  };
+
+  addDevInfos(useDevPtrOperands, llvm::OpenMPIRBuilder::DeviceInfoTy::Pointer);
+  addDevInfos(useDevAddrOperands, llvm::OpenMPIRBuilder::DeviceInfoTy::Address);
 }
 
 static int getMapDataMemberIdx(MapInfoData &mapData,
@@ -2337,7 +2398,7 @@ static llvm::omp::OpenMPOffloadMappingFlags mapParentWithMembers(
           ? llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TARGET_PARAM
           : llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_NONE);
   combinedInfo.DevicePointers.emplace_back(
-      llvm::OpenMPIRBuilder::DeviceInfoTy::None);
+      mapData.DevicePointers[mapDataIndex]);
   combinedInfo.Names.emplace_back(LLVM::createMappingInformation(
       mapData.MapClause[mapDataIndex]->getLoc(), ompBuilder));
   combinedInfo.BasePointers.emplace_back(mapData.BasePointers[mapDataIndex]);
@@ -2464,7 +2525,7 @@ static void processMapMembersWithParent(
 
     combinedInfo.Types.emplace_back(mapFlag);
     combinedInfo.DevicePointers.emplace_back(
-        llvm::OpenMPIRBuilder::DeviceInfoTy::None);
+        mapData.DevicePointers[memberDataIdx]);
     combinedInfo.Names.emplace_back(
         LLVM::createMappingInformation(memberClause.getLoc(), ompBuilder));
     combinedInfo.BasePointers.emplace_back(mapData.BasePointers[mapDataIndex]);
@@ -2625,10 +2686,7 @@ static void genMapInfos(llvm::IRBuilderBase &builder,
                         LLVM::ModuleTranslation &moduleTranslation,
                         DataLayout &dl,
                         llvm::OpenMPIRBuilder::MapInfosTy &combinedInfo,
-                        MapInfoData &mapData,
-                        const SmallVector<Value> &devPtrOperands = {},
-                        const SmallVector<Value> &devAddrOperands = {},
-                        bool isTargetParams = false) {
+                        MapInfoData &mapData, bool isTargetParams = false) {
   // We wish to modify some of the methods in which arguments are
   // passed based on their capture type by the target region, this can
   // involve generating new loads and stores, which changes the
@@ -2644,15 +2702,6 @@ static void genMapInfos(llvm::IRBuilderBase &builder,
     createAlteredByCaptureMap(mapData, moduleTranslation, builder);
 
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
-
-  auto fail = [&combinedInfo]() -> void {
-    combinedInfo.BasePointers.clear();
-    combinedInfo.Pointers.clear();
-    combinedInfo.DevicePointers.clear();
-    combinedInfo.Sizes.clear();
-    combinedInfo.Types.clear();
-    combinedInfo.Names.clear();
-  };
 
   // We operate under the assumption that all vectors that are
   // required in MapInfoData are of equal lengths (either filled with
@@ -2674,46 +2723,6 @@ static void genMapInfos(llvm::IRBuilderBase &builder,
 
     processIndividualMap(mapData, i, combinedInfo, isTargetParams);
   }
-
-  auto findMapInfo = [&combinedInfo](llvm::Value *val, unsigned &index) {
-    index = 0;
-    for (llvm::Value *basePtr : combinedInfo.BasePointers) {
-      if (basePtr == val)
-        return true;
-      index++;
-    }
-    return false;
-  };
-
-  auto addDevInfos = [&, fail](auto devOperands, auto devOpType) -> void {
-    for (const auto &devOp : devOperands) {
-      // TODO: Only LLVMPointerTypes are handled.
-      if (!isa<LLVM::LLVMPointerType>(devOp.getType()))
-        return fail();
-
-      llvm::Value *mapOpValue = moduleTranslation.lookupValue(devOp);
-
-      // Check if map info is already present for this entry.
-      unsigned infoIndex;
-      if (findMapInfo(mapOpValue, infoIndex)) {
-        combinedInfo.Types[infoIndex] |=
-            llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_RETURN_PARAM;
-        combinedInfo.DevicePointers[infoIndex] = devOpType;
-      } else {
-        combinedInfo.BasePointers.emplace_back(mapOpValue);
-        combinedInfo.Pointers.emplace_back(mapOpValue);
-        combinedInfo.DevicePointers.emplace_back(devOpType);
-        combinedInfo.Names.emplace_back(
-            LLVM::createMappingInformation(devOp.getLoc(), *ompBuilder));
-        combinedInfo.Types.emplace_back(
-            llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_RETURN_PARAM);
-        combinedInfo.Sizes.emplace_back(builder.getInt64(0));
-      }
-    }
-  };
-
-  addDevInfos(devPtrOperands, llvm::OpenMPIRBuilder::DeviceInfoTy::Pointer);
-  addDevInfos(devAddrOperands, llvm::OpenMPIRBuilder::DeviceInfoTy::Address);
 }
 
 static LogicalResult
@@ -2811,19 +2820,14 @@ convertOmpTargetData(Operation *op, llvm::IRBuilderBase &builder,
 
   MapInfoData mapData;
   collectMapDataFromMapOperands(mapData, mapOperands, moduleTranslation, DL,
-                                builder);
+                                builder, useDevPtrOperands, useDevAddrOperands);
 
   // Fill up the arrays with all the mapped variables.
   llvm::OpenMPIRBuilder::MapInfosTy combinedInfo;
   auto genMapInfoCB =
       [&](InsertPointTy codeGenIP) -> llvm::OpenMPIRBuilder::MapInfosTy & {
     builder.restoreIP(codeGenIP);
-    if (auto dataOp = dyn_cast<omp::TargetDataOp>(op)) {
-      genMapInfos(builder, moduleTranslation, DL, combinedInfo, mapData,
-                  useDevPtrOperands, useDevAddrOperands);
-    } else {
-      genMapInfos(builder, moduleTranslation, DL, combinedInfo, mapData);
-    }
+    genMapInfos(builder, moduleTranslation, DL, combinedInfo, mapData);
     return combinedInfo;
   };
 
@@ -2842,21 +2846,23 @@ convertOmpTargetData(Operation *op, llvm::IRBuilderBase &builder,
       if (!info.DevicePtrInfoMap.empty()) {
         builder.restoreIP(codeGenIP);
         unsigned argIndex = 0;
-        for (auto &devPtrOp : useDevPtrOperands) {
-          llvm::Value *mapOpValue = moduleTranslation.lookupValue(devPtrOp);
-          const auto &arg = region.front().getArgument(argIndex);
-          moduleTranslation.mapValue(arg,
-                                     info.DevicePtrInfoMap[mapOpValue].second);
-          argIndex++;
-        }
-
-        for (auto &devAddrOp : useDevAddrOperands) {
-          llvm::Value *mapOpValue = moduleTranslation.lookupValue(devAddrOp);
-          const auto &arg = region.front().getArgument(argIndex);
-          auto *LI = builder.CreateLoad(
-              builder.getPtrTy(), info.DevicePtrInfoMap[mapOpValue].second);
-          moduleTranslation.mapValue(arg, LI);
-          argIndex++;
+        for (size_t i = 0; i < combinedInfo.BasePointers.size(); ++i) {
+          if (combinedInfo.DevicePointers[i] ==
+              llvm::OpenMPIRBuilder::DeviceInfoTy::Pointer) {
+            const auto &arg = region.front().getArgument(argIndex);
+            moduleTranslation.mapValue(
+                arg,
+                info.DevicePtrInfoMap[combinedInfo.BasePointers[i]].second);
+            argIndex++;
+          } else if (combinedInfo.DevicePointers[i] ==
+                     llvm::OpenMPIRBuilder::DeviceInfoTy::Address) {
+            const auto &arg = region.front().getArgument(argIndex);
+            auto *loadInst = builder.CreateLoad(
+                builder.getPtrTy(),
+                info.DevicePtrInfoMap[combinedInfo.BasePointers[i]].second);
+            moduleTranslation.mapValue(arg, loadInst);
+            argIndex++;
+          }
         }
 
         SmallVector<llvm::PHINode *> phis;
@@ -3437,8 +3443,7 @@ convertOmpTarget(Operation &opInst, llvm::IRBuilderBase &builder,
   auto genMapInfoCB = [&](llvm::OpenMPIRBuilder::InsertPointTy codeGenIP)
       -> llvm::OpenMPIRBuilder::MapInfosTy & {
     builder.restoreIP(codeGenIP);
-    genMapInfos(builder, moduleTranslation, dl, combinedInfos, mapData, {}, {},
-                true);
+    genMapInfos(builder, moduleTranslation, dl, combinedInfos, mapData, true);
     return combinedInfos;
   };
 
