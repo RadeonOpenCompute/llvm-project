@@ -3561,13 +3561,13 @@ public:
     mlir::OpPassManager mathConvertionPM("builtin.module");
 
     bool isAMDGCN = fir::getTargetTriple(mod).isAMDGCN();
-    // If compiling for AMD target some math operations must be lowered to ocml
-    // library calls, the rest can be converted to LLVM intrinsics, which is
-    // handled in the mathToLLVM conversion. The lowering to libm calls is not
-    // needed since all math operations are handled this way.
-    if (isAMDGCN) {
+    // If compiling for AMD target some math operations must be lowered to AMD
+    // GPU library calls, the rest can be converted to LLVM intrinsics, which
+    // is handled in the mathToLLVM conversion. The lowering to libm calls is
+    // not needed since all math operations are handled this way.
+    if (isAMDGCN)
       mathConvertionPM.addPass(mlir::createConvertMathToROCDL());
-    }
+
     // Convert math::FPowI operations to inline implementation
     // only if the exponent's width is greater than 32, otherwise,
     // it will be lowered to LLVM intrinsic operation by a later conversion.
@@ -3576,7 +3576,6 @@ public:
     mathConvertionPM.addPass(
         mlir::createConvertMathToFuncs(mathToFuncsOptions));
     mathConvertionPM.addPass(mlir::createConvertComplexToStandardPass());
-
     // Convert Math dialect operations into LLVM dialect operations.
     // There is no way to prefer MathToLLVM patterns over MathToLibm
     // patterns (applied below), so we have to run MathToLLVM conversion here.
