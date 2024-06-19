@@ -365,6 +365,11 @@ public:
   void emitCFILLVMVectorOffset(int64_t Register, int64_t RegisterSize,
                                int64_t MaskRegister, int64_t MaskRegisterSize,
                                int64_t Offset, SMLoc Loc) override;
+  void emitCFILLVMVectorRegisterMask(int64_t Register, int64_t SpillRegister,
+                                     int64_t SpillRegisterLaneSizeInBits,
+                                     int64_t MaskRegister,
+                                     int64_t MaskRegisterSizeInBits,
+                                     SMLoc Loc) override;
 
   void emitWinCFIStartProc(const MCSymbol *Symbol, SMLoc Loc) override;
   void emitWinCFIEndProc(SMLoc Loc) override;
@@ -2153,6 +2158,24 @@ void MCAsmStreamer::emitCFILLVMVectorOffset(int64_t Register,
   OS << ", " << RegisterSize << ", ";
   EmitRegisterName(MaskRegister);
   OS << ", " << MaskRegisterSize << ", " << Offset;
+  EmitEOL();
+}
+
+void MCAsmStreamer::emitCFILLVMVectorRegisterMask(
+    int64_t Register, int64_t SpillRegister,
+    int64_t SpillRegisterLaneSizeInBits, int64_t MaskRegister,
+    int64_t MaskRegisterSizeInBits, SMLoc Loc) {
+  MCStreamer::emitCFILLVMVectorRegisterMask(
+      Register, SpillRegister, SpillRegisterLaneSizeInBits, MaskRegister,
+      MaskRegisterSizeInBits, Loc);
+
+  OS << "\t.cfi_llvm_vector_register_mask ";
+  EmitRegisterName(Register);
+  OS << ", ";
+  EmitRegisterName(SpillRegister);
+  OS << ", " << SpillRegisterLaneSizeInBits << ", ";
+  EmitRegisterName(MaskRegister);
+  OS << ", " << MaskRegisterSizeInBits;
   EmitEOL();
 }
 

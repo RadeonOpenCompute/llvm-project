@@ -1066,6 +1066,11 @@ public:
                                        int64_t MaskRegister,
                                        int64_t MaskRegisterSizeInBits,
                                        int64_t Offset, SMLoc Loc = {});
+  virtual void
+  emitCFILLVMVectorRegisterMask(int64_t Register, int64_t SpillRegister,
+                                int64_t SpillRegisterLaneSizeInBits,
+                                int64_t MaskRegister,
+                                int64_t MaskRegisterSizeInBits, SMLoc Loc = {});
 
   virtual void emitWinCFIStartProc(const MCSymbol *Symbol, SMLoc Loc = SMLoc());
   virtual void emitWinCFIEndProc(SMLoc Loc = SMLoc());

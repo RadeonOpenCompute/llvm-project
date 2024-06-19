@@ -1253,6 +1253,7 @@ void MCCFIInstruction::replaceRegister(unsigned FromReg, unsigned ToReg) {
   case OpLLVMDefAspaceCfa:
   case OpLLVMVectorRegisters:
   case OpLLVMRegisterPair:
+  case OpLLVMVectorRegisterMask:
     if (Register == FromReg)
       Register = ToReg;
     break;
@@ -1289,6 +1290,14 @@ void MCCFIInstruction::replaceRegister(unsigned FromReg, unsigned ToReg) {
   }
   case OpLLVMVectorOffset: {
     auto &Fields = getExtraFields<VectorOffsetExtraFields>();
+    if (Fields.MaskRegister == FromReg)
+      Fields.MaskRegister = ToReg;
+    break;
+  }
+  case OpLLVMVectorRegisterMask: {
+    auto &Fields = getExtraFields<VectorRegisterMaskExtraFields>();
+    if (Fields.SpillRegister == FromReg)
+      Fields.SpillRegister = ToReg;
     if (Fields.MaskRegister == FromReg)
       Fields.MaskRegister = ToReg;
     break;
@@ -1679,6 +1688,47 @@ void FrameEmitterImpl::emitCFIInstruction(const MCCFIInstruction &Instr) {
     else
       OSBlock << uint8_t(dwarf::DW_OP_LLVM_select_bit_piece);
     encodeULEB128(Fields.RegisterSizeInBits, OSBlock);
+    encodeULEB128(Fields.MaskRegisterSizeInBits, OSBlock);
+
+    Streamer.emitInt8(dwarf::DW_CFA_expression);
+    Streamer.emitULEB128IntValue(Instr.getRegister());
+    Streamer.emitULEB128IntValue(Block.size());
+    Streamer.emitBinaryData(StringRef(&Block[0], Block.size()));
+    return;
+  }
+  case MCCFIInstruction::OpLLVMVectorRegisterMask: {
+    // CFI for a VGPR/AGPR partially spilled to another VGPR/AGPR dependent on
+    // an EXEC mask is implemented as an expression(E) rule where E is a
+    // location description.
+    //
+    // DW_CFA_expression: <GPR>,
+    //   (DW_OP_regx <GPR>)
+    //   (DW_OP_regx <Spill GPR>)
+    //   (DW_OP_LLVM_call_frame_entry_reg <Mask>)
+    //   (DW_OP_deref_size <MaskSize>)
+    //   (DW_OP_LLVM_select_bit_piece <GPR lane size> <MaskSize>)
+
+    const auto Fields =
+        Instr.getExtraFields<MCCFIInstruction::VectorRegisterMaskExtraFields>();
+
+    SmallString<20> Block;
+    raw_svector_ostream OSBlock(Block);
+    encodeDwarfRegisterLocation(Instr.getRegister(), OSBlock);
+    encodeDwarfRegisterLocation(Fields.SpillRegister, OSBlock);
+    if (EmitHeterogeneousDwarfAsUserOps)
+      OSBlock << uint8_t(dwarf::DW_OP_LLVM_user)
+              << uint8_t(dwarf::DW_OP_LLVM_USER_call_frame_entry_reg);
+    else
+      OSBlock << uint8_t(dwarf::DW_OP_LLVM_call_frame_entry_reg);
+    encodeULEB128(Fields.MaskRegister, OSBlock);
+    OSBlock << uint8_t(dwarf::DW_OP_deref_size)
+            << uint8_t(Fields.MaskRegisterSizeInBits / 8);
+    if (EmitHeterogeneousDwarfAsUserOps)
+      OSBlock << uint8_t(dwarf::DW_OP_LLVM_user)
+              << uint8_t(dwarf::DW_OP_LLVM_USER_select_bit_piece);
+    else
+      OSBlock << uint8_t(dwarf::DW_OP_LLVM_select_bit_piece);
+    encodeULEB128(Fields.SpillRegisterLaneSizeInBits, OSBlock);
     encodeULEB128(Fields.MaskRegisterSizeInBits, OSBlock);
 
     Streamer.emitInt8(dwarf::DW_CFA_expression);

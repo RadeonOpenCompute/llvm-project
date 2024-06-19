@@ -504,6 +504,7 @@ public:
     OpLLVMRegisterPair,
     OpLLVMVectorRegisters,
     OpLLVMVectorOffset,
+    OpLLVMVectorRegisterMask,
   };
 
   /// Some extra fields used when Operation is OpLLVMRegisterPair.
@@ -530,6 +531,14 @@ public:
     unsigned RegisterSizeInBits;
   };
 
+  /// Some extra fields used when Operation is OpLLVMVectorRegisterMask.
+  struct VectorRegisterMaskExtraFields {
+    unsigned SpillRegister;
+    unsigned SpillRegisterLaneSizeInBits;
+    unsigned MaskRegister;
+    unsigned MaskRegisterSizeInBits;
+  };
+
 private:
   OpType Operation;
   MCSymbol *Label;
@@ -547,7 +556,8 @@ private:
   // Operation-specific fields to this variant. Leaving them as-is for now to
   // avoid a diff with upstream.
   std::variant<std::monostate, RegisterPairExtraFields,
-               VectorRegistersExtraFields, VectorOffsetExtraFields>
+               VectorRegistersExtraFields, VectorOffsetExtraFields,
+               VectorRegisterMaskExtraFields>
       ExtraFields;
 
   MCCFIInstruction(OpType Op, MCSymbol *L, unsigned R, int O, SMLoc Loc,
@@ -728,6 +738,22 @@ public:
                             Loc);
   }
 
+  /// .cfi_llvm_vector_register_mask Previous value of Register is saved in
+  /// SpillRegister, predicated on the value of MaskRegister.
+  static MCCFIInstruction createLLVMVectorRegisterMask(
+      MCSymbol *L, unsigned Register, unsigned SpillRegister,
+      unsigned SpillRegisterLaneSizeInBits, unsigned MaskRegister,
+      unsigned MaskRegisterSizeInBits, SMLoc Loc = {}) {
+    VectorRegisterMaskExtraFields Extra{
+        SpillRegister,
+        SpillRegisterLaneSizeInBits,
+        MaskRegister,
+        MaskRegisterSizeInBits,
+    };
+    return MCCFIInstruction(OpLLVMVectorRegisterMask, L, Register, 0,
+                            std::move(Extra), Loc);
+  }
+
   template <class ExtraFieldsTy> ExtraFieldsTy &getExtraFields() {
     return std::get<ExtraFieldsTy>(ExtraFields);
   }
@@ -746,7 +772,8 @@ public:
            Operation == OpRelOffset || Operation == OpRegister ||
            Operation == OpLLVMDefAspaceCfa ||
            Operation == OpLLVMVectorRegisters ||
-           Operation == OpLLVMRegisterPair || Operation == OpLLVMVectorOffset);
+           Operation == OpLLVMRegisterPair || Operation == OpLLVMVectorOffset ||
+           Operation == OpLLVMVectorRegisterMask);
     return Register;
   }
 

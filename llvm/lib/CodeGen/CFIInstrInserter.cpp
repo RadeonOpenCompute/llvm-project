@@ -251,6 +251,7 @@ void CFIInstrInserter::calculateOutgoingCFAInfo(MBBCFAInfo &MBBInfo) {
       case MCCFIInstruction::OpLLVMRegisterPair:
       case MCCFIInstruction::OpLLVMVectorRegisters:
       case MCCFIInstruction::OpLLVMVectorOffset:
+      case MCCFIInstruction::OpLLVMVectorRegisterMask:
         break;
       }
       if (CSRReg || CSROffset) {

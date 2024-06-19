@@ -1301,7 +1301,7 @@ spillVGPRtoAGPR(const GCNSubtarget &ST, MachineBasicBlock &MBB,
                        .addReg(Src, getKillRegState(IsKill));
     CopyMIB->setAsmPrinterFlag(MachineInstr::ReloadReuse);
     if (NeedsCFI)
-      TFL->buildCFIForRegToRegSpill(MBB, MI, DL, Src, Dst);
+      TFL->buildCFIForVRegToVRegSpill(MBB, MI, DL, Src, Dst);
     return CopyMIB;
   }
   unsigned Opc = (IsStore ^ IsVGPR) ? AMDGPU::V_ACCVGPR_WRITE_B32_e64
@@ -1311,7 +1311,7 @@ spillVGPRtoAGPR(const GCNSubtarget &ST, MachineBasicBlock &MBB,
                  .addReg(Src, getKillRegState(IsKill));
   MIB->setAsmPrinterFlag(MachineInstr::ReloadReuse);
   if (NeedsCFI)
-    TFL->buildCFIForRegToRegSpill(MBB, MI, DL, Src, Dst);
+    TFL->buildCFIForVRegToVRegSpill(MBB, MI, DL, Src, Dst);
   return MIB;
 }
 
