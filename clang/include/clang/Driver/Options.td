@@ -8003,7 +8003,7 @@ def source_date_epoch : Separate<["-"], "source-date-epoch">,
 // CUDA Options
 //===----------------------------------------------------------------------===//
 
-let Visibility = [CC1Option] in {
+let Visibility = [CC1Option, FC1Option] in {
 
 def fcuda_is_device : Flag<["-"], "fcuda-is-device">,
   HelpText<"Generate code for CUDA device">,
