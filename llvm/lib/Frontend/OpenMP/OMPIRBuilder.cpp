@@ -6360,7 +6360,7 @@ static Function *createOutlinedFunction(
 
   if (OMPBuilder.Config.isTargetDevice()) {
     std::vector<llvm::WeakTrackingVH> LLVMCompilerUsed;
-    emitExecutionMode(OMPBuilder, Builder, FuncName, false, LLVMCompilerUsed);
+    emitExecutionMode(OMPBuilder, Builder, FuncName, IsSPMD, LLVMCompilerUsed);
     Type *Int8PtrTy = Type::getInt8Ty(Builder.getContext())->getPointerTo();
     emitUsed("llvm.compiler.used", LLVMCompilerUsed, Int8PtrTy, OMPBuilder.M);
   }
