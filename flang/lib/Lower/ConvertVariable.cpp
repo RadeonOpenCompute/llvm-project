@@ -776,8 +776,15 @@ defaultInitializeAtRuntime(Fortran::lower::AbstractConverter &converter,
         })
         .end();
   } else {
-    mlir::Value box = builder.createBox(loc, exv);
-    fir::runtime::genDerivedTypeInitialize(builder, loc, box);
+    const Fortran::semantics::DeclTypeSpec *declTy = sym.GetType();
+    if (!var.isAlias() &&
+        declTy->category() ==
+            Fortran::semantics::DeclTypeSpec::Category::TypeDerived) {
+      instantiateGlobal(converter, var, symMap);
+    } else {
+      mlir::Value box = builder.createBox(loc, exv);
+      fir::runtime::genDerivedTypeInitialize(builder, loc, box);
+    }
   }
 }
 

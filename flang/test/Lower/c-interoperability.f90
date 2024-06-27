@@ -13,8 +13,9 @@
 ! CHECK:         %[[VAL_2:.*]] = fir.alloca !fir.box<!fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>>
 ! CHECK:         %[[VAL_3:.*]] = fir.address_of(@_QMc_interoperability_testEthis_thing) : !fir.ref<!fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>>
 ! CHECK:         %[[VAL_4:.*]] = fir.alloca !fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}> {bindc_name = "get_a_thing", uniq_name = "_QMc_interoperability_testFget_a_thingEget_a_thing"}
-! CHECK:         %[[VAL_5:.*]] = fir.embox %[[VAL_4]] : (!fir.ref<!fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>>) -> !fir.box<!fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>>
-! CHECK:         %[[VAL_10:.*]] = fir.embox %[[VAL_3]] : (!fir.ref<!fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>>) -> !fir.box<!fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>>
+!CHECK:          %[[DERIVED_TYPE_ADDR:.*]] = fir.address_of(@_QMc_interoperability_testFget_a_thingEget_a_thing) : !fir.ref<!fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>>
+!CHECK:          %[[BOXED_INIT_VALUE:.*]] = fir.embox %[[DERIVED_TYPE_ADDR]] {{.*}}
+!CHECK:          fir.store %[[BOXED_INIT_VALUE]] to %[[VAL_2]] {{.*}}
 ! CHECK:         return %{{.*}} : !fir.type<_QMc_interoperability_testTthing_with_pointer{cptr:!fir.type<_QM__fortran_builtinsT__builtin_c_ptr{__address:i64}>}>
 ! CHECK:       }
 
