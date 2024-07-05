@@ -738,6 +738,12 @@ static void createBodyOfOp(mlir::Operation &op, const OpWithBodyGenInfo &info,
                            ConstructQueue::iterator item) {
   fir::FirOpBuilder &firOpBuilder = info.converter.getFirOpBuilder();
 
+  auto insertMarker = [](fir::FirOpBuilder &builder) {
+    mlir::Value undef = builder.create<fir::UndefOp>(builder.getUnknownLoc(),
+                                                     builder.getIndexType());
+    return undef.getDefiningOp();
+  };
+
   // If an argument for the region is provided then create the block with that
   // argument. Also update the symbol's address with the mlir argument value.
   // e.g. For loops the argument is the induction variable. And all further
@@ -752,7 +758,7 @@ static void createBodyOfOp(mlir::Operation &op, const OpWithBodyGenInfo &info,
   }();
 
   // Mark the earliest insertion point.
-  auto marker = firOpBuilder.saveInsertionPoint();
+  mlir::Operation *marker = insertMarker(firOpBuilder);
 
   // If it is an unstructured region and is not the outer region of a combined
   // construct, create empty blocks for all evaluations.
@@ -766,7 +772,7 @@ static void createBodyOfOp(mlir::Operation &op, const OpWithBodyGenInfo &info,
                 llvm::omp::Association::Loop;
   bool privatize = info.clauses;
 
-  firOpBuilder.restoreInsertionPoint(marker);
+  firOpBuilder.setInsertionPoint(marker);
   std::optional<DataSharingProcessor> tempDsp;
   if (privatize) {
     if (!info.dsp) {
@@ -780,7 +786,7 @@ static void createBodyOfOp(mlir::Operation &op, const OpWithBodyGenInfo &info,
   if (info.dir == llvm::omp::Directive::OMPD_parallel) {
     threadPrivatizeVars(info.converter, info.eval);
     if (info.clauses) {
-      firOpBuilder.restoreInsertionPoint(marker);
+      firOpBuilder.setInsertionPoint(marker);
       ClauseProcessor(info.converter, info.semaCtx, *info.clauses)
           .processCopyin();
     }
@@ -796,7 +802,7 @@ static void createBodyOfOp(mlir::Operation &op, const OpWithBodyGenInfo &info,
     // delete it.
     firOpBuilder.setInsertionPointToEnd(&op.getRegion(0).back());
     auto *temp = lower::genOpenMPTerminator(firOpBuilder, &op, info.loc);
-    firOpBuilder.restoreInsertionPoint(marker);
+    firOpBuilder.setInsertionPointAfter(marker);
     genNestedEvaluations(info.converter, info.eval);
     temp->erase();
   }
@@ -870,8 +876,8 @@ static void createBodyOfOp(mlir::Operation &op, const OpWithBodyGenInfo &info,
     }
   }
 
-  firOpBuilder.setInsertionPoint(marker.getBlock(),
-                                 std::prev(marker.getPoint()));
+  firOpBuilder.setInsertionPointAfter(marker);
+  marker->erase();
 }
 
 static void genBodyOfTargetDataOp(
