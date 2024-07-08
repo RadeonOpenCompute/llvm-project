@@ -2230,7 +2230,7 @@ void collectMapDataFromMapOperands(
   auto findMapInfo = [&mapData](llvm::Value *val, unsigned &index) {
     index = 0;
     for (llvm::Value *basePtr : mapData.OriginalValue) {
-      if (basePtr == val)
+      if (basePtr == val && !mapData.IsAMember[index])
         return true;
       index++;
     }
