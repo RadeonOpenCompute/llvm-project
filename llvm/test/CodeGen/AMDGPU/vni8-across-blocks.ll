@@ -866,5 +866,68 @@ bb.3:
   ret void
 }
 
+; This should not cause Assertion `getType() == V->getType() && "All operands to PHI node must be the same type as the PHI node
+; Note: whether or not the assertion fires depends on the iteration ortder of PhiNodes in AMDGPULateCodeGenPrepare, which
+; is non-deterministic due to iterators over a set of pointers.
+
+define amdgpu_kernel void @MissingInc_PhiChain(i1 %cmp1.i.i.i.i.i.not, <16 x i8> %promotealloca31.i.i.i.i) {
+; GFX906-LABEL: MissingInc_PhiChain:
+; GFX906:       ; %bb.0: ; %entry
+; GFX906-NEXT:    s_load_dword s0, s[0:1], 0x24
+; GFX906-NEXT:    s_waitcnt lgkmcnt(0)
+; GFX906-NEXT:    s_bitcmp1_b32 s0, 0
+; GFX906-NEXT:    s_cselect_b64 s[2:3], -1, 0
+; GFX906-NEXT:    s_xor_b64 s[0:1], s[2:3], -1
+; GFX906-NEXT:    v_cndmask_b32_e64 v0, 0, 1, s[0:1]
+; GFX906-NEXT:    v_cmp_ne_u32_e64 s[0:1], 1, v0
+; GFX906-NEXT:    s_branch .LBB14_2
+; GFX906-NEXT:  .LBB14_1: ; %Flow1
+; GFX906-NEXT:    ; in Loop: Header=BB14_2 Depth=1
+; GFX906-NEXT:    s_and_b64 vcc, exec, s[4:5]
+; GFX906-NEXT:    s_cbranch_vccnz .LBB14_6
+; GFX906-NEXT:  .LBB14_2: ; %for.body10.i.i.i.i
+; GFX906-NEXT:    ; =>This Inner Loop Header: Depth=1
+; GFX906-NEXT:    s_and_b64 vcc, exec, s[0:1]
+; GFX906-NEXT:    s_mov_b64 s[4:5], s[2:3]
+; GFX906-NEXT:    s_cbranch_vccnz .LBB14_4
+; GFX906-NEXT:  ; %bb.3: ; %if.then.i.i.i.i.i
+; GFX906-NEXT:    ; in Loop: Header=BB14_2 Depth=1
+; GFX906-NEXT:    s_mov_b64 s[4:5], -1
+; GFX906-NEXT:  .LBB14_4: ; %Flow
+; GFX906-NEXT:    ; in Loop: Header=BB14_2 Depth=1
+; GFX906-NEXT:    s_andn2_b64 vcc, exec, s[4:5]
+; GFX906-NEXT:    s_mov_b64 s[4:5], -1
+; GFX906-NEXT:    s_cbranch_vccnz .LBB14_1
+; GFX906-NEXT:  ; %bb.5: ; %if.end.i.i.i.i.i
+; GFX906-NEXT:    ; in Loop: Header=BB14_2 Depth=1
+; GFX906-NEXT:    s_mov_b64 s[4:5], 0
+; GFX906-NEXT:    s_and_b64 vcc, exec, s[0:1]
+; GFX906-NEXT:    s_branch .LBB14_1
+; GFX906-NEXT:  .LBB14_6: ; %DummyReturnBlock
+; GFX906-NEXT:    s_endpgm
+entry:
+  br label %for.body10.i.i.i.i
+
+for.body10.i.i.i.i:                               ; preds = %if.end.1.i.i.i.i.i, %entry
+  %promotealloca3237.i.i.i.i = phi <16 x i8> [ <i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1, i8 1>, %entry ], [ %1, %if.end.1.i.i.i.i.i ]
+  br i1 %cmp1.i.i.i.i.i.not, label %if.end.i.i.i.i.i, label %if.then.i.i.i.i.i
+
+if.then.i.i.i.i.i:                                ; preds = %for.body10.i.i.i.i
+  %0 = insertelement <16 x i8> %promotealloca3237.i.i.i.i, i8 0, i64 0
+  br label %if.end.i.i.i.i.i
+
+if.end.i.i.i.i.i:                                 ; preds = %if.then.i.i.i.i.i, %for.body10.i.i.i.i
+  %promotealloca31.i.i.i.i3 = phi <16 x i8> [ %0, %if.then.i.i.i.i.i ], [ %promotealloca3237.i.i.i.i, %for.body10.i.i.i.i ]
+  br i1 %cmp1.i.i.i.i.i.not, label %if.end.1.i.i.i.i.i, label %if.then.1.i.i.i.i.i
+
+if.then.1.i.i.i.i.i:                              ; preds = %if.end.i.i.i.i.i
+  br label %if.end.1.i.i.i.i.i
+
+if.end.1.i.i.i.i.i:                               ; preds = %if.then.1.i.i.i.i.i, %if.end.i.i.i.i.i
+  %promotealloca30.i.i.i.i = phi <16 x i8> [ %promotealloca31.i.i.i.i, %if.then.1.i.i.i.i.i ], [ %promotealloca31.i.i.i.i3, %if.end.i.i.i.i.i ]
+  %1 = shufflevector <16 x i8> %promotealloca30.i.i.i.i, <16 x i8> zeroinitializer, <16 x i32> <i32 0, i32 1, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31>
+  br label %for.body10.i.i.i.i
+}
+
 
 declare i32 @llvm.amdgcn.workitem.id.x()
