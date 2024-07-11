@@ -3,8 +3,8 @@
 ; RUN: opt < %s -mtriple=x86_64-unknown -mcpu=slm -passes=slp-vectorizer,instcombine -S | FileCheck %s --check-prefixes=SLM
 ; RUN: opt < %s -mtriple=x86_64-unknown -mcpu=corei7-avx -passes=slp-vectorizer,instcombine -S | FileCheck %s --check-prefixes=AVX
 ; RUN: opt < %s -mtriple=x86_64-unknown -mcpu=core-avx2 -passes=slp-vectorizer,instcombine -S | FileCheck %s --check-prefixes=AVX2
-; RUN: opt < %s -mtriple=x86_64-unknown -mcpu=knl -passes=slp-vectorizer,instcombine -S | FileCheck %s --check-prefixes=AVX2
-; RUN: opt < %s -mtriple=x86_64-unknown -mcpu=skx -passes=slp-vectorizer,instcombine -S | FileCheck %s --check-prefixes=AVX2
+; RUN: opt < %s -mtriple=x86_64-unknown -mcpu=knl -passes=slp-vectorizer,instcombine -S | FileCheck %s --check-prefixes=KNL
+; RUN: opt < %s -mtriple=x86_64-unknown -mcpu=skx -passes=slp-vectorizer,instcombine -S | FileCheck %s --check-prefixes=SKX
 
 define <8 x float> @ceil_floor(<8 x float> %a) {
 ; SSE-LABEL: @ceil_floor(
@@ -51,25 +51,23 @@ define <8 x float> @ceil_floor(<8 x float> %a) {
 ;
 ; AVX-LABEL: @ceil_floor(
 ; AVX-NEXT:    [[A0:%.*]] = extractelement <8 x float> [[A:%.*]], i64 0
-; AVX-NEXT:    [[A1:%.*]] = extractelement <8 x float> [[A]], i64 1
-; AVX-NEXT:    [[A2:%.*]] = extractelement <8 x float> [[A]], i64 2
 ; AVX-NEXT:    [[A3:%.*]] = extractelement <8 x float> [[A]], i64 3
 ; AVX-NEXT:    [[AB0:%.*]] = call float @llvm.ceil.f32(float [[A0]])
-; AVX-NEXT:    [[AB1:%.*]] = call float @llvm.floor.f32(float [[A1]])
-; AVX-NEXT:    [[AB2:%.*]] = call float @llvm.floor.f32(float [[A2]])
+; AVX-NEXT:    [[TMP1:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 1, i32 2>
+; AVX-NEXT:    [[TMP2:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> [[TMP1]])
 ; AVX-NEXT:    [[AB3:%.*]] = call float @llvm.ceil.f32(float [[A3]])
-; AVX-NEXT:    [[TMP1:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 4, i32 5>
-; AVX-NEXT:    [[TMP2:%.*]] = call <2 x float> @llvm.ceil.v2f32(<2 x float> [[TMP1]])
-; AVX-NEXT:    [[TMP3:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 6, i32 7>
-; AVX-NEXT:    [[TMP4:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> [[TMP3]])
+; AVX-NEXT:    [[TMP3:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 4, i32 5>
+; AVX-NEXT:    [[TMP4:%.*]] = call <2 x float> @llvm.ceil.v2f32(<2 x float> [[TMP3]])
+; AVX-NEXT:    [[TMP5:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 6, i32 7>
+; AVX-NEXT:    [[TMP6:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> [[TMP5]])
 ; AVX-NEXT:    [[R0:%.*]] = insertelement <8 x float> poison, float [[AB0]], i64 0
-; AVX-NEXT:    [[R1:%.*]] = insertelement <8 x float> [[R0]], float [[AB1]], i64 1
-; AVX-NEXT:    [[R2:%.*]] = insertelement <8 x float> [[R1]], float [[AB2]], i64 2
-; AVX-NEXT:    [[R3:%.*]] = insertelement <8 x float> [[R2]], float [[AB3]], i64 3
-; AVX-NEXT:    [[TMP5:%.*]] = shufflevector <2 x float> [[TMP2]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
-; AVX-NEXT:    [[R52:%.*]] = shufflevector <8 x float> [[R3]], <8 x float> [[TMP5]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 8, i32 9, i32 poison, i32 poison>
-; AVX-NEXT:    [[TMP6:%.*]] = shufflevector <2 x float> [[TMP4]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
-; AVX-NEXT:    [[R71:%.*]] = shufflevector <8 x float> [[R52]], <8 x float> [[TMP6]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 8, i32 9>
+; AVX-NEXT:    [[TMP7:%.*]] = shufflevector <2 x float> [[TMP2]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; AVX-NEXT:    [[R23:%.*]] = shufflevector <8 x float> [[R0]], <8 x float> [[TMP7]], <8 x i32> <i32 0, i32 8, i32 9, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; AVX-NEXT:    [[R3:%.*]] = insertelement <8 x float> [[R23]], float [[AB3]], i64 3
+; AVX-NEXT:    [[TMP8:%.*]] = shufflevector <2 x float> [[TMP4]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; AVX-NEXT:    [[R52:%.*]] = shufflevector <8 x float> [[R3]], <8 x float> [[TMP8]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 8, i32 9, i32 poison, i32 poison>
+; AVX-NEXT:    [[TMP9:%.*]] = shufflevector <2 x float> [[TMP6]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; AVX-NEXT:    [[R71:%.*]] = shufflevector <8 x float> [[R52]], <8 x float> [[TMP9]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 8, i32 9>
 ; AVX-NEXT:    ret <8 x float> [[R71]]
 ;
 ; AVX2-LABEL: @ceil_floor(
@@ -92,6 +90,48 @@ define <8 x float> @ceil_floor(<8 x float> %a) {
 ; AVX2-NEXT:    [[TMP9:%.*]] = shufflevector <2 x float> [[TMP6]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
 ; AVX2-NEXT:    [[R71:%.*]] = shufflevector <8 x float> [[R52]], <8 x float> [[TMP9]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 8, i32 9>
 ; AVX2-NEXT:    ret <8 x float> [[R71]]
+;
+; KNL-LABEL: @ceil_floor(
+; KNL-NEXT:    [[A0:%.*]] = extractelement <8 x float> [[A:%.*]], i64 0
+; KNL-NEXT:    [[A3:%.*]] = extractelement <8 x float> [[A]], i64 3
+; KNL-NEXT:    [[AB0:%.*]] = call float @llvm.ceil.f32(float [[A0]])
+; KNL-NEXT:    [[TMP1:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 1, i32 2>
+; KNL-NEXT:    [[TMP2:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> [[TMP1]])
+; KNL-NEXT:    [[AB3:%.*]] = call float @llvm.ceil.f32(float [[A3]])
+; KNL-NEXT:    [[TMP3:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 4, i32 5>
+; KNL-NEXT:    [[TMP4:%.*]] = call <2 x float> @llvm.ceil.v2f32(<2 x float> [[TMP3]])
+; KNL-NEXT:    [[TMP5:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 6, i32 7>
+; KNL-NEXT:    [[TMP6:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> [[TMP5]])
+; KNL-NEXT:    [[R0:%.*]] = insertelement <8 x float> poison, float [[AB0]], i64 0
+; KNL-NEXT:    [[TMP7:%.*]] = shufflevector <2 x float> [[TMP2]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; KNL-NEXT:    [[R23:%.*]] = shufflevector <8 x float> [[R0]], <8 x float> [[TMP7]], <8 x i32> <i32 0, i32 8, i32 9, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; KNL-NEXT:    [[R3:%.*]] = insertelement <8 x float> [[R23]], float [[AB3]], i64 3
+; KNL-NEXT:    [[TMP8:%.*]] = shufflevector <2 x float> [[TMP4]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; KNL-NEXT:    [[R52:%.*]] = shufflevector <8 x float> [[R3]], <8 x float> [[TMP8]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 8, i32 9, i32 poison, i32 poison>
+; KNL-NEXT:    [[TMP9:%.*]] = shufflevector <2 x float> [[TMP6]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; KNL-NEXT:    [[R71:%.*]] = shufflevector <8 x float> [[R52]], <8 x float> [[TMP9]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 8, i32 9>
+; KNL-NEXT:    ret <8 x float> [[R71]]
+;
+; SKX-LABEL: @ceil_floor(
+; SKX-NEXT:    [[A0:%.*]] = extractelement <8 x float> [[A:%.*]], i64 0
+; SKX-NEXT:    [[A3:%.*]] = extractelement <8 x float> [[A]], i64 3
+; SKX-NEXT:    [[AB0:%.*]] = call float @llvm.ceil.f32(float [[A0]])
+; SKX-NEXT:    [[TMP1:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 1, i32 2>
+; SKX-NEXT:    [[TMP2:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> [[TMP1]])
+; SKX-NEXT:    [[AB3:%.*]] = call float @llvm.ceil.f32(float [[A3]])
+; SKX-NEXT:    [[TMP3:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 4, i32 5>
+; SKX-NEXT:    [[TMP4:%.*]] = call <2 x float> @llvm.ceil.v2f32(<2 x float> [[TMP3]])
+; SKX-NEXT:    [[TMP5:%.*]] = shufflevector <8 x float> [[A]], <8 x float> poison, <2 x i32> <i32 6, i32 7>
+; SKX-NEXT:    [[TMP6:%.*]] = call <2 x float> @llvm.floor.v2f32(<2 x float> [[TMP5]])
+; SKX-NEXT:    [[R0:%.*]] = insertelement <8 x float> poison, float [[AB0]], i64 0
+; SKX-NEXT:    [[TMP7:%.*]] = shufflevector <2 x float> [[TMP2]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; SKX-NEXT:    [[R23:%.*]] = shufflevector <8 x float> [[R0]], <8 x float> [[TMP7]], <8 x i32> <i32 0, i32 8, i32 9, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; SKX-NEXT:    [[R3:%.*]] = insertelement <8 x float> [[R23]], float [[AB3]], i64 3
+; SKX-NEXT:    [[TMP8:%.*]] = shufflevector <2 x float> [[TMP4]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; SKX-NEXT:    [[R52:%.*]] = shufflevector <8 x float> [[R3]], <8 x float> [[TMP8]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 8, i32 9, i32 poison, i32 poison>
+; SKX-NEXT:    [[TMP9:%.*]] = shufflevector <2 x float> [[TMP6]], <2 x float> poison, <8 x i32> <i32 0, i32 1, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison, i32 poison>
+; SKX-NEXT:    [[R71:%.*]] = shufflevector <8 x float> [[R52]], <8 x float> [[TMP9]], <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 4, i32 5, i32 8, i32 9>
+; SKX-NEXT:    ret <8 x float> [[R71]]
 ;
   %a0 = extractelement <8 x float> %a, i32 0
   %a1 = extractelement <8 x float> %a, i32 1
