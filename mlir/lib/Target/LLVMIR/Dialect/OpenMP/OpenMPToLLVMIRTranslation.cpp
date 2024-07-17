@@ -2503,13 +2503,10 @@ static llvm::omp::OpenMPOffloadMappingFlags mapParentWithMembers(
         mlir::dyn_cast<mlir::omp::MapInfoOp>(mapData.MapClause[mapDataIndex]);
     int firstMemberIdx = getMapDataMemberIdx(
         mapData, getFirstOrLastMappedMemberPtr(mapOp, true));
-    int lastMemberIdx = getMapDataMemberIdx(
-        mapData, getFirstOrLastMappedMemberPtr(mapOp, false));
-
-    // NOTE/TODO: Should perhaps use OriginalValue here instead of Pointers to
-    // avoid offset or any manipulations interfering with the calculation.
     lowAddr = builder.CreatePointerCast(mapData.Pointers[firstMemberIdx],
                                         builder.getPtrTy());
+    int lastMemberIdx = getMapDataMemberIdx(
+        mapData, getFirstOrLastMappedMemberPtr(mapOp, false));
     highAddr = builder.CreatePointerCast(
         builder.CreateGEP(mapData.BaseType[lastMemberIdx],
                           mapData.Pointers[lastMemberIdx], builder.getInt64(1)),
@@ -2523,8 +2520,17 @@ static llvm::omp::OpenMPOffloadMappingFlags mapParentWithMembers(
       /*isSigned=*/false);
   combinedInfo.Sizes.push_back(size);
 
+  // TODO: This will need to be expanded to include the whole host of logic for
+  // the map flags that Clang currently supports (e.g. it should take the map
+  // flag of the parent map flag, remove the OMP_MAP_TARGET_PARAM and do some
+  // further case specific flag modifications). For the moment, it handles what
+  // we support as expected.
+  llvm::omp::OpenMPOffloadMappingFlags mapFlag =
+      llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TO;
+
   llvm::omp::OpenMPOffloadMappingFlags memberOfFlag =
       ompBuilder.getMemberOfFlag(combinedInfo.BasePointers.size() - 1);
+  ompBuilder.setCorrectMemberOfFlag(mapFlag, memberOfFlag);
 
   // This creates the initial MEMBER_OF mapping that consists of
   // the parent/top level container (same as above effectively, except
@@ -2533,12 +2539,6 @@ static llvm::omp::OpenMPOffloadMappingFlags mapParentWithMembers(
   // only relevant if the structure in its totality is being mapped,
   // otherwise the above suffices.
   if (!parentClause.getPartialMap()) {
-    // TODO: This will need to be expanded to include the whole host of logic
-    // for the map flags that Clang currently supports (e.g. it should do some
-    // further case specific flag modifications). For the moment, it handles
-    // what we support as expected.
-    llvm::omp::OpenMPOffloadMappingFlags mapFlag = mapData.Types[mapDataIndex];
-    ompBuilder.setCorrectMemberOfFlag(mapFlag, memberOfFlag);
     combinedInfo.Types.emplace_back(mapFlag);
     combinedInfo.DevicePointers.emplace_back(
         mapData.DevicePointers[mapDataIndex]);
@@ -2589,24 +2589,6 @@ static void processMapMembersWithParent(
 
     assert(memberDataIdx >= 0 && "could not find mapped member of structure");
 
-    if (checkIfPointerMap(memberClause)) {
-      auto mapFlag = llvm::omp::OpenMPOffloadMappingFlags(
-          memberClause.getMapType().value());
-      mapFlag &= ~llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TARGET_PARAM;
-      mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_MEMBER_OF;
-      ompBuilder.setCorrectMemberOfFlag(mapFlag, memberOfFlag);
-      combinedInfo.Types.emplace_back(mapFlag);
-      combinedInfo.DevicePointers.emplace_back(
-          llvm::OpenMPIRBuilder::DeviceInfoTy::None);
-      combinedInfo.Names.emplace_back(
-          LLVM::createMappingInformation(memberClause.getLoc(), ompBuilder));
-      combinedInfo.BasePointers.emplace_back(
-          mapData.BasePointers[mapDataIndex]);
-      combinedInfo.Pointers.emplace_back(mapData.BasePointers[memberDataIdx]);
-      combinedInfo.Sizes.emplace_back(builder.getInt64(
-          moduleTranslation.getLLVMModule()->getDataLayout().getPointerSize()));
-    }
-
     // Same MemberOfFlag to indicate its link with parent and other members
     // of.
     auto mapFlag =
@@ -2622,14 +2604,7 @@ static void processMapMembersWithParent(
         llvm::OpenMPIRBuilder::DeviceInfoTy::None);
     combinedInfo.Names.emplace_back(
         LLVM::createMappingInformation(memberClause.getLoc(), ompBuilder));
-
-    if (checkIfPointerMap(memberClause))
-      combinedInfo.BasePointers.emplace_back(
-          mapData.BasePointers[memberDataIdx]);
-    else
-      combinedInfo.BasePointers.emplace_back(
-          mapData.BasePointers[mapDataIndex]);
-
+    combinedInfo.BasePointers.emplace_back(mapData.BasePointers[mapDataIndex]);
     combinedInfo.Pointers.emplace_back(mapData.Pointers[memberDataIdx]);
     combinedInfo.Sizes.emplace_back(mapData.Sizes[memberDataIdx]);
   }
