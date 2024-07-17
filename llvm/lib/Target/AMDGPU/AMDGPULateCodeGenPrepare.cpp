@@ -180,7 +180,8 @@ bool AMDGPULateCodeGenPrepare::runOnFunction(Function &F) {
   for (auto &BB : reverse(F))
     for (Instruction &I : make_early_inc_range(reverse(BB))) {
       Changed |= !HasScalarSubwordLoads && visit(I);
-      Changed |= LRO.optimizeLiveType(&I, DeadInsts);
+      if (ST.shouldCoerceIllegalTypes())
+        Changed |= LRO.optimizeLiveType(&I, DeadInsts);
     }
 
   RecursivelyDeleteTriviallyDeadInstructionsPermissive(DeadInsts);
