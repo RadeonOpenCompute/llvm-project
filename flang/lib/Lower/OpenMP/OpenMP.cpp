@@ -1678,21 +1678,27 @@ genLoopNestOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
       firOpBuilder.getModule().getOperation());
   auto targetOp = loopNestOp->getParentOfType<mlir::omp::TargetOp>();
 
-  if (offloadMod && targetOp && !offloadMod.getIsTargetDevice() &&
-      targetOp.isTargetSPMDLoop()) {
-    // Lower loop bounds and step, and process collapsing again, putting lowered
-    // values outside of omp.target this time. This enables calculating and
-    // accessing the trip count in the host, which is needed when lowering to
-    // LLVM IR via the OMPIRBuilder.
-    HostClausesInsertionGuard guard(firOpBuilder);
-    mlir::omp::CollapseClauseOps collapseClauseOps;
-    llvm::SmallVector<const semantics::Symbol *> iv;
-    ClauseProcessor cp(converter, semaCtx, item->clauses);
-    cp.processCollapse(loc, eval, collapseClauseOps, iv);
-    targetOp.getTripCountMutable().assign(calculateTripCount(
-        converter.getFirOpBuilder(), loc, collapseClauseOps));
+  if (offloadMod && targetOp && !offloadMod.getIsTargetDevice()) {
+    if (targetOp.isTargetSPMDLoop()) {
+      // Lower loop bounds and step, and process collapsing again, putting
+      // lowered values outside of omp.target this time. This enables
+      // calculating and accessing the trip count in the host, which is needed
+      // when lowering to LLVM IR via the OMPIRBuilder.
+      HostClausesInsertionGuard guard(firOpBuilder);
+      mlir::omp::CollapseClauseOps collapseClauseOps;
+      llvm::SmallVector<const semantics::Symbol *> iv;
+      ClauseProcessor cp(converter, semaCtx, item->clauses);
+      cp.processCollapse(loc, eval, collapseClauseOps, iv);
+      targetOp.getTripCountMutable().assign(calculateTripCount(
+          converter.getFirOpBuilder(), loc, collapseClauseOps));
+    } else {
+      // The MLIR target operation was updated during PFT lowering,
+      // and it is no longer an SPMD kernel. Erase the trip count because
+      // as it is now invalid.
+      if (targetOp.getTripCountMutable().size())
+        targetOp.getTripCountMutable().erase(0);
+    }
   }
-
   return loopNestOp;
 }
 
