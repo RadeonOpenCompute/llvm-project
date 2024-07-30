@@ -1691,12 +1691,11 @@ genLoopNestOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
       cp.processCollapse(loc, eval, collapseClauseOps, iv);
       targetOp.getTripCountMutable().assign(calculateTripCount(
           converter.getFirOpBuilder(), loc, collapseClauseOps));
-    } else {
+    } else if (targetOp.getTripCountMutable().size()) {
       // The MLIR target operation was updated during PFT lowering,
       // and it is no longer an SPMD kernel. Erase the trip count because
       // as it is now invalid.
-      if (targetOp.getTripCountMutable().size())
-        targetOp.getTripCountMutable().erase(0);
+      targetOp.getTripCountMutable().erase(0);
     }
   }
   return loopNestOp;
