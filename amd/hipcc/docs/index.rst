@@ -10,8 +10,7 @@ HIPCC documentation
 
 ``hipcc`` is a compiler driver utility that will call clang or nvcc, depending on target, and pass the appropriate include and library options for the target compiler and HIP infrastructure. 
 
-There is both a Perl version, and a C++ executable version of the ``hipcc`` and ``hipconfig`` compiler driver utilities provided. By default the Perl version is used when ``hipcc`` is run. To enable the C++ versions, set the environment variable ``HIP_USE_PERL_SCRIPTS=0``.
-
+There are both Perl and C++ executable versions of the ``hipcc`` and ``hipconfig`` compiler driver utilities provided. By default the C++ version is used when ``hipcc`` is run. To enable the Perl versions of these commands set the environment variable ``HIP_USE_PERL_SCRIPTS=1``.
 
 The documentation is structured as follows:
 
