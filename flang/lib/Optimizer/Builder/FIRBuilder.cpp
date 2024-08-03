@@ -264,11 +264,6 @@ mlir::Block *fir::FirOpBuilder::getAllocaBlock() {
     if (!parallelOp || !llvm::isa_and_present<mlir::omp::DistributeOp>(
                            parallelOp->getParentOp()))
       return ompOutlineableIface.getAllocaBlock();
-
-    if (auto parentOutlineable =
-            parallelOp
-                ->getParentOfType<mlir::omp::OutlineableOpenMPOpInterface>())
-      return parentOutlineable.getAllocaBlock();
   }
 
   if (auto recipeIface =
