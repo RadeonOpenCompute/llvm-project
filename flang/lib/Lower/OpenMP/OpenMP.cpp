@@ -46,6 +46,27 @@ using namespace Fortran::lower::omp;
 // Code generation helper functions
 //===----------------------------------------------------------------------===//
 
+static bool evalHasSiblings(lower::pft::Evaluation &eval) {
+  return eval.parent.visit(common::visitors{
+      [&](const lower::pft::Program &parent) {
+        return parent.getUnits().size() + parent.getCommonBlocks().size() > 1;
+      },
+      [&](const lower::pft::Evaluation &parent) {
+        for (auto &sibling : *parent.evaluationList)
+          if (&sibling != &eval && !sibling.isEndStmt())
+            return true;
+
+        return false;
+      },
+      [&](const auto &parent) {
+        for (auto &sibling : parent.evaluationList)
+          if (&sibling != &eval && !sibling.isEndStmt())
+            return true;
+
+        return false;
+      }});
+}
+
 static mlir::omp::TargetOp findParentTargetOp(mlir::OpBuilder &builder) {
   mlir::Operation *parentOp = builder.getBlock()->getParentOp();
   if (!parentOp)
@@ -90,6 +111,38 @@ static void genNestedEvaluations(lower::AbstractConverter &converter,
 
   for (lower::pft::Evaluation &e : curEval->getNestedEvaluations())
     converter.genEval(e);
+}
+
+static bool mustEvalTeamsThreadsOutsideTarget(lower::pft::Evaluation &eval,
+                                              mlir::omp::TargetOp targetOp) {
+  if (!targetOp)
+    return false;
+
+  auto offloadModOp = llvm::cast<mlir::omp::OffloadModuleInterface>(
+      *targetOp->getParentOfType<mlir::ModuleOp>());
+  if (offloadModOp.getIsTargetDevice())
+    return false;
+
+  auto dir = Fortran::common::visit(
+      common::visitors{
+          [&](const parser::OpenMPBlockConstruct &c) {
+            return std::get<parser::OmpBlockDirective>(
+                       std::get<parser::OmpBeginBlockDirective>(c.t).t)
+                .v;
+          },
+          [&](const parser::OpenMPLoopConstruct &c) {
+            return std::get<parser::OmpLoopDirective>(
+                       std::get<parser::OmpBeginLoopDirective>(c.t).t)
+                .v;
+          },
+          [&](const auto &) {
+            llvm_unreachable("Unexpected OpenMP construct");
+            return llvm::omp::OMPD_unknown;
+          },
+      },
+      eval.get<parser::OpenMPConstruct>().u);
+
+  return llvm::omp::allTargetSet.test(dir) || !evalHasSiblings(eval);
 }
 
 //===----------------------------------------------------------------------===//
@@ -423,27 +476,6 @@ createAndSetPrivatizedLoopVar(lower::AbstractConverter &converter,
   mlir::Operation *storeOp = firOpBuilder.create<fir::StoreOp>(
       loc, cvtVal, converter.getSymbolAddress(*sym));
   return storeOp;
-}
-
-static bool evalHasSiblings(lower::pft::Evaluation &eval) {
-  return eval.parent.visit(common::visitors{
-      [&](const lower::pft::Program &parent) {
-        return parent.getUnits().size() + parent.getCommonBlocks().size() > 1;
-      },
-      [&](const lower::pft::Evaluation &parent) {
-        for (auto &sibling : *parent.evaluationList)
-          if (&sibling != &eval && !sibling.isEndStmt())
-            return true;
-
-        return false;
-      },
-      [&](const auto &parent) {
-        for (auto &sibling : parent.evaluationList)
-          if (&sibling != &eval && !sibling.isEndStmt())
-            return true;
-
-        return false;
-      }});
 }
 
 // This helper function implements the functionality of "promoting"
@@ -1562,8 +1594,6 @@ genTeamsClauses(lower::AbstractConverter &converter,
   cp.processAllocate(clauseOps);
   cp.processDefault();
   cp.processIf(llvm::omp::Directive::OMPD_teams, clauseOps);
-  cp.processNumTeams(stmtCtx, clauseOps);
-  cp.processThreadLimit(stmtCtx, clauseOps);
   // TODO Support delayed privatization.
 
   // Evaluate NUM_TEAMS and THREAD_LIMIT on the host device, if currently inside
@@ -2304,17 +2334,15 @@ genTeamsOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
            ConstructQueue::iterator item) {
   lower::StatementContext stmtCtx;
 
-  auto offloadModOp = llvm::cast<mlir::omp::OffloadModuleInterface>(
-      converter.getModuleOp().getOperation());
   mlir::omp::TargetOp targetOp =
       findParentTargetOp(converter.getFirOpBuilder());
-  bool mustEvalOutsideTarget = targetOp && !offloadModOp.getIsTargetDevice();
+  bool evalOutsideTarget = mustEvalTeamsThreadsOutsideTarget(eval, targetOp);
 
   mlir::omp::TeamsOperands clauseOps;
   mlir::omp::NumTeamsClauseOps numTeamsClauseOps;
   mlir::omp::ThreadLimitClauseOps threadLimitClauseOps;
   genTeamsClauses(converter, semaCtx, stmtCtx, item->clauses, loc,
-                  mustEvalOutsideTarget, clauseOps, numTeamsClauseOps,
+                  evalOutsideTarget, clauseOps, numTeamsClauseOps,
                   threadLimitClauseOps);
 
   auto teamsOp = genOpWithBody<mlir::omp::TeamsOp>(
@@ -2324,7 +2352,7 @@ genTeamsOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
       queue, item, clauseOps);
 
   if (numTeamsClauseOps.numTeamsUpper) {
-    if (mustEvalOutsideTarget)
+    if (evalOutsideTarget)
       targetOp.getNumTeamsUpperMutable().assign(
           numTeamsClauseOps.numTeamsUpper);
     else
@@ -2332,7 +2360,7 @@ genTeamsOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
   }
 
   if (threadLimitClauseOps.threadLimit) {
-    if (mustEvalOutsideTarget)
+    if (evalOutsideTarget)
       targetOp.getTeamsThreadLimitMutable().assign(
           threadLimitClauseOps.threadLimit);
     else
@@ -2412,12 +2440,9 @@ static void genStandaloneParallel(lower::AbstractConverter &converter,
                                   ConstructQueue::iterator item) {
   lower::StatementContext stmtCtx;
 
-  auto offloadModOp =
-      llvm::cast<mlir::omp::OffloadModuleInterface>(*converter.getModuleOp());
   mlir::omp::TargetOp targetOp =
       findParentTargetOp(converter.getFirOpBuilder());
-  bool evalOutsideTarget =
-      targetOp && !offloadModOp.getIsTargetDevice() && !evalHasSiblings(eval);
+  bool evalOutsideTarget = mustEvalTeamsThreadsOutsideTarget(eval, targetOp);
 
   mlir::omp::ParallelOperands parallelClauseOps;
   mlir::omp::NumThreadsClauseOps numThreadsClauseOps;
@@ -2476,12 +2501,9 @@ static void genCompositeDistributeParallelDo(
     ConstructQueue::iterator item, DataSharingProcessor &dsp) {
   lower::StatementContext stmtCtx;
 
-  auto offloadModOp =
-      llvm::cast<mlir::omp::OffloadModuleInterface>(*converter.getModuleOp());
   mlir::omp::TargetOp targetOp =
       findParentTargetOp(converter.getFirOpBuilder());
-  bool evalOutsideTarget =
-      targetOp && !offloadModOp.getIsTargetDevice() && !evalHasSiblings(eval);
+  bool evalOutsideTarget = mustEvalTeamsThreadsOutsideTarget(eval, targetOp);
 
   // Clause processing.
   mlir::omp::DistributeOperands distributeClauseOps;
@@ -2493,9 +2515,8 @@ static void genCompositeDistributeParallelDo(
   llvm::SmallVector<const semantics::Symbol *> parallelReductionSyms;
   llvm::SmallVector<mlir::Type> parallelReductionTypes;
   genParallelClauses(converter, semaCtx, stmtCtx, item->clauses, loc,
-                     /*evalOutsideTarget=*/evalOutsideTarget, parallelClauseOps,
-                     numThreadsClauseOps, parallelReductionTypes,
-                     parallelReductionSyms);
+                     evalOutsideTarget, parallelClauseOps, numThreadsClauseOps,
+                     parallelReductionTypes, parallelReductionSyms);
 
   const auto &privateClauseOps = dsp.getPrivateClauseOps();
   parallelClauseOps.privateVars = privateClauseOps.privateVars;
@@ -2551,12 +2572,9 @@ static void genCompositeDistributeParallelDoSimd(
     ConstructQueue::iterator item, DataSharingProcessor &dsp) {
   lower::StatementContext stmtCtx;
 
-  auto offloadModOp =
-      llvm::cast<mlir::omp::OffloadModuleInterface>(*converter.getModuleOp());
   mlir::omp::TargetOp targetOp =
       findParentTargetOp(converter.getFirOpBuilder());
-  bool evalOutsideTarget =
-      targetOp && !offloadModOp.getIsTargetDevice() && !evalHasSiblings(eval);
+  bool evalOutsideTarget = mustEvalTeamsThreadsOutsideTarget(eval, targetOp);
 
   // Clause processing.
   mlir::omp::DistributeOperands distributeClauseOps;
@@ -2568,9 +2586,8 @@ static void genCompositeDistributeParallelDoSimd(
   llvm::SmallVector<const semantics::Symbol *> parallelReductionSyms;
   llvm::SmallVector<mlir::Type> parallelReductionTypes;
   genParallelClauses(converter, semaCtx, stmtCtx, item->clauses, loc,
-                     /*evalOutsideTarget=*/evalOutsideTarget, parallelClauseOps,
-                     numThreadsClauseOps, parallelReductionTypes,
-                     parallelReductionSyms);
+                     evalOutsideTarget, parallelClauseOps, numThreadsClauseOps,
+                     parallelReductionTypes, parallelReductionSyms);
 
   const auto &privateClauseOps = dsp.getPrivateClauseOps();
   parallelClauseOps.privateVars = privateClauseOps.privateVars;

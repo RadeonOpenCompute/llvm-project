@@ -1777,7 +1777,10 @@ LogicalResult TeamsOp::verify() {
   auto offloadModOp =
       llvm::cast<OffloadModuleInterface>(*(*this)->getParentOfType<ModuleOp>());
   if (targetOp && !offloadModOp.getIsTargetDevice()) {
-    if (getNumTeamsLower() || getNumTeamsUpper() || getThreadLimit())
+    // Only disallow num_teams and thread_limit if this is the only omp.teams
+    // inside the target region.
+    if (getSingleNestedOpOfType<TeamsOp>(targetOp.getRegion()) == *this &&
+        (getNumTeamsLower() || getNumTeamsUpper() || getThreadLimit()))
       return emitError("num_teams and thread_limit arguments expected to be "
                        "attached to parent omp.target operation");
   } else {
