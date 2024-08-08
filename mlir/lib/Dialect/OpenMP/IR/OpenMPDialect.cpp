@@ -1506,24 +1506,13 @@ static LogicalResult verifyNumTeamsClause(Operation *op, Value lb, Value ub) {
   return success();
 }
 
-template <typename OpTy>
-static OpTy getSingleNestedOpOfType(Region &region) {
-  auto ops = region.getOps<OpTy>();
-  return std::distance(ops.begin(), ops.end()) != 1 ? OpTy() : *ops.begin();
-}
-
 LogicalResult TargetOp::verify() {
   auto teamsOps = getOps<TeamsOp>();
   if (std::distance(teamsOps.begin(), teamsOps.end()) > 1)
     return emitError("target containing multiple teams constructs");
 
-  if (!isTargetSPMDLoop()) {
-    if (getTripCount())
-      return emitError("trip_count set on non-SPMD target region");
-
-    if (getNumThreads() && !getSingleNestedOpOfType<ParallelOp>(getRegion()))
-      return emitError("num_threads set on non-SPMD or loop target region");
-  }
+  if (!isTargetSPMDLoop() && getTripCount())
+    return emitError("trip_count set on non-SPMD target region");
 
   if (teamsOps.empty()) {
     if (getNumTeamsLower() || getNumTeamsUpper() || getTeamsThreadLimit())
@@ -1721,17 +1710,6 @@ LogicalResult ParallelOp::verify() {
     return emitError(
         "expected equal sizes for allocate and allocator variables");
 
-  auto offloadModOp =
-      llvm::cast<OffloadModuleInterface>(*(*this)->getParentOfType<ModuleOp>());
-  if (!offloadModOp.getIsTargetDevice()) {
-    auto targetOp = (*this)->getParentOfType<omp::TargetOp>();
-    if (getNumThreads() && targetOp &&
-        (targetOp.isTargetSPMDLoop() ||
-         getSingleNestedOpOfType<ParallelOp>(targetOp.getRegion()) == *this))
-      return emitError("num_threads argument expected to be attached to parent "
-                       "omp.target operation instead");
-  }
-
   if (failed(verifyPrivateVarList(*this)))
     return failure();
 
@@ -1777,10 +1755,7 @@ LogicalResult TeamsOp::verify() {
   auto offloadModOp =
       llvm::cast<OffloadModuleInterface>(*(*this)->getParentOfType<ModuleOp>());
   if (targetOp && !offloadModOp.getIsTargetDevice()) {
-    // Only disallow num_teams and thread_limit if this is the only omp.teams
-    // inside the target region.
-    if (getSingleNestedOpOfType<TeamsOp>(targetOp.getRegion()) == *this &&
-        (getNumTeamsLower() || getNumTeamsUpper() || getThreadLimit()))
+    if (getNumTeamsLower() || getNumTeamsUpper() || getThreadLimit())
       return emitError("num_teams and thread_limit arguments expected to be "
                        "attached to parent omp.target operation");
   } else {

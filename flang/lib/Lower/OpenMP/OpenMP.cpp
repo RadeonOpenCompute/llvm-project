@@ -47,23 +47,23 @@ using namespace Fortran::lower::omp;
 //===----------------------------------------------------------------------===//
 
 static bool evalHasSiblings(lower::pft::Evaluation &eval) {
+  auto checkSiblings = [&eval](const lower::pft::EvaluationList &siblings) {
+    for (auto &sibling : siblings)
+      if (&sibling != &eval && !sibling.isEndStmt())
+        return true;
+
+    return false;
+  };
+
   return eval.parent.visit(common::visitors{
       [&](const lower::pft::Program &parent) {
         return parent.getUnits().size() + parent.getCommonBlocks().size() > 1;
       },
       [&](const lower::pft::Evaluation &parent) {
-        for (auto &sibling : *parent.evaluationList)
-          if (&sibling != &eval && !sibling.isEndStmt())
-            return true;
-
-        return false;
+        return checkSiblings(*parent.evaluationList);
       },
       [&](const auto &parent) {
-        for (auto &sibling : parent.evaluationList)
-          if (&sibling != &eval && !sibling.isEndStmt())
-            return true;
-
-        return false;
+        return checkSiblings(parent.evaluationList);
       }});
 }
 
