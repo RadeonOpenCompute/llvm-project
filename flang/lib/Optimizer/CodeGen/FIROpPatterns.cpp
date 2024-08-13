@@ -285,9 +285,8 @@ mlir::Value ConvertFIRToLLVMPattern::computeBoxSize(
 // 4. The first ancestor that is one of the above.
 mlir::Block *ConvertFIRToLLVMPattern::getBlockForAllocaInsert(
     mlir::Operation *op, mlir::Region *parentRegion) const {
-  if (auto outlineableIface =
-          mlir::dyn_cast<mlir::omp::OutlineableOpenMPOpInterface>(op))
-    return outlineableIface.getAllocaBlock();
+  if (auto iface = mlir::dyn_cast<mlir::omp::OutlineableOpenMPOpInterface>(op))
+    return iface.getAllocaBlock();
   if (auto recipeIface = mlir::dyn_cast<mlir::accomp::RecipeInterface>(op))
     return recipeIface.getAllocaBlock(*parentRegion);
   if (auto llvmFuncOp = mlir::dyn_cast<mlir::LLVM::LLVMFuncOp>(op))
