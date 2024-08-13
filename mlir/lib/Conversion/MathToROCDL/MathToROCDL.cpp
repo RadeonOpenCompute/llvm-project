@@ -58,7 +58,6 @@ void mlir::populateMathToROCDLConversionPatterns(LLVMTypeConverter &converter,
   // Handled by mathToLLVM: math::RoundEvenOp
   // Handled by mathToLLVM: math::RoundOp
   // Handled by mathToLLVM: math::TruncOp
-
   populateOpPatterns<math::AbsFOp>(converter, patterns, "__ocml_fabs_f32",
                                    "__ocml_fabs_f64");
   populateOpPatterns<math::AcosOp>(converter, patterns, "__ocml_acos_f32",
