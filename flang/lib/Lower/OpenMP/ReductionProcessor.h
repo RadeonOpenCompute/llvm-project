@@ -107,10 +107,6 @@ public:
                                           mlir::Type type, mlir::Value op1,
                                           mlir::Value op2);
 
-  static void addReductionSym(
-      const omp::clause::Reduction &reduction,
-      llvm::SmallVectorImpl<const Fortran::semantics::Symbol *> &symbols);
-
   /// Creates an OpenMP reduction declaration and inserts it into the provided
   /// symbol table. The declaration has a constant initializer with the neutral
   /// value `initValue`, and the reduction combiner carried over from `reduce`.
