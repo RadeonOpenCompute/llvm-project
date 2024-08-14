@@ -2736,9 +2736,6 @@ public:
   static void writeThreadBoundsForKernel(const Triple &T, Function &Kernel,
                                          int32_t LB, int32_t UB);
 
-  /// Write the global variable to indicate which amdgcn ABI to use
-  static void emit__oclc_ABI_version(Module &M, int32_t COV);
-
   /// Read/write a bounds on teams for \p Kernel. Read will return 0 if none
   /// is set.
   static std::pair<int32_t, int32_t> readTeamBoundsForKernel(const Triple &T,
