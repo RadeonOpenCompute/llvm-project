@@ -864,7 +864,8 @@ static LogicalResult createReductionsAndCleanup(
     SmallVector<OwningReductionGen> &owningReductionGens,
     SmallVector<OwningAtomicReductionGen> &owningAtomicReductionGens,
     SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> &reductionInfos,
-    bool isTeamsReduction = false, bool hasDistribute = false) {
+    bool IsNowait = false, bool isTeamsReduction = false,
+    bool hasDistribute = false) {
   // Process the reductions if required.
   if (op.getNumReductionVars() == 0)
     return success();
@@ -884,7 +885,7 @@ static LogicalResult createReductionsAndCleanup(
   builder.SetInsertPoint(tempTerminator);
   llvm::OpenMPIRBuilder::InsertPointTy contInsertPoint =
       ompBuilder->createReductions(builder.saveIP(), allocaIP, reductionInfos,
-                                   isByRef, op.getNowait(), isTeamsReduction,
+                                   isByRef, IsNowait, isTeamsReduction,
                                    hasDistribute);
   if (!contInsertPoint.getBlock())
     return op->emitOpError() << "failed to convert reductions";
@@ -1083,7 +1084,7 @@ convertOmpSections(Operation &opInst, llvm::IRBuilderBase &builder,
   return createReductionsAndCleanup(
       sectionsOp, builder, moduleTranslation, allocaIP, reductionDecls,
       privateReductionVariables, isByRef, owningReductionGens,
-      owningAtomicReductionGens, reductionInfos);
+      owningAtomicReductionGens, reductionInfos, sectionsOp.getNowait());
 }
 
 /// Converts an OpenMP single construct into LLVM IR using OpenMPIRBuilder.
@@ -1127,9 +1128,35 @@ convertOmpTeams(omp::TeamsOp op, llvm::IRBuilderBase &builder,
                 LLVM::ModuleTranslation &moduleTranslation) {
   using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
   LogicalResult bodyGenStatus = success();
-  if (!op.getAllocatorVars().empty() || op.getReductionSyms() ||
-      !op.getPrivateVars().empty() || op.getPrivateSyms())
+  if (!op.getAllocatorVars().empty() || !op.getPrivateVars().empty() ||
+      op.getPrivateSyms())
     return op.emitError("unhandled clauses for translation to LLVM IR");
+
+  llvm::ArrayRef<bool> isByRef = getIsByRef(op.getReductionByref());
+  assert(isByRef.size() == op.getNumReductionVars());
+
+  SmallVector<omp::DeclareReductionOp> reductionDecls;
+  collectReductionDecls(op, reductionDecls);
+  llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
+      findAllocaInsertPoint(builder, moduleTranslation);
+
+  SmallVector<llvm::Value *> privateReductionVariables(
+      op.getNumReductionVars());
+  DenseMap<Value, llvm::Value *> reductionVariableMap;
+
+  MutableArrayRef<BlockArgument> reductionArgs = op.getRegion().getArguments();
+
+  if (failed(allocAndInitializeReductionVars(
+          op, reductionArgs, builder, moduleTranslation, allocaIP,
+          reductionDecls, privateReductionVariables, reductionVariableMap,
+          isByRef)))
+    return failure();
+
+  // Store the mapping between reduction variables and their private copies on
+  // ModuleTranslation stack. It can be then recovered when translating
+  // omp.reduce operations in a separate call.
+  LLVM::ModuleTranslation::SaveStack<OpenMPVarMappingStackFrame> mappingGuard(
+      moduleTranslation, reductionVariableMap);
 
   auto bodyCB = [&](InsertPointTy allocaIP, InsertPointTy codegenIP) {
     LLVM::ModuleTranslation::SaveStack<OpenMPAllocaStackFrame> frame(
@@ -1160,7 +1187,17 @@ convertOmpTeams(omp::TeamsOp op, llvm::IRBuilderBase &builder,
   builder.restoreIP(ompBuilder->createTeams(
       ompLoc, bodyCB, numTeamsLower, numTeamsUpper, threadLimit, ifExpr));
 
-  return bodyGenStatus;
+  if (failed(bodyGenStatus))
+    return bodyGenStatus;
+
+  // Process the reductions if required.
+  SmallVector<OwningReductionGen> owningReductionGens;
+  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
+  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
+  return createReductionsAndCleanup(op, builder, moduleTranslation, allocaIP,
+                                    reductionDecls, privateReductionVariables,
+                                    isByRef, owningReductionGens,
+                                    owningAtomicReductionGens, reductionInfos);
 }
 
 static void
@@ -1430,8 +1467,8 @@ static LogicalResult convertOmpWsloop(
   return createReductionsAndCleanup(
       wsloopOp, builder, moduleTranslation, allocaIP, reductionDecls,
       privateReductionVariables, isByRef, owningReductionGens,
-      owningAtomicReductionGens, reductionInfos, /*isTeamsReduction=*/false,
-      distributeCodeGen);
+      owningAtomicReductionGens, reductionInfos, wsloopOp.getNowait(),
+      /*isTeamsReduction=*/false, distributeCodeGen);
 }
 
 static LogicalResult

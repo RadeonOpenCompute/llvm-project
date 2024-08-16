@@ -1698,17 +1698,19 @@ static void genTaskwaitClauses(lower::AbstractConverter &converter,
       loc, llvm::omp::Directive::OMPD_taskwait);
 }
 
-static void
-genTeamsClauses(lower::AbstractConverter &converter,
-                semantics::SemanticsContext &semaCtx,
-                lower::StatementContext &stmtCtx, const List<Clause> &clauses,
-                mlir::Location loc, bool evalOutsideTarget,
-                mlir::omp::TeamsOperands &clauseOps,
-                mlir::omp::NumTeamsClauseOps &numTeamsClauseOps,
-                mlir::omp::ThreadLimitClauseOps &threadLimitClauseOps) {
+static void genTeamsClauses(
+    lower::AbstractConverter &converter, semantics::SemanticsContext &semaCtx,
+    lower::StatementContext &stmtCtx, const List<Clause> &clauses,
+    mlir::Location loc, bool evalOutsideTarget,
+    mlir::omp::TeamsOperands &clauseOps,
+    mlir::omp::NumTeamsClauseOps &numTeamsClauseOps,
+    mlir::omp::ThreadLimitClauseOps &threadLimitClauseOps,
+    llvm::SmallVectorImpl<mlir::Type> &reductionTypes,
+    llvm::SmallVectorImpl<const semantics::Symbol *> &reductionSyms) {
   ClauseProcessor cp(converter, semaCtx, clauses);
   cp.processAllocate(clauseOps);
   cp.processIf(llvm::omp::Directive::OMPD_teams, clauseOps);
+  cp.processReduction(loc, clauseOps, &reductionTypes, &reductionSyms);
 
   // Evaluate NUM_TEAMS and THREAD_LIMIT on the host device, if currently inside
   // of an omp.target operation.
@@ -1723,8 +1725,6 @@ genTeamsClauses(lower::AbstractConverter &converter,
     cp.processNumTeams(stmtCtx, numTeamsClauseOps);
     cp.processThreadLimit(stmtCtx, threadLimitClauseOps);
   }
-
-  // cp.processTODO<clause::Reduction>(loc, llvm::omp::Directive::OMPD_teams);
 }
 
 static void genWsloopClauses(
@@ -2496,14 +2496,22 @@ genTeamsOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
   mlir::omp::TeamsOperands clauseOps;
   mlir::omp::NumTeamsClauseOps numTeamsClauseOps;
   mlir::omp::ThreadLimitClauseOps threadLimitClauseOps;
+  llvm::SmallVector<const semantics::Symbol *> reductionSyms;
+  llvm::SmallVector<mlir::Type> reductionTypes;
   genTeamsClauses(converter, semaCtx, stmtCtx, item->clauses, loc,
                   evalOutsideTarget, clauseOps, numTeamsClauseOps,
-                  threadLimitClauseOps);
+                  threadLimitClauseOps, reductionTypes, reductionSyms);
+
+  auto reductionCallback = [&](mlir::Operation *op) {
+    genReductionVars(op, converter, loc, reductionSyms, reductionTypes);
+    return llvm::SmallVector<const semantics::Symbol *>(reductionSyms);
+  };
 
   auto teamsOp = genOpWithBody<mlir::omp::TeamsOp>(
       OpWithBodyGenInfo(converter, symTable, semaCtx, loc, eval,
                         llvm::omp::Directive::OMPD_teams)
-          .setClauses(&item->clauses),
+          .setClauses(&item->clauses)
+          .setGenRegionEntryCb(reductionCallback),
       queue, item, clauseOps);
 
   if (numTeamsClauseOps.numTeamsUpper) {
@@ -2721,6 +2729,8 @@ static void genCompositeDistributeParallelDo(
   genWsloopClauses(converter, semaCtx, stmtCtx, doItem->clauses, loc,
                    wsloopClauseOps, wsloopReductionTypes, wsloopReductionSyms);
 
+  // Pass the innermost leaf construct's clauses because that's where COLLAPSE
+  // is placed by construct decomposition.
   mlir::omp::LoopNestOperands loopNestClauseOps;
   llvm::SmallVector<const semantics::Symbol *> iv;
   genLoopNestClauses(converter, semaCtx, eval, doItem->clauses, loc,
@@ -2804,6 +2814,8 @@ static void genCompositeDistributeParallelDoSimd(
   mlir::omp::SimdOperands simdClauseOps;
   genSimdClauses(converter, semaCtx, simdItem->clauses, loc, simdClauseOps);
 
+  // Pass the innermost leaf construct's clauses because that's where COLLAPSE
+  // is placed by construct decomposition.
   mlir::omp::LoopNestOperands loopNestClauseOps;
   llvm::SmallVector<const semantics::Symbol *> iv;
   genLoopNestClauses(converter, semaCtx, eval, simdItem->clauses, loc,
