@@ -796,7 +796,6 @@ genReductionVars(mlir::Operation *op, lower::AbstractConverter &converter,
 
   mlir::Block *entryBlock = firOpBuilder.createBlock(
       &op->getRegion(0), {}, reductionTypes, blockArgLocs);
-
   // Bind the reduction arguments to their block arguments.
   for (auto [arg, prv] :
        llvm::zip_equal(reductionArgs, entryBlock->getArguments())) {
@@ -1659,14 +1658,15 @@ static void genTaskwaitClauses(lower::AbstractConverter &converter,
       loc, llvm::omp::Directive::OMPD_taskwait);
 }
 
-static void
-genTeamsClauses(lower::AbstractConverter &converter,
-                semantics::SemanticsContext &semaCtx,
-                lower::StatementContext &stmtCtx, const List<Clause> &clauses,
-                mlir::Location loc, bool evalOutsideTarget,
-                mlir::omp::TeamsOperands &clauseOps,
-                mlir::omp::NumTeamsClauseOps &numTeamsClauseOps,
-                mlir::omp::ThreadLimitClauseOps &threadLimitClauseOps) {
+static void genTeamsClauses(
+    lower::AbstractConverter &converter, semantics::SemanticsContext &semaCtx,
+    lower::StatementContext &stmtCtx, const List<Clause> &clauses,
+    mlir::Location loc, bool evalOutsideTarget,
+    mlir::omp::TeamsOperands &clauseOps,
+    mlir::omp::NumTeamsClauseOps &numTeamsClauseOps,
+    mlir::omp::ThreadLimitClauseOps &threadLimitClauseOps,
+    llvm::SmallVectorImpl<mlir::Type> &reductionTypes,
+    llvm::SmallVectorImpl<const semantics::Symbol *> &reductionSyms) {
   ClauseProcessor cp(converter, semaCtx, clauses);
   cp.processAllocate(clauseOps);
   cp.processIf(llvm::omp::Directive::OMPD_teams, clauseOps);
@@ -1684,8 +1684,7 @@ genTeamsClauses(lower::AbstractConverter &converter,
     cp.processNumTeams(stmtCtx, numTeamsClauseOps);
     cp.processThreadLimit(stmtCtx, threadLimitClauseOps);
   }
-
-  // cp.processTODO<clause::Reduction>(loc, llvm::omp::Directive::OMPD_teams);
+  cp.processReduction(loc, clauseOps, &reductionTypes, &reductionSyms);
 }
 
 static void genWsloopClauses(
@@ -1874,7 +1873,6 @@ static mlir::omp::ParallelOp genParallelOp(
     llvm::ArrayRef<mlir::Type> reductionTypes, DataSharingProcessor *dsp,
     bool isComposite = false, mlir::omp::TargetOp parentTarget = nullptr) {
   fir::FirOpBuilder &firOpBuilder = converter.getFirOpBuilder();
-
   auto reductionCallback = [&](mlir::Operation *op) {
     genReductionVars(op, converter, loc, reductionSyms, reductionTypes);
     return llvm::SmallVector<const semantics::Symbol *>(reductionSyms);
@@ -2360,14 +2358,22 @@ genTeamsOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
   mlir::omp::TeamsOperands clauseOps;
   mlir::omp::NumTeamsClauseOps numTeamsClauseOps;
   mlir::omp::ThreadLimitClauseOps threadLimitClauseOps;
+  llvm::SmallVector<const semantics::Symbol *> reductionSyms;
+  llvm::SmallVector<mlir::Type> reductionTypes;
   genTeamsClauses(converter, semaCtx, stmtCtx, item->clauses, loc,
                   evalOutsideTarget, clauseOps, numTeamsClauseOps,
-                  threadLimitClauseOps);
+                  threadLimitClauseOps, reductionTypes, reductionSyms);
+
+  auto reductionCallback = [&](mlir::Operation *op) {
+    genReductionVars(op, converter, loc, reductionSyms, reductionTypes);
+    return llvm::SmallVector<const semantics::Symbol *>(reductionSyms);
+  };
 
   auto teamsOp = genOpWithBody<mlir::omp::TeamsOp>(
       OpWithBodyGenInfo(converter, symTable, semaCtx, loc, eval,
                         llvm::omp::Directive::OMPD_teams)
-          .setClauses(&item->clauses),
+      .setClauses(&item->clauses)
+      .setGenRegionEntryCb(reductionCallback),
       queue, item, clauseOps);
 
   if (numTeamsClauseOps.numTeamsUpper) {
@@ -2436,7 +2442,6 @@ static void genStandaloneDo(lower::AbstractConverter &converter,
                             const ConstructQueue &queue,
                             ConstructQueue::const_iterator item) {
   lower::StatementContext stmtCtx;
-
   mlir::omp::WsloopOperands wsloopClauseOps;
   llvm::SmallVector<const semantics::Symbol *> reductionSyms;
   llvm::SmallVector<mlir::Type> reductionTypes;

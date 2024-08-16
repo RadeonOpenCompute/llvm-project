@@ -3590,13 +3590,11 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createReductionsGPU(
                ReductionFunc;
       });
     } else {
-      if (!HasDistribute || IsTeamsReduction) {
-        Value *LHSValue = Builder.CreateLoad(RI.ElementType, LHS, "final.lhs");
-        Value *RHSValue = Builder.CreateLoad(RI.ElementType, RHS, "final.rhs");
-        Value *Reduced;
-        RI.ReductionGen(Builder.saveIP(), RHSValue, LHSValue, Reduced);
-        Builder.CreateStore(Reduced, LHS, false);
-      }
+      Value *LHSValue = Builder.CreateLoad(RI.ElementType, LHS, "final.lhs");
+      Value *RHSValue = Builder.CreateLoad(RI.ElementType, RHS, "final.rhs");
+      Value *Reduced;
+      RI.ReductionGen(Builder.saveIP(), RHSValue, LHSValue, Reduced);
+      Builder.CreateStore(Reduced, LHS, false);
     }
   }
   emitBlock(ExitBB, CurFunc);
