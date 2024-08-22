@@ -367,6 +367,13 @@ struct VOPTrue16Info {
   bool IsTrue16;
 };
 
+struct FP8DstByteSelInfo {
+  uint16_t Opcode;
+  bool HasFP8DstByteSel;
+};
+
+#define GET_FP8DstByteSelTable_DECL
+#define GET_FP8DstByteSelTable_IMPL
 #define GET_MTBUFInfoTable_DECL
 #define GET_MTBUFInfoTable_IMPL
 #define GET_MUBUFInfoTable_DECL
@@ -589,6 +596,11 @@ bool isGenericAtomic(unsigned Opc) {
 bool isTrue16Inst(unsigned Opc) {
   const VOPTrue16Info *Info = getTrue16OpcodeHelper(Opc);
   return Info ? Info->IsTrue16 : false;
+}
+
+bool isFP8DstSelInst(unsigned Opc) {
+  const FP8DstByteSelInfo *Info = getFP8DstByteSelHelper(Opc);
+  return Info ? Info->HasFP8DstByteSel : false;
 }
 
 unsigned mapWMMA2AddrTo3AddrOpcode(unsigned Opc) {
