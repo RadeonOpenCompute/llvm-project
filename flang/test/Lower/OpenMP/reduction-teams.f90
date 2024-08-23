@@ -1,6 +1,5 @@
 ! RUN: bbc -emit-fir -fopenmp -o - %s | FileCheck %s
 ! RUN: %flang_fc1 -emit-fir -fopenmp -o - %s | FileCheck %s
-! XFAIL: *
 
 ! CHECK:       omp.teams
 ! CHECK-SAME:  reduction

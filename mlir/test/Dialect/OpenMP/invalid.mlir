@@ -1560,7 +1560,8 @@ func.func @omp_task_depend(%data_var: memref<i32>) {
 
 func.func @omp_task(%ptr: !llvm.ptr) {
   // expected-error @below {{op expected symbol reference @add_f32 to point to a reduction declaration}}
-  omp.task in_reduction(@add_f32 -> %ptr : !llvm.ptr) {
+  omp.task in_reduction(@add_f32 %ptr -> %arg0 : !llvm.ptr) {
+  ^bb0(%arg0: !llvm.ptr):
     // CHECK: "test.foo"() : () -> ()
     "test.foo"() : () -> ()
     // CHECK: omp.terminator
@@ -1584,7 +1585,8 @@ combiner {
 
 func.func @omp_task(%ptr: !llvm.ptr) {
   // expected-error @below {{op accumulator variable used more than once}}
-  omp.task in_reduction(@add_f32 -> %ptr : !llvm.ptr, @add_f32 -> %ptr : !llvm.ptr) {
+  omp.task in_reduction(@add_f32 %ptr -> %arg0 : !llvm.ptr, @add_f32 %ptr -> %arg1 : !llvm.ptr) {
+  ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     // CHECK: "test.foo"() : () -> ()
     "test.foo"() : () -> ()
     // CHECK: omp.terminator
@@ -1614,7 +1616,8 @@ atomic {
 
 func.func @omp_task(%mem: memref<1xf32>) {
   // expected-error @below {{op expected accumulator ('memref<1xf32>') to be the same type as reduction declaration ('!llvm.ptr')}}
-  omp.task in_reduction(@add_i32 -> %mem : memref<1xf32>) {
+  omp.task in_reduction(@add_i32 %mem -> %arg0 : memref<1xf32>) {
+  ^bb0(%arg0: memref<1xf32>):
     // CHECK: "test.foo"() : () -> ()
     "test.foo"() : () -> ()
     // CHECK: omp.terminator
@@ -1800,6 +1803,7 @@ func.func @taskloop(%lb: i32, %ub: i32, %step: i32) {
   %testf32 = "test.f32"() : () -> (!llvm.ptr)
   // expected-error @below {{expected as many reduction symbol references as reduction variables}}
   "omp.taskloop"(%testf32) ({
+  ^bb0(%arg0: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       omp.yield
     }
@@ -1825,7 +1829,8 @@ func.func @taskloop(%lb: i32, %ub: i32, %step: i32) {
   %testf32 = "test.f32"() : () -> (!llvm.ptr)
   %testf32_2 = "test.f32"() : () -> (!llvm.ptr)
   // expected-error @below {{if a reduction clause is present on the taskloop directive, the nogroup clause must not be specified}}
-  omp.taskloop reduction(@add_f32 -> %testf32 : !llvm.ptr, @add_f32 -> %testf32_2 : !llvm.ptr) nogroup {
+  omp.taskloop reduction(@add_f32 %testf32 -> %arg0 : !llvm.ptr, @add_f32 %testf32_2 -> %arg1 : !llvm.ptr) nogroup {
+  ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       omp.yield
     }
@@ -1850,7 +1855,8 @@ combiner {
 func.func @taskloop(%lb: i32, %ub: i32, %step: i32) {
   %testf32 = "test.f32"() : () -> (!llvm.ptr)
   // expected-error @below {{the same list item cannot appear in both a reduction and an in_reduction clause}}
-  omp.taskloop reduction(@add_f32 -> %testf32 : !llvm.ptr) in_reduction(@add_f32 -> %testf32 : !llvm.ptr) {
+  omp.taskloop reduction(@add_f32 %testf32 -> %arg0 : !llvm.ptr) in_reduction(@add_f32 %testf32 -> %arg1 : !llvm.ptr) {
+  ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       omp.yield
     }
