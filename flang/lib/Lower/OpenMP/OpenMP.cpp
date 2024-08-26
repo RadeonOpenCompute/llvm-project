@@ -1946,11 +1946,7 @@ genParallelOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
                            lower::omp::isLastItemInQueue(item, queue),
                            /*useDelayedPrivatization=*/true, &symTable);
   dsp.processStep1();
-  dsp.processStep2();
-
-  const auto &privateClauseOps = dsp.getPrivateClauseOps();
-  clauseOps.privateVars = privateClauseOps.privateVars;
-  clauseOps.privateSyms = privateClauseOps.privateSyms;
+  dsp.processStep2(&clauseOps);
 
   auto genRegionEntryCB = [&](mlir::Operation *op) {
     auto parallelOp = llvm::cast<mlir::omp::ParallelOp>(op);
@@ -2025,12 +2021,6 @@ static mlir::omp::ParallelOp genParallelCompositeOp(
     llvm::ArrayRef<mlir::Type> reductionTypes, mlir::omp::TargetOp parentTarget,
     DataSharingProcessor &dsp) {
   fir::FirOpBuilder &firOpBuilder = converter.getFirOpBuilder();
-
-  if (enableDelayedPrivatization) {
-    const auto &privateClauseOps = dsp.getPrivateClauseOps();
-    clauseOps.privateVars = privateClauseOps.privateVars;
-    clauseOps.privateSyms = privateClauseOps.privateSyms;
-  }
 
   // Create omp.parallel operation.
   auto parallelOp = firOpBuilder.create<mlir::omp::ParallelOp>(loc, clauseOps);
@@ -2268,14 +2258,8 @@ genTargetOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
                            lower::omp::isLastItemInQueue(item, queue),
                            enableDelayedPrivatizationStaging, &symTable);
   dsp.processStep1();
-
-  if (enableDelayedPrivatizationStaging) {
-    dsp.processStep2();
-
-    const auto &privateClauseOps = dsp.getPrivateClauseOps();
-    clauseOps.privateVars = privateClauseOps.privateVars;
-    clauseOps.privateSyms = privateClauseOps.privateSyms;
-  }
+  if (enableDelayedPrivatizationStaging)
+    dsp.processStep2(&clauseOps);
 
   // 5.8.1 Implicit Data-Mapping Attribute Rules
   // The following code follows the implicit data-mapping rules to map all the
@@ -2711,7 +2695,7 @@ static void genCompositeDistributeParallelDo(
                            /*shouldCollectPreDeterminedSymbols=*/true,
                            /*useDelayedPrivatization=*/true, &symTable);
   dsp.processStep1();
-  dsp.processStep2();
+  dsp.processStep2(enableDelayedPrivatization ? &parallelClauseOps : nullptr);
 
   genParallelCompositeOp(converter, semaCtx, parallelItem->clauses, eval, loc,
                          parallelClauseOps, numThreadsClauseOps,
@@ -2791,7 +2775,7 @@ static void genCompositeDistributeParallelDoSimd(
                            /*shouldCollectPreDeterminedSymbols=*/true,
                            /*useDelayedPrivatization=*/true, &symTable);
   dsp.processStep1();
-  dsp.processStep2();
+  dsp.processStep2(enableDelayedPrivatization ? &parallelClauseOps : nullptr);
 
   genParallelCompositeOp(converter, semaCtx, parallelItem->clauses, eval, loc,
                          parallelClauseOps, numThreadsClauseOps,

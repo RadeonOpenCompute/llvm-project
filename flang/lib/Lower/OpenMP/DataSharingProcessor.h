@@ -91,8 +91,6 @@ private:
   lower::SymMap *symTable;
 
   OMPConstructSymbolVisitor visitor;
-  mlir::omp::PrivateClauseOps privateClauseOps;
-  llvm::SmallVector<const semantics::Symbol *> delayedPrivSyms;
   bool privatizationDone = false;
 
   bool needBarrier();
@@ -109,10 +107,9 @@ private:
   void collectDefaultSymbols();
   void collectImplicitSymbols();
   void collectPreDeterminedSymbols();
-  void privatize();
-  void defaultPrivatize();
-  void implicitPrivatize();
-  void doPrivatize(const semantics::Symbol *sym);
+  void privatize(mlir::omp::PrivateClauseOps *clauseOps);
+  void doPrivatize(const semantics::Symbol *sym,
+                   mlir::omp::PrivateClauseOps *clauseOps);
   void copyLastPrivatize(mlir::Operation *op);
   void insertLastPrivateCompare(mlir::Operation *op);
   void cloneSymbol(const semantics::Symbol *sym);
@@ -157,7 +154,7 @@ public:
   // before the operation is created since the bounds of the MLIR OpenMP
   // operation can be privatised.
   void processStep1();
-  void processStep2();
+  void processStep2(mlir::omp::PrivateClauseOps *clauseOps = nullptr);
   void processStep3(mlir::Operation *op, bool isLoop);
 
   void pushLoopIV(mlir::Value iv) { loopIVs.push_back(iv); }
@@ -167,12 +164,10 @@ public:
     return allPrivatizedSymbols;
   }
 
-  const mlir::omp::PrivateClauseOps &getPrivateClauseOps() const {
-    return privateClauseOps;
-  }
-
   llvm::ArrayRef<const semantics::Symbol *> getDelayedPrivSyms() const {
-    return delayedPrivSyms;
+    return useDelayedPrivatization
+               ? allPrivatizedSymbols.getArrayRef()
+               : llvm::ArrayRef<const semantics::Symbol *>();
   }
 };
 
