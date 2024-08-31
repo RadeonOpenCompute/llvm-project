@@ -77,10 +77,9 @@ Obtain the value of `gpu-arch` by running the following command:
 
 [//]: # (dated link below, needs updating)
 
-See the complete list of compiler command-line references
-[here](https://github.com/ROCm/llvm-project/blob/amd-staging/openmp/docs/CommandLineArgumentReference.rst).
+See the complete list of [compiler command-line references](https://github.com/ROCm/llvm-project/blob/amd-staging/openmp/docs/CommandLineArgumentReference.rst).
 
-### Using `rocprof` with OpenMP
+### Using rocprof with OpenMP
 
 The following steps describe a typical workflow for using `rocprof` with OpenMP
 code compiled with AOMP:
@@ -184,20 +183,20 @@ Implicit asynchronous execution of single target region enables parallel memory 
 
 Unified Shared Memory (USM) provides a pointer-based approach to memory
 management. To implement USM, fulfill the following system requirements along
-with Xnack capability.
+with XNACK capability.
 
 #### Prerequisites
 
 * Linux Kernel versions above 5.14
 * Latest KFD driver packaged in ROCm stack
-* Xnack, as USM support can only be tested with applications compiled with Xnack
+* XNACK, as USM support can only be tested with applications compiled with XNACK
   capability
 
-#### Xnack capability
+#### XNACK capability
 
-When enabled, Xnack capability allows GPU threads to access CPU (system) memory,
-allocated with OS-allocators, such as `malloc`, `new`, and `mmap`. Xnack must be
-enabled both at compile- and run-time. To enable Xnack support at compile-time,
+When enabled, XNACK capability allows GPU threads to access CPU (system) memory,
+allocated with OS-allocators, such as `malloc`, `new`, and `mmap`. XNACK must be
+enabled both at compile- and run-time. To enable XNACK support at compile-time,
 use:
 
 ```bash
@@ -210,14 +209,14 @@ Or use another functionally equivalent option Xnack-any:
 --offload-arch=gfx908
 ```
 
-To enable Xnack functionality at runtime on a per-application basis,
+To enable XNACK functionality at runtime on a per-application basis,
 use environment variable:
 
 ```bash
 HSA_XNACK=1
 ```
 
-When Xnack support is not needed:
+When XNACK support is not needed:
 
 * Build the applications to maximize resource utilization using:
 
@@ -229,14 +228,13 @@ When Xnack support is not needed:
 
 #### Unified shared memory pragma
 
-This OpenMP pragma is available on MI200 through `xnack+` support.
+There are two ways in which you can trigger USM:
 
-```bash
-omp requires unified_shared_memory
-```
+- Add ``#pragma omp requires unified_shared_memory`` in your source files.
 
-As stated in the OpenMP specifications, this pragma makes the map clause on
-target constructs optional. By default, on MI200, all memory allocated on the
+- Use the flag ``-fopenmp-force-usm`` and run the application in XNACK-enabled mode.
+
+As stated in the OpenMP specifications, the ``omp requires unified_shared_memory`` pragma makes the map clause on target constructs optional. By default, on MI200, all memory allocated on the
 host is fine grain. Using the map clause on a target clause is allowed, which
 transforms the access semantics of the associated memory to coarse grain.
 
@@ -280,6 +278,52 @@ that the pages pointed by “a” are in fine-grain memory, while the pages poin
 to by “b” are in coarse-grain memory during and after the execution of the
 target region. This is accomplished in the OpenMP runtime library with calls to
 the ROCr runtime to set the pages pointed by “b” as coarse grain.
+
+#### Zero-copy behavior on MI300A and discrete GPUs
+
+OpenMP provides a relaxed shared memory model, which allows you to achieve zero-copy behavior on MI300A and other discrete GPUs. Zero-copy is the implementation of OpenMP data mapping that does not result in GPU memory allocations and CPU-to-GPU memory copies. While data mapping is optional on any GPU that provides native USM, it helps to achieve good performance when porting across MI300A and discrete memory GPUs.
+
+The following sections explain achieving zero-copy behavior on MI300A and discrete GPUs.
+
+##### Zero-copy behavior on MI300A
+
+To obtain zero-copy implementation on MI300A, use either of the following two ways:
+- Specify the [unified shared memory pragma](#unified-shared-memory-pragma) `requires unified_shared_memory` in the code to inform the compiler and runtime that the code must be compiled for and executed on GPUs providing USM through XNACK.
+- Don't specify the unified shared memory pragma and rely on the OpenMP runtime's implicit zero-copy behavior on MI300A. When the OpenMP runtime detects that it is running on an MI300A and the XNACK support is enabled in the environment, in which the application is run, it turns on the zero-copy mode. This behavior is named implicit zero-copy.
+
+The following table lists the runtime behavior based on the unified shared memory pragma and XNACK specification:
+
+| MI300A | unified_shared_memory pragma <br>NOT specified</br> | unified_shared_memory pragma <br>specified</br> |
+| --- | --- | --- |
+| XNACK enabled | implicit zero-copy | zero-copy |
+| XNACK disabled | copy | runtime warning* |
+
+##### Zero-copy behavior on discrete GPUs
+
+To turn on implicit zero-copy behavior on discrete memory GPUs such as MI200 and MI300X for applications not using unified shared memory pragma, run applications in XNACK enabled environment and set the environment variable OMPX_APU_MAPS to true:
+
+```bash
+HSA_XNACK=1 OMPX_APU_MAPS=1 ./app_exec
+```
+
+When OMPX_APU_MAPS is not set, then applications not using unified shared memory pragma will run in copy mode irrespective of the XNACK configuration.
+
+The following table lists the runtime behavior based on the unified shared memory pragma and XNACK specification:
+
+| Discrete GPUs | unified_shared_memory pragma <br>NOT specified</br> | unified_shared_memory pragma <br>specified</br> |
+| --- | --- | --- |
+| XNACK enabled and OMPX_APU_MAPS=1 | implicit zero-copy | zero-copy |
+| XNACK enabled | copy | zero-copy |
+| XNACK disabled | copy | runtime warning* |
+
+:::{note}
+(*) To convert the runtime warning generated when running an application using unified shared memory pragma in XNACK disabled mode into a runtime error, set environment variable OMPX_STRICT_SANITY_CHECKS to true:
+
+```bash
+OMPX_STRICT_SANITY_CHECKS=true ./app_exec
+```
+
+:::
 
 ### OMPT target support
 
@@ -389,9 +433,9 @@ GPUs with applications written in both HIP and OpenMP.
 * Heap buffer overflow
 * Global buffer overflow
 
-**Software (kernel/OS) requirements:** Unified Shared Memory support with Xnack
+**Software (kernel/OS) requirements:** Unified Shared Memory support with XNACK
 capability. See the section on [Unified Shared Memory](#unified-shared-memory)
-for prerequisites and details on Xnack.
+for prerequisites and details on XNACK.
 
 **Example:**
 
