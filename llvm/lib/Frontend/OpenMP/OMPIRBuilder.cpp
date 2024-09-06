@@ -149,17 +149,6 @@ static bool isValidWorkshareLoopScheduleType(OMPScheduleType SchedType) {
 }
 #endif
 
-Function *GLOBAL_ReductionFunc = nullptr;
-
-static uint64_t getTypeSizeInBytes(Module &M, Type *Type) {
-  return divideCeil(M.getDataLayout().getTypeSizeInBits(Type), 8);
-}
-
-static Value *getTypeSizeInBytesValue(IRBuilder<> &Builder, Module &M,
-                                      Type *Type) {
-  return Builder.getInt64(getTypeSizeInBytes(M, Type));
-}
-
 static const omp::GV &getGridValue(const Triple &T, Function *Kernel) {
   if (T.isAMDGPU()) {
     StringRef Features =
@@ -6690,27 +6679,6 @@ emitExecutionMode(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
       Twine(FunctionName, "_exec_mode"));
   GVMode->setVisibility(llvm::GlobalVariable::ProtectedVisibility);
   LLVMCompilerUsed.emplace_back(GVMode);
-}
-
-static void replaceConstatExprUsesInFuncWithInstr(ConstantExpr *ConstExpr,
-                                                  Function *Func) {
-  for (User *User : make_early_inc_range(ConstExpr->users())) {
-    if (auto *Instr = dyn_cast<Instruction>(User)) {
-      if (Instr->getFunction() == Func) {
-        Instruction *ConstInst = ConstExpr->getAsInstruction();
-        ConstInst->insertBefore(*Instr->getParent(), Instr->getIterator());
-        Instr->replaceUsesOfWith(ConstExpr, ConstInst);
-      }
-    }
-  }
-}
-
-static void replaceConstantValueUsesInFuncWithInstr(llvm::Value *Input,
-                                                    Function *Func) {
-  for (User *User : make_early_inc_range(Input->users()))
-    if (auto *Const = dyn_cast<Constant>(User))
-      if (auto *ConstExpr = dyn_cast<ConstantExpr>(Const))
-        replaceConstatExprUsesInFuncWithInstr(ConstExpr, Func);
 }
 
 static Function *createOutlinedFunction(
