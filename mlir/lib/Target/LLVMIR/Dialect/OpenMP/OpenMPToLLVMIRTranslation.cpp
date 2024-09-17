@@ -4080,45 +4080,6 @@ convertDeclareTargetAttr(Operation *op, mlir::omp::DeclareTargetAttr attribute,
   return success();
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// CompoundConstructs lowering forward declarations
-class OpenMPDialectLLVMIRTranslationInterface;
-
-using ConvertFunctionTy = std::function<std::pair<bool, LogicalResult>(
-    Operation *, llvm::IRBuilderBase &, LLVM::ModuleTranslation &)>;
-
-class ConversionDispatchList {
-private:
-  llvm::SmallVector<ConvertFunctionTy> functions;
-
-public:
-  std::pair<bool, LogicalResult>
-  convertOperation(Operation *op, llvm::IRBuilderBase &builder,
-                   LLVM::ModuleTranslation &moduleTranslation) {
-    for (auto riter = functions.rbegin(); riter != functions.rend(); ++riter) {
-      bool match = false;
-      LogicalResult result = failure();
-      std::tie(match, result) = (*riter)(op, builder, moduleTranslation);
-      if (match)
-        return {true, result};
-    }
-    return {false, failure()};
-  }
-
-  void pushConversionFunction(ConvertFunctionTy function) {
-    functions.push_back(function);
-  }
-  void popConversionFunction() { functions.pop_back(); }
-};
-
-static LogicalResult convertOmpDistributeParallelWsloop(
-    omp::ParallelOp parallel, omp::DistributeOp distribute,
-    omp::WsloopOp wsloop, llvm::IRBuilderBase &builder,
-    LLVM::ModuleTranslation &moduleTranslation,
-    ConversionDispatchList &dispatchList);
-
-///////////////////////////////////////////////////////////////////////////////
-// Dispatch functions
 
 /// Given an OpenMP MLIR operation, create the corresponding LLVM IR
 /// (including OpenMP runtime calls).
@@ -4260,55 +4221,6 @@ static bool isTargetDeviceOp(Operation *op) {
   return false;
 }
 
-// Returns true if the given block has a single instruction.
-static bool singleInstrBlock(Block &block) {
-  bool result = (block.getOperations().size() == 2);
-  if (!result) {
-    llvm::errs() << "Num ops: " << block.getOperations().size() << "\n";
-  }
-  return result;
-}
-
-// Returns the operation if it only contains one instruction otherwise
-// return nullptr.
-template <typename OpType>
-Operation *getContainedInstr(OpType op) {
-  Region &region = op.getRegion();
-  if (!region.hasOneBlock()) {
-    llvm::errs() << "Region has multiple blocks\n";
-    return nullptr;
-  }
-  Block &block = region.front();
-  if (!singleInstrBlock(block)) {
-    return nullptr;
-  }
-  return &(block.getOperations().front());
-}
-
-// Returns the operation if it only contains one instruction otherwise
-// return nullptr.
-template <typename OpType>
-Block &getContainedBlock(OpType op) {
-  Region &region = op.getRegion();
-  return region.front();
-}
-
-template <typename FirstOpType, typename... RestOpTypes>
-bool matchOpScanNest(Block &block, FirstOpType &firstOp,
-                     RestOpTypes &...restOps) {
-  for (Operation &op : block) {
-    if ((firstOp = mlir::dyn_cast<FirstOpType>(op))) {
-      if constexpr (sizeof...(RestOpTypes) == 0) {
-        return true;
-      } else {
-        Block &innerBlock = getContainedBlock(firstOp);
-        return matchOpScanNest(innerBlock, restOps...);
-      }
-    }
-  }
-  return false;
-}
-
 template <typename FirstOpType, typename... RestOpTypes>
 bool matchOpNest(Operation *op, FirstOpType &firstOp, RestOpTypes &...restOps) {
   if ((firstOp = mlir::dyn_cast<FirstOpType>(op))) {
@@ -4324,17 +4236,7 @@ bool matchOpNest(Operation *op, FirstOpType &firstOp, RestOpTypes &...restOps) {
 
 static LogicalResult
 convertTargetDeviceOp(Operation *op, llvm::IRBuilderBase &builder,
-                      LLVM::ModuleTranslation &moduleTranslation,
-                      ConversionDispatchList &dispatchList) {
-  omp::ParallelOp parallel;
-  omp::DistributeOp distribute;
-  omp::WsloopOp wsloop;
-  // Match composite constructs
-  if (matchOpNest(op, parallel, distribute, wsloop)) {
-    return convertOmpDistributeParallelWsloop(
-        parallel, distribute, wsloop, builder, moduleTranslation, dispatchList);
-  }
-
+                      LLVM::ModuleTranslation &moduleTranslation) {
   return convertHostOrTargetOperation(op, builder, moduleTranslation);
 }
 
@@ -4362,67 +4264,6 @@ convertTargetOpsInNest(Operation *op, llvm::IRBuilderBase &builder,
   return failure(interrupted);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// CompoundConstructs lowering implementations
-
-// Implementation converting a nest of operations in a single function. This
-// just overrides the parallel and wsloop dispatches but does the normal
-// lowering for now.
-static LogicalResult convertOmpDistributeParallelWsloop(
-    omp::ParallelOp parallel, omp::DistributeOp distribute,
-    omp::WsloopOp wsloop, llvm::IRBuilderBase &builder,
-    LLVM::ModuleTranslation &moduleTranslation,
-    ConversionDispatchList &dispatchList) {
-
-  // Reduction related data structures
-  SmallVector<OwningReductionGen> owningReductionGens;
-  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
-  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
-  llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP;
-
-  // Convert wsloop alternative implementation
-  ConvertFunctionTy convertWsloop =
-      [&redAllocaIP, &owningReductionGens, &owningAtomicReductionGens,
-       &reductionInfos](Operation *op, llvm::IRBuilderBase &builder,
-                        LLVM::ModuleTranslation &moduleTranslation) {
-        if (!isa<omp::WsloopOp>(op)) {
-          return std::make_pair(false, failure());
-        }
-
-        LogicalResult result = convertOmpWsloop(
-            *op, builder, moduleTranslation, redAllocaIP, owningReductionGens,
-            owningAtomicReductionGens, reductionInfos);
-        return std::make_pair(true, result);
-      };
-
-  // Convert distribute alternative implementation
-  ConvertFunctionTy convertDistribute =
-      [&redAllocaIP,
-       &reductionInfos](Operation *op, llvm::IRBuilderBase &builder,
-                        LLVM::ModuleTranslation &moduleTranslation) {
-        if (!isa<omp::DistributeOp>(op)) {
-          return std::make_pair(false, failure());
-        }
-
-        LogicalResult result = convertOmpDistribute(
-            *op, builder, moduleTranslation, &redAllocaIP, reductionInfos);
-        return std::make_pair(true, result);
-      };
-
-  // Push the new alternative functions
-  dispatchList.pushConversionFunction(convertWsloop);
-  dispatchList.pushConversionFunction(convertDistribute);
-
-  // Lower the current parallel operation
-  LogicalResult result =
-      convertOmpParallel(parallel, builder, moduleTranslation);
-
-  // Pop the alternative functions
-  dispatchList.popConversionFunction();
-  dispatchList.popConversionFunction();
-
-  return result;
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // OpenMPDialectLLVMIRTranslationInterface
@@ -4431,9 +4272,6 @@ static LogicalResult convertOmpDistributeParallelWsloop(
 /// to the OpenMP dialect to LLVM IR.
 class OpenMPDialectLLVMIRTranslationInterface
     : public LLVMTranslationDialectInterface {
-private:
-  mutable ConversionDispatchList dispatchList;
-
 public:
   using LLVMTranslationDialectInterface::LLVMTranslationDialectInterface;
 
@@ -4562,21 +4400,13 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
     Operation *op, llvm::IRBuilderBase &builder,
     LLVM::ModuleTranslation &moduleTranslation) const {
 
-  // Check to see if there is a lowering that overrides the default lowering
-  // if not use the default dispatch.
-  bool match = false;
-  LogicalResult result = success();
-  std::tie(match, result) =
-      dispatchList.convertOperation(op, builder, moduleTranslation);
-  if (match)
-    return result;
-
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
   if (ompBuilder->Config.isTargetDevice()) {
-    if (isTargetDeviceOp(op))
-      return convertTargetDeviceOp(op, builder, moduleTranslation,
-                                   dispatchList);
-    return convertTargetOpsInNest(op, builder, moduleTranslation);
+    if (isTargetDeviceOp(op)) {
+      return convertTargetDeviceOp(op, builder, moduleTranslation);
+    } else {
+      return convertTargetOpsInNest(op, builder, moduleTranslation);
+    }
   }
   return convertHostOrTargetOperation(op, builder, moduleTranslation);
 }
