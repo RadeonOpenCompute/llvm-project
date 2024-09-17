@@ -2871,6 +2871,7 @@ public:
   /// \param Loc where the target data construct was encountered.
   /// \param IsSPMD whether this is an SPMD target launch.
   /// \param IsOffloadEntry whether it is an offload entry.
+  /// \param IfCond value of the IF clause for the TARGET construct or nullptr.
   /// \param CodeGenIP The insertion point where the call to the outlined
   /// function should be emitted.
   /// \param EntryInfo The entry information about the function.
@@ -2884,7 +2885,7 @@ public:
   /// \param Dependencies A vector of DependData objects that carry
   // dependency information as passed in the depend clause.
   InsertPointTy createTarget(const LocationDescription &Loc, bool IsSPMD,
-                             bool IsOffloadEntry,
+                             bool IsOffloadEntry, Value *IfCond,
                              OpenMPIRBuilder::InsertPointTy AllocaIP,
                              OpenMPIRBuilder::InsertPointTy CodeGenIP,
                              TargetRegionEntryInfo &EntryInfo,

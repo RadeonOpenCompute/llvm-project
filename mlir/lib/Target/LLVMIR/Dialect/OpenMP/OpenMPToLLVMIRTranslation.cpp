@@ -3476,10 +3476,6 @@ static bool getTargetEntryUniqueInfo(llvm::TargetRegionEntryInfo &targetInfo,
 
 static bool targetOpSupported(Operation &opInst) {
   auto targetOp = cast<omp::TargetOp>(opInst);
-  if (targetOp.getIfExpr()) {
-    opInst.emitError("If clause not yet supported");
-    return false;
-  }
 
   if (targetOp.getDevice()) {
     opInst.emitError("Device clause not yet supported");
@@ -3955,8 +3951,12 @@ convertOmpTarget(Operation &opInst, llvm::IRBuilderBase &builder,
   if (Value targetThreadLimit = targetOp.getThreadLimit())
     llvmTargetThreadLimit = moduleTranslation.lookupValue(targetThreadLimit);
 
+  llvm::Value *ifCond = nullptr;
+  if (Value targetIfCond = targetOp.getIfExpr())
+    ifCond = moduleTranslation.lookupValue(targetIfCond);
+
   builder.restoreIP(moduleTranslation.getOpenMPBuilder()->createTarget(
-      ompLoc, targetOp.isTargetSPMDLoop(), isOffloadEntry, allocaIP,
+      ompLoc, targetOp.isTargetSPMDLoop(), isOffloadEntry, ifCond, allocaIP,
       builder.saveIP(), entryInfo, defaultBounds, runtimeBounds, kernelInput,
       genMapInfoCB, bodyCB, argAccessorCB, dds));
 
