@@ -2,7 +2,7 @@
 ! RUN: bbc -emit-fir -fopenmp -o - %s | FileCheck %s
 
 ! CHECK:       omp.teams
-! CHECK-SAME:  reductionn
+! CHECK-SAME:  reduction(@add_reduction_i32 %{{.*}} -> %{{.*}} : !fir.ref<i32>)
 subroutine myfun()
   integer :: i, j
   i = 0

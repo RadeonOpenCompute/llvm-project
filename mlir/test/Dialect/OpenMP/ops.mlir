@@ -1094,16 +1094,18 @@ func.func @omp_teams(%lb : i32, %ub : i32, %if_cond : i1, %num_threads : i32,
   // Test reduction.
   %c1 = arith.constant 1 : i32
   %0 = llvm.alloca %c1 x i32 : (i32) -> !llvm.ptr
-  // CHECK: omp.teams reduction(@add_f32 -> %{{.+}} : !llvm.ptr) {
-  omp.teams reduction(@add_f32 -> %0 : !llvm.ptr) {
+  // CHECK: omp.teams reduction(@add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) {
+  omp.teams reduction(@add_f32 %0 -> %arg0 : !llvm.ptr) {
+  ^bb0(%arg0: !llvm.ptr):
     %1 = arith.constant 2.0 : f32
     // CHECK: omp.terminator
     omp.terminator
   }
 
   // Test reduction byref
-  // CHECK: omp.teams reduction(byref @add_f32 -> %{{.+}} : !llvm.ptr) {
-  omp.teams reduction(byref @add_f32 -> %0 : !llvm.ptr) {
+  // CHECK: omp.teams reduction(byref @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) {
+  omp.teams reduction(byref @add_f32 %0 -> %arg0 : !llvm.ptr) {
+  ^bb0(%arg0: !llvm.ptr):
     %1 = arith.constant 2.0 : f32
     // CHECK: omp.terminator
     omp.terminator
@@ -1123,8 +1125,9 @@ func.func @omp_teams(%lb : i32, %ub : i32, %if_cond : i1, %num_threads : i32,
 func.func @sections_reduction() {
   %c1 = arith.constant 1 : i32
   %0 = llvm.alloca %c1 x i32 : (i32) -> !llvm.ptr
-  // CHECK: omp.sections reduction(@add_f32 -> {{.+}} : !llvm.ptr)
-  omp.sections reduction(@add_f32 -> %0 : !llvm.ptr) {
+  // CHECK: omp.sections reduction(@add_f32 {{.+}} -> {{.+}} : !llvm.ptr)
+  omp.sections reduction(@add_f32 %0 -> %arg0 : !llvm.ptr) {
+  ^bb0(%arg0: !llvm.ptr):
     // CHECK: omp.section
     omp.section {
       %1 = arith.constant 2.0 : f32
@@ -1144,9 +1147,10 @@ func.func @sections_reduction() {
 func.func @sections_reduction_byref() {
   %c1 = arith.constant 1 : i32
   %0 = llvm.alloca %c1 x i32 : (i32) -> !llvm.ptr
-  // CHECK: omp.sections reduction(byref @add_f32 -> {{.+}} : !llvm.ptr)
-  omp.sections reduction(byref @add_f32 -> %0 : !llvm.ptr) {
-    // CHECK: omp.section
+  // CHECK: omp.sections reduction(byref @add_f32 {{.+}} -> {{.+}} : !llvm.ptr)
+  omp.sections reduction(byref @add_f32 %0 -> %arg0 : !llvm.ptr) {
+  ^bb0(%arg0: !llvm.ptr):
+  // CHECK: omp.section
     omp.section {
       %1 = arith.constant 2.0 : f32
       omp.terminator
@@ -1243,8 +1247,9 @@ func.func @parallel_wsloop_reduction2(%lb : index, %ub : index, %step : index) {
 // CHECK-LABEL: func @sections_reduction2
 func.func @sections_reduction2() {
   %0 = memref.alloca() : memref<1xf32>
-  // CHECK: omp.sections reduction(@add2_f32 -> %{{.+}} : memref<1xf32>)
-  omp.sections reduction(@add2_f32 -> %0 : memref<1xf32>) {
+  // CHECK: omp.sections reduction(@add2_f32 %{{.+}} -> %{{.+}} : memref<1xf32>)
+  omp.sections reduction(@add2_f32 %0 -> %arg0 : memref<1xf32>) {
+    ^bb0(%arg0: !llvm.ptr):
     omp.section {
       %1 = arith.constant 2.0 : f32
       omp.terminator
@@ -1899,8 +1904,9 @@ func.func @omp_sectionsop(%data_var1 : memref<i32>, %data_var2 : memref<i32>,
     omp.terminator
   }) {operandSegmentSizes = array<i32: 1,1,0,0>} : (memref<i32>, memref<i32>) -> ()
 
-    // CHECK: omp.sections reduction(@add_f32 -> %{{.*}} : !llvm.ptr)
+    // CHECK: omp.sections reduction(@add_f32 %{{.*}} -> %{{.*}} : !llvm.ptr)
   "omp.sections" (%redn_var) ({
+    ^bb0(%arg0: !llvm.ptr):
     // CHECK: omp.terminator
     omp.terminator
   }) {operandSegmentSizes = array<i32: 0,0,0,1>, reduction_byref = array<i1: false>, reduction_syms=[@add_f32]} : (!llvm.ptr) -> ()
@@ -1911,8 +1917,9 @@ func.func @omp_sectionsop(%data_var1 : memref<i32>, %data_var2 : memref<i32>,
     omp.terminator
   }
 
-  // CHECK: omp.sections reduction(@add_f32 -> %{{.*}} : !llvm.ptr) {
-  omp.sections reduction(@add_f32 -> %redn_var : !llvm.ptr) {
+  // CHECK: omp.sections reduction(@add_f32 %{{.*}} -> %{{.*}} : !llvm.ptr) {
+  omp.sections reduction(@add_f32 %redn_var -> %arg0 : !llvm.ptr) {
+    ^bb0(%arg0: !llvm.ptr):
     // CHECK: omp.terminator
     omp.terminator
   }
@@ -2085,8 +2092,9 @@ func.func @omp_task(%bool_var: i1, %i64_var: i64, %i32_var: i32, %data_var: memr
   %0 = llvm.alloca %c1 x f32 : (i32) -> !llvm.ptr
   // CHECK: %[[redn_var2:.*]] = llvm.alloca %{{.*}} x f32 : (i32) -> !llvm.ptr
   %1 = llvm.alloca %c1 x f32 : (i32) -> !llvm.ptr
-  // CHECK: omp.task in_reduction(@add_f32 -> %[[redn_var1]] : !llvm.ptr, @add_f32 -> %[[redn_var2]] : !llvm.ptr) {
-  omp.task in_reduction(@add_f32 -> %0 : !llvm.ptr, @add_f32 -> %1 : !llvm.ptr) {
+  // CHECK: omp.task in_reduction(@add_f32 %[[redn_var1]] -> %arg4 : !llvm.ptr, @add_f32 %[[redn_var2]] -> %arg5 : !llvm.ptr) {
+  omp.task in_reduction(@add_f32 %0 -> %arg0 : !llvm.ptr, @add_f32 %1 -> %arg1 : !llvm.ptr) {
+    ^bb0(%arg4: !llvm.ptr, %arg5: !llvm.ptr):
     // CHECK: "test.foo"() : () -> ()
     "test.foo"() : () -> ()
     // CHECK: omp.terminator
@@ -2094,8 +2102,9 @@ func.func @omp_task(%bool_var: i1, %i64_var: i64, %i32_var: i32, %data_var: memr
   }
 
   // Checking `in_reduction` clause (mixed) byref
-  // CHECK: omp.task in_reduction(byref @add_f32 -> %[[redn_var1]] : !llvm.ptr, @add_f32 -> %[[redn_var2]] : !llvm.ptr) {
-  omp.task in_reduction(byref @add_f32 -> %0 : !llvm.ptr, @add_f32 -> %1 : !llvm.ptr) {
+  // CHECK: omp.task in_reduction(byref @add_f32 %[[redn_var1]] -> %arg4 : !llvm.ptr, @add_f32 %[[redn_var2]] -> %arg5 : !llvm.ptr) {
+  omp.task in_reduction(byref @add_f32 %0 -> %arg0 : !llvm.ptr, @add_f32 %1 -> %arg1 : !llvm.ptr) {
+    ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     // CHECK: "test.foo"() : () -> ()
     "test.foo"() : () -> ()
     // CHECK: omp.terminator
@@ -2125,10 +2134,11 @@ func.func @omp_task(%bool_var: i1, %i64_var: i64, %i32_var: i32, %data_var: memr
   omp.task allocate(%data_var : memref<i32> -> %data_var : memref<i32>)
       // CHECK-SAME: final(%[[bool_var]]) if(%[[bool_var]])
       final(%bool_var) if(%bool_var)
-      // CHECK-SAME: in_reduction(@add_f32 -> %[[redn_var1]] : !llvm.ptr, byref @add_f32 -> %[[redn_var2]] : !llvm.ptr)
-      in_reduction(@add_f32 -> %0 : !llvm.ptr, byref @add_f32 -> %1 : !llvm.ptr)
+      // CHECK-SAME: in_reduction(@add_f32 %[[redn_var1]] -> %arg4 : !llvm.ptr, byref @add_f32 %[[redn_var2]] -> %arg5 : !llvm.ptr)
+      in_reduction(@add_f32 %0 -> %arg0 : !llvm.ptr, byref @add_f32 %1 -> %arg1 : !llvm.ptr)
       // CHECK-SAME: priority(%[[i32_var]] : i32) untied
       priority(%i32_var : i32) untied {
+      ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     // CHECK: "test.foo"() : () -> ()
     "test.foo"() : () -> ()
     // CHECK: omp.terminator
@@ -2304,8 +2314,9 @@ func.func @omp_taskgroup_multiple_tasks() -> () {
 func.func @omp_taskgroup_clauses() -> () {
   %testmemref = "test.memref"() : () -> (memref<i32>)
   %testf32 = "test.f32"() : () -> (!llvm.ptr)
-  // CHECK: omp.taskgroup allocate(%{{.+}}: memref<i32> -> %{{.+}}: memref<i32>) task_reduction(@add_f32 -> %{{.+}}: !llvm.ptr)
-  omp.taskgroup allocate(%testmemref : memref<i32> -> %testmemref : memref<i32>) task_reduction(@add_f32 -> %testf32 : !llvm.ptr) {
+  // CHECK: omp.taskgroup allocate(%{{.+}}: memref<i32> -> %{{.+}}: memref<i32>) task_reduction(@add_f32 %{{.+}} -> %{{.+}}: !llvm.ptr)
+  omp.taskgroup allocate(%testmemref : memref<i32> -> %testmemref : memref<i32>) task_reduction(@add_f32 %testf32 -> %arg0 : !llvm.ptr) {
+    ^bb0(%arg0: !llvm.ptr):
     // CHECK: omp.task
     omp.task {
       "test.foo"() : () -> ()
@@ -2376,8 +2387,9 @@ func.func @omp_taskloop(%lb: i32, %ub: i32, %step: i32) -> () {
 
   %testf32 = "test.f32"() : () -> (!llvm.ptr)
   %testf32_2 = "test.f32"() : () -> (!llvm.ptr)
-  // CHECK: omp.taskloop in_reduction(@add_f32 -> %{{.+}} : !llvm.ptr, @add_f32 -> %{{.+}} : !llvm.ptr) {
-  omp.taskloop in_reduction(@add_f32 -> %testf32 : !llvm.ptr, @add_f32 -> %testf32_2 : !llvm.ptr) {
+  // CHECK: omp.taskloop in_reduction(@add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr, @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) {
+  omp.taskloop in_reduction(@add_f32 %testf32 -> %arg0 : !llvm.ptr, @add_f32 %testf32_2 -> %arg1 : !llvm.ptr) {
+    ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       // CHECK: omp.yield
       omp.yield
@@ -2386,8 +2398,9 @@ func.func @omp_taskloop(%lb: i32, %ub: i32, %step: i32) -> () {
   }
 
   // Checking byref attribute for in_reduction
-  // CHECK: omp.taskloop in_reduction(byref @add_f32 -> %{{.+}} : !llvm.ptr, @add_f32 -> %{{.+}} : !llvm.ptr) {
-  omp.taskloop in_reduction(byref @add_f32 -> %testf32 : !llvm.ptr, @add_f32 -> %testf32_2 : !llvm.ptr) {
+  // CHECK: omp.taskloop in_reduction(byref @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr, @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) {
+  omp.taskloop in_reduction(byref @add_f32 %testf32 -> %arg0 : !llvm.ptr, @add_f32 %testf32_2 -> %arg1  : !llvm.ptr) {
+    ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       // CHECK: omp.yield
       omp.yield
@@ -2395,8 +2408,9 @@ func.func @omp_taskloop(%lb: i32, %ub: i32, %step: i32) -> () {
     omp.terminator
   }
 
-  // CHECK: omp.taskloop reduction(byref @add_f32 -> %{{.+}} : !llvm.ptr, @add_f32 -> %{{.+}} : !llvm.ptr) {
-  omp.taskloop reduction(byref @add_f32 -> %testf32 : !llvm.ptr, @add_f32 -> %testf32_2 : !llvm.ptr) {
+  // CHECK: omp.taskloop reduction(byref @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr, @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) {
+  omp.taskloop reduction(byref @add_f32 %testf32 -> %arg0 : !llvm.ptr, @add_f32 %testf32_2 -> %arg1 : !llvm.ptr) {
+    ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       // CHECK: omp.yield
       omp.yield
@@ -2405,8 +2419,9 @@ func.func @omp_taskloop(%lb: i32, %ub: i32, %step: i32) -> () {
   }
 
   // check byref attrbute for reduction
-  // CHECK: omp.taskloop reduction(byref @add_f32 -> %{{.+}} : !llvm.ptr, byref @add_f32 -> %{{.+}} : !llvm.ptr) {
-  omp.taskloop reduction(byref @add_f32 -> %testf32 : !llvm.ptr, byref @add_f32 -> %testf32_2 : !llvm.ptr) {
+  // CHECK: omp.taskloop reduction(byref @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr, byref @add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) {
+  omp.taskloop reduction(byref @add_f32 %testf32 -> %arg0 : !llvm.ptr, byref @add_f32 %testf32_2 -> %arg1 : !llvm.ptr) {
+    ^bb0(%arg0: !llvm.ptr, %arg1: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       // CHECK: omp.yield
       omp.yield
@@ -2414,8 +2429,9 @@ func.func @omp_taskloop(%lb: i32, %ub: i32, %step: i32) -> () {
     omp.terminator
   }
 
-  // CHECK: omp.taskloop in_reduction(@add_f32 -> %{{.+}} : !llvm.ptr) reduction(@add_f32 -> %{{.+}} : !llvm.ptr) {
-  omp.taskloop in_reduction(@add_f32 -> %testf32 : !llvm.ptr) reduction(@add_f32 -> %testf32_2 : !llvm.ptr) {
+  // CHECK: omp.taskloop in_reduction(@add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) reduction(@add_f32 %{{.+}} -> %{{.+}} : !llvm.ptr) {
+  omp.taskloop in_reduction(@add_f32 %testf32 -> %arg3 : !llvm.ptr) reduction(@add_f32 %testf32_2 -> %arg4 : !llvm.ptr) {
+    ^bb0(%arg3: !llvm.ptr, %arg4: !llvm.ptr):
     omp.loop_nest (%i, %j) : i32 = (%lb, %ub) to (%ub, %lb) step (%step, %step) {
       // CHECK: omp.yield
       omp.yield
