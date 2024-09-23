@@ -1540,6 +1540,13 @@ Operation *TargetOp::getInnermostCapturedOmpOp() {
     if (op == *this)
       return;
 
+    // Reset captured op if crossing through an omp.loop_nest, so that the top
+    // level one will be the one captured.
+    if (llvm::isa<LoopNestOp>(op)) {
+      capturedOp = nullptr;
+      capturedParentRegion = nullptr;
+    }
+
     bool isOmpDialect = op->getDialect() == ompDialect;
     bool hasRegions = op->getNumRegions() > 0;
 
@@ -1583,21 +1590,11 @@ Operation *TargetOp::getInnermostCapturedOmpOp() {
 
 bool TargetOp::isTargetSPMDLoop() {
   Operation *capturedOp = getInnermostCapturedOmpOp();
-
-  // Allow an omp.atomic_update to be captured inside of the loop and still
-  // consider the parent omp.target operation to be potentially defining an SPMD
-  // loop.
-  // TODO: Potentially accept other captured OpenMP dialect operations as well,
-  // if they are allowed inside of an SPMD loop.
-  if (isa_and_present<AtomicUpdateOp>(capturedOp))
-    capturedOp = capturedOp->getParentOp();
-
   if (!isa_and_present<LoopNestOp>(capturedOp))
     return false;
 
-  Operation *workshareOp = capturedOp->getParentOp();
-
   // Accept optional SIMD leaf construct.
+  Operation *workshareOp = capturedOp->getParentOp();
   if (isa_and_present<SimdOp>(workshareOp))
     workshareOp = workshareOp->getParentOp();
 

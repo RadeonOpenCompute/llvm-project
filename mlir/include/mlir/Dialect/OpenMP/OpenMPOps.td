@@ -1127,13 +1127,16 @@ def TargetOp : OpenMP_Op<"target", traits = [
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{
-    /// Returns the innermost OpenMP dialect operation nested inside of this
-    /// operation's region. For an operation to be detected as captured, it must
-    /// be inside a (possibly multi-level) nest of OpenMP dialect operation's
+    /// Returns the innermost OpenMP dialect operation captured by this target
+    /// construct. For an operation to be detected as captured, it must be
+    /// inside a (possibly multi-level) nest of OpenMP dialect operation's
     /// regions where none of these levels contain other operations considered
     /// not-allowed for these purposes (i.e. only terminator operations are
     /// allowed from the OpenMP dialect, and other dialect's operations are
     /// allowed as long as they don't have a memory write effect).
+    ///
+    /// If there are omp.loop_nest operations in the sequence of nested
+    /// operations, the top level one will be the one captured.
     Operation *getInnermostCapturedOmpOp();
 
     /// Tells whether this target region represents a single worksharing loop
