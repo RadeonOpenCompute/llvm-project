@@ -1,5 +1,5 @@
 ! Basic offloading test with a target region
-! REQUIRES: flang
+! REQUIRES: flang, amdgpu
 ! UNSUPPORTED: nvptx64-nvidia-cuda-LTO
 ! UNSUPPORTED: aarch64-unknown-linux-gnu
 ! UNSUPPORTED: aarch64-unknown-linux-gnu-LTO
