@@ -23,6 +23,7 @@ add_flang_library(FIRTransforms
   AddDebugInfo.cpp
   PolymorphicOpConversion.cpp
   LoopVersioning.cpp
+  OMPAllocatableArrayOpt.cpp
   StackReclaim.cpp
   VScaleAttr.cpp
   FunctionAttr.cpp

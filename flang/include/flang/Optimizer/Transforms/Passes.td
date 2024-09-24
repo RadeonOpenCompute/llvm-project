@@ -358,6 +358,18 @@ def LoopVersioning : Pass<"loop-versioning", "mlir::func::FuncOp"> {
   let dependentDialects = [ "fir::FIROpsDialect" ];
 }
 
+def OMPAllocatableArrayOpt : Pass<"omp-allocatable-arrays-optimization",
+                                   "mlir::func::FuncOp"> {
+  let summary = "Skip extraction of pointer to allocated memory from "
+                "allocatable array decriptor.";
+  let constructor = "::fir::createOMPAllocatableArrayOptPass()";
+  let dependentDialects = [
+    "fir::FIROpsDialect",
+    "mlir::func::FuncDialect",
+    "mlir::omp::OpenMPDialect"
+  ];
+}
+
 def VScaleAttr : Pass<"vscale-attr", "mlir::func::FuncOp"> {
   let summary = "Add vscale_range attribute to functions";
   let description = [{
