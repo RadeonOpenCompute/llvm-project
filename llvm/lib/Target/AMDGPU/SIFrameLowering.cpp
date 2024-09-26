@@ -1601,16 +1601,10 @@ void SIFrameLowering::processFunctionBeforeFrameFinalized(
   SIMachineFunctionInfo *FuncInfo = MF.getInfo<SIMachineFunctionInfo>();
 
   // Allocate spill slots for WWM reserved VGPRs.
-  // For chain functions, we only need to do this if we have calls to
-  // llvm.amdgcn.cs.chain.
-  bool IsChainWithoutCalls =
-      FuncInfo->isChainFunction() && !MF.getFrameInfo().hasTailCall();
-  if (!FuncInfo->isEntryFunction() && !IsChainWithoutCalls) {
-    for (Register Reg : FuncInfo->getWWMReservedRegs()) {
-      const TargetRegisterClass *RC = TRI->getPhysRegBaseClass(Reg);
-      FuncInfo->allocateWWMSpill(MF, Reg, TRI->getSpillSize(*RC),
-                                 TRI->getSpillAlign(*RC));
-    }
+  for (Register Reg : FuncInfo->getWWMReservedRegs()) {
+    const TargetRegisterClass *RC = TRI->getPhysRegBaseClass(Reg);
+    FuncInfo->allocateWWMSpill(MF, Reg, TRI->getSpillSize(*RC),
+                               TRI->getSpillAlign(*RC));
   }
 
   const bool SpillVGPRToAGPR = ST.hasMAIInsts() && FuncInfo->hasSpilledVGPRs()
