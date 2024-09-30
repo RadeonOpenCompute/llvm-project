@@ -925,8 +925,7 @@ static LogicalResult createReductionsAndCleanup(
     SmallVector<OwningReductionGen> &owningReductionGens,
     SmallVector<OwningAtomicReductionGen> &owningAtomicReductionGens,
     SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> &reductionInfos,
-    bool isNowait = false, bool isTeamsReduction = false,
-    bool hasDistribute = false) {
+    bool isNowait = false, bool isTeamsReduction = false) {
   // Process the reductions if required.
   if (op.getNumReductionVars() == 0)
     return success();
@@ -946,8 +945,7 @@ static LogicalResult createReductionsAndCleanup(
   builder.SetInsertPoint(tempTerminator);
   llvm::OpenMPIRBuilder::InsertPointTy contInsertPoint =
       ompBuilder->createReductions(builder.saveIP(), allocaIP, reductionInfos,
-                                   isByRef, isNowait, isTeamsReduction,
-                                   hasDistribute);
+                                   isByRef, isNowait, isTeamsReduction);
   if (!contInsertPoint.getBlock())
     return op->emitOpError() << "failed to convert reductions";
   auto nextInsertionPoint =
@@ -1547,7 +1545,7 @@ static LogicalResult convertOmpWsloop(
       wsloopOp, builder, moduleTranslation, allocaIP, reductionDecls,
       privateReductionVariables, isByRef, owningReductionGens,
       owningAtomicReductionGens, reductionInfos, wsloopOp.getNowait(),
-      /*isTeamsReduction=*/false, distributeCodeGen);
+      /*isTeamsReduction=*/false);
 }
 
 static LogicalResult
@@ -1745,8 +1743,7 @@ convertOmpParallel(omp::ParallelOp opInst, llvm::IRBuilderBase &builder,
 
       llvm::OpenMPIRBuilder::InsertPointTy contInsertPoint =
           ompBuilder->createReductions(builder.saveIP(), allocaIP,
-                                       reductionInfos, isByRef, false, false,
-                                       false);
+                                       reductionInfos, isByRef, false, false);
       if (!contInsertPoint.getBlock()) {
         bodyGenStatus = opInst->emitOpError() << "failed to convert reductions";
         return;
@@ -3799,8 +3796,6 @@ static void initTargetDefaultBounds(
 
   // Calculate reduction data size, limited to single reduction variable
   // for now.
-  // FIXME: This treats 'DO SIMD' as if it was a 'DO' construct. Reductions
-  // on other constructs apart from 'DO' aren't considered either.
   int32_t reductionDataSize = 0;
   if (isGPU && innermostCapturedOmpOp) {
     if (auto teamsOp =
@@ -4404,11 +4399,10 @@ LogicalResult OpenMPDialectLLVMIRTranslationInterface::convertOperation(
 
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
   if (ompBuilder->Config.isTargetDevice()) {
-    if (isTargetDeviceOp(op)) {
+    if (isTargetDeviceOp(op))
       return convertTargetDeviceOp(op, builder, moduleTranslation);
-    } else {
+    else
       return convertTargetOpsInNest(op, builder, moduleTranslation);
-    }
   }
   return convertHostOrTargetOperation(op, builder, moduleTranslation);
 }
