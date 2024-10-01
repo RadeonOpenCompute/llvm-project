@@ -354,6 +354,8 @@ inline void createHLFIRToFIRPassPipeline(
   pm.addPass(hlfir::createLowerHLFIRIntrinsics());
   pm.addPass(hlfir::createBufferizeHLFIR());
   pm.addPass(hlfir::createConvertHLFIRtoFIR());
+  pm.addPass(fir::createOMPAllocatableArrayOptPass());
+
 }
 
 using DoConcurrentMappingKind =
