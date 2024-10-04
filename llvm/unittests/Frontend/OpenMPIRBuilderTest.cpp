@@ -1427,8 +1427,7 @@ TEST_F(OpenMPIRBuilderTest, CanonicalLoopSimple) {
   EXPECT_EQ(&Loop->getAfter()->front(), RetInst);
 }
 
-TEST_F(OpenMPIRBuilderTest, CanonicalLoopBounds) {
-  using InsertPointTy = OpenMPIRBuilder::InsertPointTy;
+TEST_F(OpenMPIRBuilderTest, CanonicalLoopTripCount) {
   OpenMPIRBuilder OMPBuilder(*M);
   OMPBuilder.initialize();
   IRBuilder<> Builder(BB);
@@ -1444,17 +1443,8 @@ TEST_F(OpenMPIRBuilderTest, CanonicalLoopBounds) {
     Value *StartVal = ConstantInt::get(LCTy, Start);
     Value *StopVal = ConstantInt::get(LCTy, Stop);
     Value *StepVal = ConstantInt::get(LCTy, Step);
-    auto LoopBodyGenCB = [&](InsertPointTy CodeGenIP, llvm::Value *LC) {
-      return Error::success();
-    };
-    Expected<CanonicalLoopInfo *> LoopResult =
-        OMPBuilder.createCanonicalLoop(Loc, LoopBodyGenCB, StartVal, StopVal,
-                                       StepVal, IsSigned, InclusiveStop);
-    assert(LoopResult && "unexpected error");
-    CanonicalLoopInfo *Loop = *LoopResult;
-    Loop->assertOK();
-    Builder.restoreIP(Loop->getAfterIP());
-    Value *TripCount = Loop->getTripCount();
+    Value *TripCount = OMPBuilder.calculateCanonicalLoopTripCount(
+        Loc, StartVal, StopVal, StepVal, IsSigned, InclusiveStop);
     return cast<ConstantInt>(TripCount)->getValue().getZExtValue();
   };
 
