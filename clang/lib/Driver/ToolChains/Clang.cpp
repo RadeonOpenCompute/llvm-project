@@ -8925,8 +8925,7 @@ void OffloadPackager::ConstructJob(Compilation &C, const JobAction &JA,
         "kind=" + Kind.str(),
     };
 
-    if (TC->getDriver().isUsingLTO(/* IsOffload */ true) ||
-        TC->getTriple().isAMDGPU())
+    if (TC->getDriver().isUsingLTO())
       for (StringRef Feature : FeatureArgs)
         Parts.emplace_back("feature=" + Feature.str());
 
@@ -9034,23 +9033,12 @@ void LinkerWrapper::ConstructOpaqueJob(Compilation &C, const JobAction &JA,
         ArgStringList UnpackageCmdArgs;
         UnpackageCmdArgs.push_back(II.getFilename());
 
-        ArgStringList Features;
-        SmallVector<StringRef> FeatureArgs;
-        getTargetFeatures(TC.getDriver(), TheTriple, Args, Features, false,
-                          false, TargetID);
-
-        llvm::copy_if(Features, std::back_inserter(FeatureArgs),
-                      [](StringRef Arg) { return !Arg.startswith("-target"); });
-
         SmallVector<std::string> Parts{
             "file=" + std::string(UnpackagedFileName),
             "triple=" + TheTriple.str(),
             "arch=" + TargetID.str(),
             "kind=openmp",
         };
-
-        for (StringRef Feature : FeatureArgs)
-          Parts.emplace_back("feature=" + Feature.str());
 
         UnpackageCmdArgs.push_back(
             Args.MakeArgString("--image=" + llvm::join(Parts, ",")));
