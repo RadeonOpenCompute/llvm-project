@@ -110,6 +110,8 @@ extern const LIBC_INLINE_VAR uint32_t __oclc_ISA_version = 11003;
 extern const LIBC_INLINE_VAR uint32_t __oclc_ISA_version = 11500;
 #elif defined(__gfx1151__)
 extern const LIBC_INLINE_VAR uint32_t __oclc_ISA_version = 11501;
+#elif defined(__gfx1152__)
+extern const LIBC_INLINE_VAR uint32_t __oclc_ISA_version = 11502;
 #else
 #error "Unknown AMDGPU architecture"
 #endif
