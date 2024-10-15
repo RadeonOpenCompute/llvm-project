@@ -312,40 +312,26 @@ bool SIMachineFunctionInfo::isCalleeSavedReg(const MCPhysReg *CSRegs,
   return false;
 }
 
-void SIMachineFunctionInfo::shiftWwmVGPRsToLowestRange(
-    MachineFunction &MF, SmallVectorImpl<Register> &WWMVGPRs,
-    BitVector &SavedVGPRs) {
+void SIMachineFunctionInfo::shiftSpillPhysVGPRsToLowestRange(
+    MachineFunction &MF) {
   const SIRegisterInfo *TRI = MF.getSubtarget<GCNSubtarget>().getRegisterInfo();
   MachineRegisterInfo &MRI = MF.getRegInfo();
-  for (unsigned I = 0, E = WWMVGPRs.size(); I < E; ++I) {
-    Register Reg = WWMVGPRs[I];
+  for (unsigned I = 0, E = SpillPhysVGPRs.size(); I < E; ++I) {
+    Register Reg = SpillPhysVGPRs[I];
     Register NewReg =
         TRI->findUnusedRegister(MRI, &AMDGPU::VGPR_32RegClass, MF);
     if (!NewReg || NewReg >= Reg)
       break;
 
     MRI.replaceRegWith(Reg, NewReg);
+    MF.replaceFrameInstRegister(Reg, NewReg);
 
     // Update various tables with the new VGPR.
-    WWMVGPRs[I] = NewReg;
+    SpillPhysVGPRs[I] = NewReg;
     WWMReservedRegs.remove(Reg);
     WWMReservedRegs.insert(NewReg);
-    MRI.reserveReg(NewReg, TRI);
-
-    // Replace the register in SpillPhysVGPRs. This is needed to look for free
-    // lanes while spilling special SGPRs like FP, BP, etc. during PEI.
-    auto RegItr = std::find(SpillPhysVGPRs.begin(), SpillPhysVGPRs.end(), Reg);
-    if (RegItr != SpillPhysVGPRs.end()) {
-      unsigned Idx = std::distance(SpillPhysVGPRs.begin(), RegItr);
-      SpillPhysVGPRs[Idx] = NewReg;
-
-      // For replacing registers used in the CFI instructions.
-      MF.replaceFrameInstRegister(Reg, NewReg);
-    }
-
-    // The generic `determineCalleeSaves` might have set the old register if it
-    // is in the CSR range.
-    SavedVGPRs.reset(Reg);
+    WWMSpills.insert(std::make_pair(NewReg, WWMSpills[Reg]));
+    WWMSpills.erase(Reg);
 
     for (MachineBasicBlock &MBB : MF) {
       MBB.removeLiveIn(Reg);
@@ -389,9 +375,7 @@ bool SIMachineFunctionInfo::allocatePhysicalVGPRForSGPRSpills(
       return false;
     }
 
-    if (IsPrologEpilog)
-      allocateWWMSpill(MF, LaneVGPR);
-
+    allocateWWMSpill(MF, LaneVGPR);
     reserveWWMRegister(LaneVGPR);
     for (MachineBasicBlock &MBB : MF) {
       MBB.addLiveIn(LaneVGPR);

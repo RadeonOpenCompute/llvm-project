@@ -184,8 +184,6 @@ public:
       TheDelegate->MRI_NoteCloneVirtualRegister(NewReg, SrcReg);
   }
 
-  const MachineFunction &getMF() const { return *MF; }
-
   //===--------------------------------------------------------------------===//
   // Function State
   //===--------------------------------------------------------------------===//
