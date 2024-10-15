@@ -1,4 +1,3 @@
-; XFAIL: *
 ; RUN: llc -mtriple=amdgcn -verify-machineinstrs < %s | FileCheck -check-prefix=GCN %s
 
 ; GCN-LABEL: {{^}}setcc_sgt_true_sext:

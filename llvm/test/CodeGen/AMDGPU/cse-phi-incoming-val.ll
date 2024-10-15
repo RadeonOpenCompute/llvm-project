@@ -1,4 +1,3 @@
-; XFAIL: *
 ; RUN: llc < %s -mtriple=amdgcn--amdpal -mcpu=gfx900 -verify-machineinstrs | FileCheck %s
 
 ; Check that the redundant immediate MOV instruction

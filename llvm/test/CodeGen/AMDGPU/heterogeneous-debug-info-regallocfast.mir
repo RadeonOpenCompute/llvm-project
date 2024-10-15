@@ -160,6 +160,9 @@
   ; Function Attrs: convergent nounwind willreturn
   declare i1 @llvm.amdgcn.loop.i64(i64) #2
 
+  ; Function Attrs: convergent nounwind willreturn
+  declare void @llvm.amdgcn.end.cf.i64(i64) #2
+
   attributes #0 = { nocallback nofree nosync nounwind readnone speculatable willreturn "target-cpu"="gfx900" }
   attributes #1 = { convergent mustprogress noinline nounwind optnone "frame-pointer"="none" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="gfx900" "target-features"="+16-bit-insts,+ci-insts,+dpp,+flat-address-space,+gfx8-insts,+gfx9-insts,+s-memrealtime,+s-memtime-inst" "uniform-work-group-size"="false" }
   attributes #2 = { convergent nounwind willreturn }

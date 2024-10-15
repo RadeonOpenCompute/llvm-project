@@ -1,4 +1,3 @@
-; XFAIL: *
 ; RUN: llc -mtriple=amdgcn -mcpu=gfx900 -stop-after=prologepilog -verify-machineinstrs < %s | FileCheck -check-prefix=GCN %s
 
 ; It is a small loop test that iterates over the array member of the structure argument  passed byval to the function.

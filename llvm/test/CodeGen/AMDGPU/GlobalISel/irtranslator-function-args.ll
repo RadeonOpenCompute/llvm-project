@@ -105,10 +105,10 @@ define void @i1_arg_i1_use(i1 %arg) #0 {
   ; CHECK-NEXT:   successors: %bb.3(0x80000000)
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT:   G_STORE [[C1]](s32), [[DEF]](p1) :: (volatile store (s32) into `ptr addrspace(1) undef`, addrspace 1)
-  ; CHECK-NEXT:   G_INTRINSIC_CONVERGENT_W_SIDE_EFFECTS intrinsic(@llvm.amdgcn.wave.reconverge), [[INTRINSIC_CONVERGENT_W_SIDE_EFFECTS1]](s64)
   ; CHECK-NEXT:   G_BR %bb.3
   ; CHECK-NEXT: {{  $}}
   ; CHECK-NEXT: bb.3.bb2:
+  ; CHECK-NEXT:   G_INTRINSIC_CONVERGENT_W_SIDE_EFFECTS intrinsic(@llvm.amdgcn.end.cf), [[INTRINSIC_CONVERGENT_W_SIDE_EFFECTS1]](s64)
   ; CHECK-NEXT:   SI_RETURN
 bb:
   br i1 %arg, label %bb2, label %bb1
@@ -3234,6 +3234,3 @@ define void @void_func_v2p3_inreg(<2 x ptr addrspace(3)> inreg %arg0) #0 {
 }
 
 attributes #0 = { nounwind }
-
-!llvm.module.flags = !{!0}
-!0 = !{i32 1, !"amdhsa_code_object_version", i32 400}

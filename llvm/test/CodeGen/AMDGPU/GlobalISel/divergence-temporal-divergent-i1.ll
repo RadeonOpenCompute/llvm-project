@@ -16,10 +16,10 @@ define void @temporal_divergent_i1_phi(float %val, ptr %addr) {
 ; GFX10-NEXT:    v_cmp_gt_f32_e32 vcc_lo, v6, v0
 ; GFX10-NEXT:    v_xor_b32_e32 v4, 1, v5
 ; GFX10-NEXT:    s_or_b32 s4, vcc_lo, s4
-; GFX10-NEXT:    s_andn2_b32 s5, exec_lo, s4
-; GFX10-NEXT:    s_cselect_b32 exec_lo, s5, s4
-; GFX10-NEXT:    s_cbranch_scc1 .LBB0_1
+; GFX10-NEXT:    s_andn2_b32 exec_lo, exec_lo, s4
+; GFX10-NEXT:    s_cbranch_execnz .LBB0_1
 ; GFX10-NEXT:  ; %bb.2: ; %exit
+; GFX10-NEXT:    s_or_b32 exec_lo, exec_lo, s4
 ; GFX10-NEXT:    v_and_b32_e32 v0, 1, v5
 ; GFX10-NEXT:    v_cmp_ne_u32_e32 vcc_lo, 0, v0
 ; GFX10-NEXT:    v_cndmask_b32_e64 v0, 0, 1.0, vcc_lo
@@ -58,10 +58,10 @@ define void @temporal_divergent_i1_non_phi(float %val, ptr %addr) {
 ; GFX10-NEXT:    v_add_nc_u32_e32 v4, 1, v4
 ; GFX10-NEXT:    v_cmp_gt_f32_e32 vcc_lo, v5, v0
 ; GFX10-NEXT:    s_or_b32 s4, vcc_lo, s4
-; GFX10-NEXT:    s_andn2_b32 s5, exec_lo, s4
-; GFX10-NEXT:    s_cselect_b32 exec_lo, s5, s4
-; GFX10-NEXT:    s_cbranch_scc1 .LBB1_1
+; GFX10-NEXT:    s_andn2_b32 exec_lo, exec_lo, s4
+; GFX10-NEXT:    s_cbranch_execnz .LBB1_1
 ; GFX10-NEXT:  ; %bb.2: ; %exit
+; GFX10-NEXT:    s_or_b32 exec_lo, exec_lo, s4
 ; GFX10-NEXT:    v_and_b32_e32 v0, 1, v3
 ; GFX10-NEXT:    v_cmp_ne_u32_e32 vcc_lo, 0, v0
 ; GFX10-NEXT:    v_cndmask_b32_e64 v0, 0, 1.0, vcc_lo
@@ -113,10 +113,9 @@ define amdgpu_cs void @loop_with_1break(ptr addrspace(1) %x, i32 %x.size, ptr ad
 ; GFX10-NEXT:    s_and_b32 s0, exec_lo, s0
 ; GFX10-NEXT:    s_or_b32 s4, s0, s4
 ; GFX10-NEXT:    s_and_b32 s0, 1, s1
-; GFX10-NEXT:    s_andn2_b32 s1, exec_lo, s4
 ; GFX10-NEXT:    v_cmp_ne_u32_e64 s0, 0, s0
-; GFX10-NEXT:    s_cselect_b32 exec_lo, s1, s4
-; GFX10-NEXT:    s_cbranch_scc0 .LBB2_5
+; GFX10-NEXT:    s_andn2_b32 exec_lo, exec_lo, s4
+; GFX10-NEXT:    s_cbranch_execz .LBB2_5
 ; GFX10-NEXT:  .LBB2_3: ; %A
 ; GFX10-NEXT:    ; =>This Inner Loop Header: Depth=1
 ; GFX10-NEXT:    v_ashrrev_i32_e32 v6, 31, v5
@@ -133,11 +132,10 @@ define amdgpu_cs void @loop_with_1break(ptr addrspace(1) %x, i32 %x.size, ptr ad
 ; GFX10-NEXT:    ; implicit-def: $vgpr5
 ; GFX10-NEXT:    s_branch .LBB2_2
 ; GFX10-NEXT:  .LBB2_5: ; %loop.exit.guard
-; GFX10-NEXT:    s_and_b32 s0, s0, exec_lo
-; GFX10-NEXT:    s_xor_b32 s1, s0, exec_lo
-; GFX10-NEXT:    s_cmp_lg_u32 s0, 0
-; GFX10-NEXT:    s_cmov_b32 exec_lo, s0
-; GFX10-NEXT:    s_cbranch_scc0 .LBB2_7
+; GFX10-NEXT:    s_or_b32 exec_lo, exec_lo, s4
+; GFX10-NEXT:    s_and_saveexec_b32 s1, s0
+; GFX10-NEXT:    s_xor_b32 s1, exec_lo, s1
+; GFX10-NEXT:    s_cbranch_execz .LBB2_7
 ; GFX10-NEXT:  ; %bb.6: ; %break.body
 ; GFX10-NEXT:    v_mov_b32_e32 v0, 10
 ; GFX10-NEXT:    v_mov_b32_e32 v1, 0

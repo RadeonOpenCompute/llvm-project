@@ -1,4 +1,3 @@
-; XFAIL: *
 ; RUN: llc < %s -mtriple=amdgcn -verify-machineinstrs | FileCheck %s
 
 ; This tests that the llvm.SI.end.cf intrinsic is not inserted into the

@@ -3124,7 +3124,7 @@ def int_amdgcn_loop : Intrinsic<[llvm_i1_ty],
   [llvm_anyint_ty], [IntrConvergent, IntrWillReturn, IntrNoCallback, IntrNoFree]
 >;
 
-def int_amdgcn_wave_reconverge : Intrinsic<[], [llvm_anyint_ty],
+def int_amdgcn_end_cf : Intrinsic<[], [llvm_anyint_ty],
   [IntrConvergent, IntrWillReturn, IntrNoCallback, IntrNoFree]>;
 
 // Represent unreachable in a divergent region.
