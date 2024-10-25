@@ -148,6 +148,9 @@ void Flang::addCodegenOptions(const ArgList &Args,
   if (shouldLoopVersion(Args))
     CmdArgs.push_back("-fversion-loops-for-stride");
 
+  if (Args.getLastArg(options::OPT_fno_add_alias_tags))
+    CmdArgs.push_back("-fno-add-alias-tags");
+
   Args.addAllArgs(CmdArgs, {options::OPT_flang_experimental_hlfir,
                             options::OPT_flang_deprecated_no_hlfir,
                             options::OPT_flang_experimental_integer_overflow,

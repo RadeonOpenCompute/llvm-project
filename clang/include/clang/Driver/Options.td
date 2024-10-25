@@ -6842,6 +6842,10 @@ def fno_automatic : Flag<["-"], "fno-automatic">, Group<f_Group>,
 defm stack_arrays : BoolOptionWithoutMarshalling<"f", "stack-arrays",
   PosFlag<SetTrue, [], [ClangOption], "Attempt to allocate array temporaries on the stack, no matter their size">,
   NegFlag<SetFalse, [], [ClangOption], "Allocate array temporaries on the heap (default)">>;
+
+def fno_add_alias_tags : Flag<["-"], "fno-add-alias-tags">, Group<f_Group>,
+  HelpText<"Disable adding alias tags">;
+
 defm loop_versioning : BoolOptionWithoutMarshalling<"f", "version-loops-for-stride",
   PosFlag<SetTrue, [], [ClangOption], "Create unit-strided versions of loops">,
    NegFlag<SetFalse, [], [ClangOption], "Do not create unit-strided loops (default)">>;
