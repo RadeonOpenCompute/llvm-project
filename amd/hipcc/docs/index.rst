@@ -12,6 +12,10 @@ HIPCC documentation
 
 There are both Perl and C++ executable versions of the ``hipcc`` and ``hipconfig`` compiler driver utilities provided. By default the C++ version is used when ``hipcc`` is run. To enable the Perl versions of these commands set the environment variable ``HIP_USE_PERL_SCRIPTS=1``.
 
+.. note:: 
+
+  While C++ is the default command, HIPCC still requires Perl to be installed for its operation. 
+
 The documentation is structured as follows:
 
 .. grid:: 2
