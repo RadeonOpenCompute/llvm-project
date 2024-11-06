@@ -4210,31 +4210,54 @@ extractHostEvalClauses(omp::TargetOp targetOp, Value &numThreads,
 /// corresponding global `ConfigurationEnvironmentTy` structure.
 static void initTargetDefaultBounds(
     omp::TargetOp targetOp,
-    llvm::OpenMPIRBuilder::TargetKernelDefaultBounds &bounds, bool isGPU) {
-  Value hostNumThreads, hostNumTeamsLower, hostNumTeamsUpper, hostThreadLimit;
-  extractHostEvalClauses(targetOp, hostNumThreads, hostNumTeamsLower,
-                         hostNumTeamsUpper, hostThreadLimit);
+    llvm::OpenMPIRBuilder::TargetKernelDefaultBounds &bounds,
+    bool isTargetDevice, bool isGPU) {
+  // TODO: Handle constant 'if' clauses.
+  Operation *capturedOp = targetOp.getInnermostCapturedOmpOp();
 
-  // TODO Handle constant IF clauses
-  Operation *innermostCapturedOmpOp = targetOp.getInnermostCapturedOmpOp();
+  // Extract values for host-evaluated clauses.
+  Value numThreads, numTeamsLower, numTeamsUpper, threadLimit;
+  if (!isTargetDevice) {
+    extractHostEvalClauses(targetOp, numThreads, numTeamsLower, numTeamsUpper,
+                           threadLimit);
+  } else {
+    // In the target device, values for these clauses are not passed as
+    // host_eval, but instead evaluated prior to entry to the region. This
+    // ensures values are mapped and available inside of the target region.
+    if (auto teamsOp = castOrGetParentOfType<omp::TeamsOp>(capturedOp)) {
+      numTeamsLower = teamsOp.getNumTeamsLower();
+      numTeamsUpper = teamsOp.getNumTeamsUpper();
+      threadLimit = teamsOp.getThreadLimit();
+    }
+
+    if (auto parallelOp = castOrGetParentOfType<omp::ParallelOp>(capturedOp))
+      numThreads = parallelOp.getNumThreads();
+  }
+
+  auto extractConstInteger = [](Value value) -> std::optional<int64_t> {
+    if (auto constOp =
+            dyn_cast_if_present<LLVM::ConstantOp>(value.getDefiningOp()))
+      if (auto constAttr = dyn_cast<IntegerAttr>(constOp.getValue()))
+        return constAttr.getInt();
+
+    return std::nullopt;
+  };
 
   // Handle clauses impacting the number of teams.
+
   int32_t minTeamsVal = 1, maxTeamsVal = -1;
-  if (castOrGetParentOfType<omp::TeamsOp>(innermostCapturedOmpOp)) {
+  if (castOrGetParentOfType<omp::TeamsOp>(capturedOp)) {
     // TODO: Use `hostNumTeamsLower` to initialize `minTeamsVal`. For now, match
     // clang and set min and max to the same value.
-    if (hostNumTeamsUpper) {
-      if (auto constOp = dyn_cast_if_present<LLVM::ConstantOp>(
-              hostNumTeamsUpper.getDefiningOp())) {
-        if (auto constAttr = dyn_cast<IntegerAttr>(constOp.getValue()))
-          minTeamsVal = maxTeamsVal = constAttr.getInt();
-      }
+    if (numTeamsUpper) {
+      if (auto val = extractConstInteger(numTeamsUpper))
+        minTeamsVal = maxTeamsVal = *val;
     } else {
       minTeamsVal = maxTeamsVal = 0;
     }
-  } else if (castOrGetParentOfType<omp::ParallelOp>(innermostCapturedOmpOp,
+  } else if (castOrGetParentOfType<omp::ParallelOp>(capturedOp,
                                                     /*immediateParent=*/true) ||
-             castOrGetParentOfType<omp::SimdOp>(innermostCapturedOmpOp,
+             castOrGetParentOfType<omp::SimdOp>(capturedOp,
                                                 /*immediateParent=*/true)) {
     minTeamsVal = maxTeamsVal = 1;
   } else {
@@ -4242,32 +4265,31 @@ static void initTargetDefaultBounds(
   }
 
   // Handle clauses impacting the number of threads.
-  int32_t targetThreadLimitVal = -1;
-  int32_t teamsThreadLimitVal = -1;
-  int32_t maxThreadsVal = -1;
 
-  auto setMaxValueFromClause = [](Value clauseValue, int32_t &result) {
-    if (clauseValue) {
-      if (auto constOp = dyn_cast_if_present<LLVM::ConstantOp>(
-              clauseValue.getDefiningOp())) {
-        if (auto constAttr = dyn_cast<IntegerAttr>(constOp.getValue()))
-          result = constAttr.getInt();
-      }
-      // Found an applicable clause, so it's not undefined. Mark as unknown
-      // because it's not constant.
-      if (result < 0)
-        result = 0;
-    }
+  auto setMaxValueFromClause = [&extractConstInteger](Value clauseValue,
+                                                      int32_t &result) {
+    if (!clauseValue)
+      return;
+
+    if (auto val = extractConstInteger(clauseValue))
+      result = *val;
+
+    // Found an applicable clause, so it's not undefined. Mark as unknown
+    // because it's not constant.
+    if (result < 0)
+      result = 0;
   };
 
   // Extract THREAD_LIMIT clause from TARGET and TEAMS directives.
+  int32_t targetThreadLimitVal = -1, teamsThreadLimitVal = -1;
   setMaxValueFromClause(targetOp.getThreadLimit(), targetThreadLimitVal);
-  setMaxValueFromClause(hostThreadLimit, teamsThreadLimitVal);
+  setMaxValueFromClause(threadLimit, teamsThreadLimitVal);
 
   // Extract MAX_THREADS clause from PARALLEL or set to 1 if it's SIMD.
-  if (castOrGetParentOfType<omp::ParallelOp>(innermostCapturedOmpOp))
-    setMaxValueFromClause(hostNumThreads, maxThreadsVal);
-  else if (castOrGetParentOfType<omp::SimdOp>(innermostCapturedOmpOp,
+  int32_t maxThreadsVal = -1;
+  if (castOrGetParentOfType<omp::ParallelOp>(capturedOp))
+    setMaxValueFromClause(numThreads, maxThreadsVal);
+  else if (castOrGetParentOfType<omp::SimdOp>(capturedOp,
                                               /*immediateParent=*/true))
     maxThreadsVal = 1;
 
@@ -4285,9 +4307,8 @@ static void initTargetDefaultBounds(
   // Calculate reduction data size, limited to single reduction variable
   // for now.
   int32_t reductionDataSize = 0;
-  if (isGPU && innermostCapturedOmpOp) {
-    if (auto teamsOp =
-            castOrGetParentOfType<omp::TeamsOp>(innermostCapturedOmpOp)) {
+  if (isGPU && capturedOp) {
+    if (auto teamsOp = castOrGetParentOfType<omp::TeamsOp>(capturedOp)) {
       reductionDataSize = getTeamsReductionDataSize(teamsOp);
     }
   }
@@ -4514,7 +4535,7 @@ convertOmpTarget(Operation &opInst, llvm::IRBuilderBase &builder,
 
   llvm::SmallVector<llvm::Value *, 4> kernelInput;
   llvm::OpenMPIRBuilder::TargetKernelDefaultBounds defaultBounds;
-  initTargetDefaultBounds(targetOp, defaultBounds, isGPU);
+  initTargetDefaultBounds(targetOp, defaultBounds, isTargetDevice, isGPU);
 
   // Collect host-evaluated values needed to properly launch the kernel from the
   // host.

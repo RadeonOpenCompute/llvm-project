@@ -33,7 +33,7 @@ end subroutine teams
 subroutine distribute_parallel_do()
   ! BOTH: omp.target
   
-  ! HOST-SAME: host_eval(%{{.*}} -> %[[NUM_THREADS:.*]], %{{.*}} -> %[[LB:.*]], %{{.*}} -> %[[UB:.*]], %{{.*}} -> %[[STEP:.*]] : i32, i32, i32, i32)
+  ! HOST-SAME: host_eval(%{{.*}} -> %[[LB:.*]], %{{.*}} -> %[[UB:.*]], %{{.*}} -> %[[STEP:.*]], %{{.*}} -> %[[NUM_THREADS:.*]] : i32, i32, i32, i32)
   
   ! DEVICE-NOT: host_eval({{.*}})
   ! DEVICE-SAME: {
@@ -95,7 +95,7 @@ end subroutine distribute_parallel_do
 subroutine distribute_parallel_do_simd()
   ! BOTH: omp.target
   
-  ! HOST-SAME: host_eval(%{{.*}} -> %[[NUM_THREADS:.*]], %{{.*}} -> %[[LB:.*]], %{{.*}} -> %[[UB:.*]], %{{.*}} -> %[[STEP:.*]] : i32, i32, i32, i32)
+  ! HOST-SAME: host_eval(%{{.*}} -> %[[LB:.*]], %{{.*}} -> %[[UB:.*]], %{{.*}} -> %[[STEP:.*]], %{{.*}} -> %[[NUM_THREADS:.*]] : i32, i32, i32, i32)
   
   ! DEVICE-NOT: host_eval({{.*}})
   ! DEVICE-SAME: {
