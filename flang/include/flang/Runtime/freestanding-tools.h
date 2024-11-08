@@ -80,7 +80,7 @@
 #define STD_MEMSET_UNSUPPORTED 1
 #define STD_MEMCPY_USE_BUILTIN 1
 #define STD_MEMCPY_UNSUPPORTED 1
-#define STD_MEMMOVE_USE_BUILTIN 1
+// #define STD_MEMMOVE_USE_BUILTIN 1  // address now taken in assign.h
 #define STD_MEMMOVE_UNSUPPORTED 1
 // #define STD_STRLEN_USE_BUILTIN 1  // still resolves to strlen
 #define STD_STRLEN_UNSUPPORTED 1
@@ -162,7 +162,7 @@ static inline RT_API_ATTRS void *memmove(
   const char *from{reinterpret_cast<const char *>(src)};
 
   if (to == from) {
-    return;
+    return dest;
   }
   if (to + count <= from || from + count <= to) {
     memcpy(dest, src, count);
