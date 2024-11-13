@@ -4103,8 +4103,7 @@ extractHostEvalClauses(omp::TargetOp targetOp, Value &numThreads,
 /// corresponding global `ConfigurationEnvironmentTy` structure.
 static void initTargetDefaultBounds(
     omp::TargetOp targetOp,
-    llvm::OpenMPIRBuilder::TargetKernelDefaultBounds &bounds,
-    bool isTargetDevice, bool isGPU) {
+    llvm::OpenMPIRBuilder::TargetKernelDefaultBounds &bounds, bool isGPU) {
   Value hostNumThreads, hostNumTeamsLower, hostNumTeamsUpper, hostThreadLimit;
   extractHostEvalClauses(targetOp, hostNumThreads, hostNumTeamsLower,
                          hostNumTeamsUpper, hostThreadLimit);
@@ -4114,15 +4113,12 @@ static void initTargetDefaultBounds(
 
   // Handle clauses impacting the number of teams.
   int32_t minTeamsVal = 1, maxTeamsVal = -1;
-  if (auto teamsOp =
-          castOrGetParentOfType<omp::TeamsOp>(innermostCapturedOmpOp)) {
-    // TODO Use teamsOp.getNumTeamsLower() to initialize `minTeamsVal`. For now,
-    // just match clang and set min and max to the same value.
-    Value numTeamsClause =
-        isTargetDevice ? teamsOp.getNumTeamsUpper() : hostNumTeamsUpper;
-    if (numTeamsClause) {
+  if (castOrGetParentOfType<omp::TeamsOp>(innermostCapturedOmpOp)) {
+    // TODO: Use `hostNumTeamsLower` to initialize `minTeamsVal`. For now, match
+    // clang and set min and max to the same value.
+    if (hostNumTeamsUpper) {
       if (auto constOp = dyn_cast_if_present<LLVM::ConstantOp>(
-              numTeamsClause.getDefiningOp())) {
+              hostNumTeamsUpper.getDefiningOp())) {
         if (auto constAttr = dyn_cast<IntegerAttr>(constOp.getValue()))
           minTeamsVal = maxTeamsVal = constAttr.getInt();
       }
@@ -4159,26 +4155,14 @@ static void initTargetDefaultBounds(
 
   // Extract THREAD_LIMIT clause from TARGET and TEAMS directives.
   setMaxValueFromClause(targetOp.getThreadLimit(), targetThreadLimitVal);
-
-  if (auto teamsOp =
-          castOrGetParentOfType<omp::TeamsOp>(innermostCapturedOmpOp)) {
-    Value threadLimitClause =
-        isTargetDevice ? teamsOp.getThreadLimit() : hostThreadLimit;
-    setMaxValueFromClause(threadLimitClause, teamsThreadLimitVal);
-  }
+  setMaxValueFromClause(hostThreadLimit, teamsThreadLimitVal);
 
   // Extract MAX_THREADS clause from PARALLEL or set to 1 if it's SIMD.
-  if (innermostCapturedOmpOp) {
-    if (auto parallelOp =
-            castOrGetParentOfType<omp::ParallelOp>(innermostCapturedOmpOp)) {
-      Value numThreadsClause =
-          isTargetDevice ? parallelOp.getNumThreads() : hostNumThreads;
-      setMaxValueFromClause(numThreadsClause, maxThreadsVal);
-    } else if (castOrGetParentOfType<omp::SimdOp>(innermostCapturedOmpOp,
-                                                  /*immediateParent=*/true)) {
-      maxThreadsVal = 1;
-    }
-  }
+  if (castOrGetParentOfType<omp::ParallelOp>(innermostCapturedOmpOp))
+    setMaxValueFromClause(hostNumThreads, maxThreadsVal);
+  else if (castOrGetParentOfType<omp::SimdOp>(innermostCapturedOmpOp,
+                                              /*immediateParent=*/true))
+    maxThreadsVal = 1;
 
   // For max values, < 0 means unset, == 0 means set but unknown. Select the
   // minimum value between MAX_THREADS and THREAD_LIMIT clauses that were set.
@@ -4423,7 +4407,7 @@ convertOmpTarget(Operation &opInst, llvm::IRBuilderBase &builder,
 
   llvm::SmallVector<llvm::Value *, 4> kernelInput;
   llvm::OpenMPIRBuilder::TargetKernelDefaultBounds defaultBounds;
-  initTargetDefaultBounds(targetOp, defaultBounds, isTargetDevice, isGPU);
+  initTargetDefaultBounds(targetOp, defaultBounds, isGPU);
 
   // Collect host-evaluated values needed to properly launch the kernel from the
   // host.
