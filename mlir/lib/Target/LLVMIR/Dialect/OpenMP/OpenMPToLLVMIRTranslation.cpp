@@ -1294,13 +1294,14 @@ static LogicalResult createReductionsAndCleanup(
     llvm::OpenMPIRBuilder::InsertPointTy &allocaIP,
     SmallVectorImpl<omp::DeclareReductionOp> &reductionDecls,
     ArrayRef<llvm::Value *> privateReductionVariables, ArrayRef<bool> isByRef,
-    SmallVector<OwningReductionGen> &owningReductionGens,
-    SmallVector<OwningAtomicReductionGen> &owningAtomicReductionGens,
-    SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> &reductionInfos,
     bool isNowait = false, bool isTeamsReduction = false) {
   // Process the reductions if required.
   if (op.getNumReductionVars() == 0)
     return success();
+
+  SmallVector<OwningReductionGen> owningReductionGens;
+  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
+  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
 
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
 
@@ -1605,13 +1606,9 @@ convertOmpSections(Operation &opInst, llvm::IRBuilderBase &builder,
   builder.restoreIP(*afterIP);
 
   // Process the reductions if required.
-  SmallVector<OwningReductionGen> owningReductionGens;
-  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
-  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
   return createReductionsAndCleanup(
       sectionsOp, builder, moduleTranslation, allocaIP, reductionDecls,
-      privateReductionVariables, isByRef, owningReductionGens,
-      owningAtomicReductionGens, reductionInfos, sectionsOp.getNowait());
+      privateReductionVariables, isByRef, sectionsOp.getNowait());
 }
 
 /// Converts an OpenMP single construct into LLVM IR using OpenMPIRBuilder.
@@ -1728,15 +1725,11 @@ convertOmpTeams(omp::TeamsOp op, llvm::IRBuilderBase &builder,
   builder.restoreIP(*afterIP);
 
   // Process the reductions if required.
-  SmallVector<OwningReductionGen> owningReductionGens;
-  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
-  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
   return createReductionsAndCleanup(
       op, builder, moduleTranslation, allocaIP, reductionDecls,
-      privateReductionVariables, isByRef, owningReductionGens,
-      owningAtomicReductionGens, reductionInfos,
+      privateReductionVariables, isByRef,
       /*isNoWait*/ false, /*isTeamsReduction*/ true);
-  
+
   return success();
 }
 
@@ -1931,13 +1924,12 @@ convertOmpTaskwaitOp(omp::TaskwaitOp twOp, llvm::IRBuilderBase &builder,
 }
 
 /// Converts an OpenMP workshare loop into LLVM IR using OpenMPIRBuilder.
-static LogicalResult convertOmpWsloop(
-    Operation &opInst, llvm::IRBuilderBase &builder,
-    LLVM::ModuleTranslation &moduleTranslation,
-    llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP,
-    SmallVector<OwningReductionGen> &owningReductionGens,
-    SmallVector<OwningAtomicReductionGen> &owningAtomicReductionGens,
-    SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> &reductionInfos) {
+static LogicalResult
+convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
+                 LLVM::ModuleTranslation &moduleTranslation) {
+  llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP =
+      findAllocaInsertPoint(builder, moduleTranslation);
+
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
   // FIXME: This ignores any other nested wrappers (e.g. omp.simd).
   auto wsloopOp = cast<omp::WsloopOp>(opInst);
@@ -2114,23 +2106,8 @@ static LogicalResult convertOmpWsloop(
   // Process the reductions if required.
   return createReductionsAndCleanup(
       wsloopOp, builder, moduleTranslation, allocaIP, reductionDecls,
-      privateReductionVariables, isByRef, owningReductionGens,
-      owningAtomicReductionGens, reductionInfos, wsloopOp.getNowait(),
+      privateReductionVariables, isByRef, wsloopOp.getNowait(),
       /*isTeamsReduction=*/false);
-}
-
-static LogicalResult
-convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
-                 LLVM::ModuleTranslation &moduleTranslation) {
-  llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP =
-      findAllocaInsertPoint(builder, moduleTranslation);
-  SmallVector<OwningReductionGen> owningReductionGens;
-  SmallVector<OwningAtomicReductionGen> owningAtomicReductionGens;
-  SmallVector<llvm::OpenMPIRBuilder::ReductionInfo> reductionInfos;
-
-  return convertOmpWsloop(opInst, builder, moduleTranslation, redAllocaIP,
-                          owningReductionGens, owningAtomicReductionGens,
-                          reductionInfos);
 }
 
 /// Converts the OpenMP parallel operation to LLVM IR.
