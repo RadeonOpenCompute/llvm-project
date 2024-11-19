@@ -2090,8 +2090,9 @@ public:
   /// the kernel args buffer to the specified memory manager.
   Error
   pushKernelLaunch(const AMDGPUKernelTy &Kernel, void *KernelArgs,
-                   uint32_t NumThreads, uint64_t NumBlocks, uint32_t GroupSize,
-                   uint32_t StackSize, AMDGPUMemoryManagerTy &MemoryManager,
+                   void *PoolMem, uint32_t NumThreads, uint64_t NumBlocks,
+                   uint32_t GroupSize, uint32_t StackSize,
+                   AMDGPUMemoryManagerTy &MemoryManager,
                    std::unique_ptr<ompt::OmptEventInfoTy> OmptInfo = nullptr) {
     if (Queue == nullptr)
       return Plugin::error("Target queue was nullptr");
@@ -2109,7 +2110,7 @@ public:
     auto [Curr, InputSignal] = consume(OutputSignal);
 
     // Setup the post action to release the kernel args buffer.
-    if (auto Err = Slots[Curr].schedReleaseBuffer(KernelArgs, MemoryManager))
+    if (auto Err = Slots[Curr].schedReleaseBuffer(PoolMem, MemoryManager))
       return Err;
 
 #ifdef OMPT_SUPPORT
@@ -4943,9 +4944,39 @@ Error AMDGPUKernelTy::launchImpl(GenericDeviceTy &GenericDevice,
   AMDHostDeviceTy &HostDevice = AMDGPUPlugin.getHostDevice();
   AMDGPUMemoryManagerTy &ArgsMemoryManager = HostDevice.getArgsMemoryManager();
 
-  void *AllArgs = nullptr;
-  if (auto Err = ArgsMemoryManager.allocate(ArgsSize, &AllArgs))
+  // Do we also need to check
+  //    HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_ALLOWED
+  // to see whether returned Align is well-defined? Or is it already checked?
+  size_t PoolAlign = 0;
+  if (auto Err = HostDevice.getArgsMemoryPool().getAttr(
+          HSA_AMD_MEMORY_POOL_INFO_RUNTIME_ALLOC_ALIGNMENT, PoolAlign))
     return Err;
+
+  // Next, get the cache alignment needs of the device.
+  // Some device needing 128B alignment returns 64.
+  // Artificially bumping up until the bug is fixed.
+  uint32_t CacheAlign = 0;
+  auto Status =
+      static_cast<AMDGPUDeviceTy *>(&GenericDevice)
+          ->getDeviceAttrRaw(HSA_AMD_AGENT_INFO_CACHELINE_SIZE, CacheAlign);
+  if (Status != HSA_STATUS_SUCCESS || CacheAlign < 128)
+    CacheAlign = 128;
+
+  // Bump up the allocation size if pointer adjustment might be needed
+  auto AllocSize = ArgsSize;
+  if (PoolAlign < CacheAlign)
+    AllocSize += (CacheAlign - 1);
+
+  void *PoolMem = nullptr;
+  if (auto Err = ArgsMemoryManager.allocate(AllocSize, &PoolMem))
+    return Err;
+
+  // Adjust the returned memory if needed.
+  void *AllArgs = PoolMem;
+  if (AllocSize != ArgsSize)
+    if (auto Diff =
+            reinterpret_cast<std::uintptr_t>(PoolMem) & (CacheAlign - 1))
+      AllArgs = reinterpret_cast<char *>(PoolMem) - Diff + CacheAlign;
 
   // Account for user requested dynamic shared memory.
   uint32_t GroupSize = getGroupSize();
@@ -5027,10 +5058,10 @@ Error AMDGPUKernelTy::launchImpl(GenericDeviceTy &GenericDevice,
   auto LocalOmptEventInfo = getOrNullOmptEventInfo(AsyncInfoWrapper);
 
   // Push the kernel launch into the stream.
-  return Stream->pushKernelLaunch(*this, AllArgs, NumThreads, NumBlocks,
-                                  GroupSize, static_cast<uint32_t>(StackSize),
-                                  ArgsMemoryManager,
-                                  std::move(LocalOmptEventInfo));
+  return Stream->pushKernelLaunch(
+      *this, AllArgs, PoolMem, NumThreads, NumBlocks, GroupSize,
+      static_cast<uint32_t>(StackSize), ArgsMemoryManager,
+      std::move(LocalOmptEventInfo));
 }
 
 void AMDGPUKernelTy::printAMDOneLineKernelTrace(GenericDeviceTy &GenericDevice,
