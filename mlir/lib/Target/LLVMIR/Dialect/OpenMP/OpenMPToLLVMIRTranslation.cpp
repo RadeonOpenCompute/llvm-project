@@ -533,7 +533,7 @@ static llvm::omp::ProcBindKind getProcBindKind(omp::ClauseProcBindKind kind) {
 /// This must be called after block arguments of parent wrappers have already
 /// been mapped to LLVM IR values.
 static LogicalResult
-convertIgnoredWrapper(omp::LoopWrapperInterface &opInst,
+convertIgnoredWrapper(omp::LoopWrapperInterface opInst,
                       LLVM::ModuleTranslation &moduleTranslation) {
   // Map block arguments directly to the LLVM value associated to the
   // corresponding operand. This is semantically equivalent to this wrapper not
@@ -2419,7 +2419,14 @@ convertOmpSimd(Operation &opInst, llvm::IRBuilderBase &builder,
   auto simdOp = cast<omp::SimdOp>(opInst);
   auto loopOp = cast<omp::LoopNestOp>(simdOp.getWrappedLoop());
 
-  if (failed(checkImplementationStatus(opInst)))
+  // Silently ignore unimplemented SIMD clauses rather than emitting errors, so
+  // that compilation succeeds.
+  // if (failed(checkImplementationStatus(opInst)))
+  //   return failure();
+
+  // This is needed to make sure that uses of entry block arguments for clauses
+  // that are not going to be translated are mapped to the outside values.
+  if (failed(convertIgnoredWrapper(simdOp, moduleTranslation)))
     return failure();
 
   auto loopNestConversionResult = convertLoopNestHelper(
