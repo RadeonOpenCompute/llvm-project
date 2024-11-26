@@ -26,6 +26,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
+#include "llvm/Frontend/OpenMP/OMPDeviceConstants.h"
 #include "llvm/Frontend/OpenMP/OMPIRBuilder.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/IRBuilder.h"
@@ -4335,7 +4336,7 @@ static void initTargetRuntimeBounds(
   if (numThreads)
     bounds.MaxThreads = moduleTranslation.lookupValue(numThreads);
 
-  if (targetOp.isTargetSPMDLoop()) {
+  if (targetOp.getKernelExecFlags() != llvm::omp::OMP_TGT_EXEC_MODE_GENERIC) {
     llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
     bounds.LoopTripCount = nullptr;
 
@@ -4549,10 +4550,11 @@ convertOmpTarget(Operation &opInst, llvm::IRBuilderBase &builder,
 
   llvm::OpenMPIRBuilder::InsertPointOrErrorTy afterIP =
       moduleTranslation.getOpenMPBuilder()->createTarget(
-          ompLoc, targetOp.isTargetSPMDLoop(), isOffloadEntry, ifCond, allocaIP,
-          builder.saveIP(), entryInfo, defaultBounds, runtimeBounds,
-          kernelInput, genMapInfoCB, bodyCB, argAccessorCB, dds,
-          targetOp.getNowait());
+          ompLoc,
+          targetOp.getKernelExecFlags() == llvm::omp::OMP_TGT_EXEC_MODE_SPMD,
+          isOffloadEntry, ifCond, allocaIP, builder.saveIP(), entryInfo,
+          defaultBounds, runtimeBounds, kernelInput, genMapInfoCB, bodyCB,
+          argAccessorCB, dds, targetOp.getNowait());
 
   if (failed(handleError(afterIP, opInst)))
     return failure();

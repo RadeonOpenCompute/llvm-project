@@ -12,7 +12,7 @@ subroutine distribute_parallel_do_generic()
     call foo(i)
   end do
   !$omp end distribute parallel do
-  call bar()
+  call bar() !< Prevents this from being SPMD.
   !$omp end teams
   !$omp end target
 
@@ -25,7 +25,7 @@ subroutine distribute_parallel_do_generic()
     call foo(i)
   end do
   !$omp end distribute parallel do
-  call bar()
+  call bar() !< Prevents this from being SPMD.
   !$omp end target teams
 
   ! CHECK: omp.target
@@ -83,7 +83,7 @@ subroutine distribute_parallel_do_simd_generic()
     call foo(i)
   end do
   !$omp end distribute parallel do simd
-  call bar()
+  call bar() !< Prevents this from being SPMD.
   !$omp end teams
   !$omp end target
 
@@ -96,7 +96,7 @@ subroutine distribute_parallel_do_simd_generic()
     call foo(i)
   end do
   !$omp end distribute parallel do simd
-  call bar()
+  call bar() !< Prevents this from being SPMD.
   !$omp end target teams
 
   ! CHECK: omp.target

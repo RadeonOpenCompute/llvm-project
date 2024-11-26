@@ -578,7 +578,6 @@ static void processHostEvalClauses(lower::AbstractConverter &converter,
     HostEvalInfo &hostInfo = hostEvalInfo.back();
 
     switch (extractOmpDirective(*ompEval)) {
-    // Cases where 'teams' and target SPMD clauses might be present.
     case OMPD_teams_distribute_parallel_do:
     case OMPD_teams_distribute_parallel_do_simd:
       cp.processThreadLimit(stmtCtx, hostInfo.ops);
@@ -589,39 +588,38 @@ static void processHostEvalClauses(lower::AbstractConverter &converter,
       [[fallthrough]];
     case OMPD_distribute_parallel_do:
     case OMPD_distribute_parallel_do_simd:
-      cp.processCollapse(loc, eval, hostInfo.ops, hostInfo.iv);
       cp.processNumThreads(stmtCtx, hostInfo.ops);
+      [[fallthrough]];
+    case OMPD_distribute:
+    case OMPD_distribute_simd:
+      cp.processCollapse(loc, eval, hostInfo.ops, hostInfo.iv);
       break;
 
-    // Cases where 'teams' clauses might be present, and target SPMD is
-    // possible by looking at nested evaluations.
     case OMPD_teams:
       cp.processThreadLimit(stmtCtx, hostInfo.ops);
       [[fallthrough]];
     case OMPD_target_teams:
       cp.processNumTeams(stmtCtx, hostInfo.ops);
-      processSingleNestedIf([](Directive nestedDir) {
-        return nestedDir == OMPD_distribute_parallel_do ||
-               nestedDir == OMPD_distribute_parallel_do_simd;
-      });
+      processSingleNestedIf(
+          [](Directive nestedDir) { return topDistributeSet.test(nestedDir); });
       break;
 
-    // Cases where only 'teams' host-evaluated clauses might be present.
     case OMPD_teams_distribute:
     case OMPD_teams_distribute_simd:
       cp.processThreadLimit(stmtCtx, hostInfo.ops);
       [[fallthrough]];
     case OMPD_target_teams_distribute:
     case OMPD_target_teams_distribute_simd:
+      cp.processCollapse(loc, eval, hostInfo.ops, hostInfo.iv);
       cp.processNumTeams(stmtCtx, hostInfo.ops);
       break;
 
     // Standalone 'target' case.
-    case OMPD_target: {
+    case OMPD_target:
       processSingleNestedIf(
           [](Directive nestedDir) { return topTeamsSet.test(nestedDir); });
       break;
-    }
+
     default:
       break;
     }

@@ -1262,9 +1262,9 @@ def TargetOp : OpenMP_Op<"target", traits = [
     /// operations, the top level one will be the one captured.
     Operation *getInnermostCapturedOmpOp();
 
-    /// Tells whether this target region represents a single worksharing loop
-    /// wrapped by omp.teams omp.distribute and omp.parallel constructs.
-    bool isTargetSPMDLoop();
+    /// Infers the kernel type (Generic, SPMD or Generic-SPMD) based on the
+    /// contents of the target region.
+    llvm::omp::OMPTgtExecModeFlags getKernelExecFlags();
   }] # clausesExtraClassDeclaration;
 
   let assemblyFormat = clausesAssemblyFormat # [{

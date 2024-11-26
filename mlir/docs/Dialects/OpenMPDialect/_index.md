@@ -543,9 +543,10 @@ combined with a `target` construct.
 Additionally, the runtime library targeted by the MLIR to LLVM IR translation of
 the OpenMP dialect supports the optimized launch of SPMD kernels (i.e.
 `target teams distribute parallel {do,for}` in OpenMP), which requires
-specifying in advance what the total trip count of the loop is. Consequently, it
-is also beneficial to evaluate the trip count on the host device prior to the
-kernel launch.
+specifying in advance what the total trip count of the loop is. This is also the
+case of Generic-SPMD kernels (i.e. `target teams distribute`). Consequently, it
+is also necessary to evaluate the trip count on the host device prior to the
+kernel launch in these cases.
 
 These host-evaluated values in MLIR would need to be placed outside of the
 `omp.target` region and also attached to the corresponding nested operations,
