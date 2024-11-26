@@ -1657,12 +1657,22 @@ convertOmpSingle(omp::SingleOp &singleOp, llvm::IRBuilderBase &builder,
 static bool teamsReductionContainedInDistribute(omp::TeamsOp teamsOp) {
   auto iface =
       llvm::cast<mlir::omp::BlockArgOpenMPOpInterface>(teamsOp.getOperation());
-  // Check that all uses of the reduction block arg has a distribute op parent.
+  // Check that all uses of the reduction block arg has the same distribute op
+  // parent.
+  Operation* distOp = nullptr;
   for (auto ra : iface.getReductionBlockArgs())
     for (auto &use : ra.getUses()) {
       auto useOp = use.getOwner();
-      if (!useOp->getParentOfType<omp::DistributeOp>())
+      auto currentDistOp = useOp->getParentOfType<omp::DistributeOp>();
+      // Use is not inside a distribute op - return false
+      if (!currentDistOp)
         return false;
+      // Multiple distribute operations - return false
+      Operation *currentOp = currentDistOp.getOperation();
+      if (distOp && (distOp != currentOp))
+        return false;
+
+      distOp = currentOp;
     }
   return true;
 }
