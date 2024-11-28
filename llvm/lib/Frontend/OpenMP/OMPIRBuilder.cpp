@@ -6213,7 +6213,7 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createTargetInit(
   Constant *SrcLocStr = getOrCreateSrcLocStr(Loc, SrcLocStrSize);
   Constant *Ident = getOrCreateIdent(SrcLocStr, SrcLocStrSize);
   Constant *IsSPMDVal = ConstantInt::getSigned(
-      Int8, IsSPMD ? OMP_TGT_EXEC_MODE_SPMD : OMP_TGT_EXEC_MODE_GENERIC);
+      Int8, IsSPMD ? OMP_TGT_EXEC_MODE_SPMD : OMP_TGT_EXEC_MODE_GENERIC_SPMD);
   Constant *UseGenericStateMachineVal = ConstantInt::getSigned(Int8, !IsSPMD);
   Constant *MayUseNestedParallelismVal = ConstantInt::getSigned(Int8, true);
   Constant *DebugIndentionLevelVal = ConstantInt::getSigned(Int16, 0);
@@ -6856,7 +6856,7 @@ emitExecutionMode(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
       OMPBuilder.M, Int8Ty, /*isConstant=*/true,
       llvm::GlobalValue::WeakAnyLinkage,
       llvm::ConstantInt::get(Int8Ty, Mode ? OMP_TGT_EXEC_MODE_SPMD
-                                          : OMP_TGT_EXEC_MODE_GENERIC),
+                                          : OMP_TGT_EXEC_MODE_GENERIC_SPMD),
       Twine(FunctionName, "_exec_mode"));
   GVMode->setVisibility(llvm::GlobalVariable::ProtectedVisibility);
   LLVMCompilerUsed.emplace_back(GVMode);
