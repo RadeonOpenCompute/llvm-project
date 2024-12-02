@@ -1770,6 +1770,7 @@ LogicalResult TargetOp::verify() {
 Operation *TargetOp::getInnermostCapturedOmpOp() {
   Dialect *ompDialect = (*this)->getDialect();
   Operation *capturedOp = nullptr;
+  DominanceInfo domInfo;
 
   // Process in pre-order to check operations from outermost to innermost,
   // ensuring we only enter the region of an operation if it meets the criteria
@@ -1787,9 +1788,25 @@ Operation *TargetOp::getInnermostCapturedOmpOp() {
     if (!isOmpDialect || !hasRegions)
       return WalkResult::skip();
 
+    // This operation cannot be captured if it can be executed more than once
+    // (i.e. its block's successors can reach it) or if it's not guaranteed to
+    // be executed before all exits of the region (i.e. it doesn't dominate all
+    // blocks with no successors reachable from the entry block).
+    Region *parentRegion = op->getParentRegion();
+    Block *parentBlock = op->getBlock();
+
+    for (Block *successor : parentBlock->getSuccessors())
+      if (successor->isReachable(parentBlock))
+        return WalkResult::interrupt();
+
+    for (Block &block : *parentRegion)
+      if (domInfo.isReachableFromEntry(&block) && block.hasNoSuccessors() &&
+          !domInfo.dominates(parentBlock, &block))
+        return WalkResult::interrupt();
+
     // Don't capture this op if it has a not-allowed sibling, and stop recursing
     // into nested operations.
-    for (Operation &sibling : op->getParentRegion()->getOps())
+    for (Operation &sibling : parentRegion->getOps())
       if (&sibling != op && !siblingAllowedInCapture(&sibling))
         return WalkResult::interrupt();
 
