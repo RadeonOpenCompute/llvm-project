@@ -6238,13 +6238,7 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createTargetInit(
   if (Bounds.MinTeams > 1 || Bounds.MaxTeams.front() > 0)
     writeTeamsForKernel(T, *Kernel, Bounds.MinTeams, Bounds.MaxTeams.front());
 
-  // If MaxThreads not set, select the maximum between the default workgroup
-  // size and the MinThreads value.
   int32_t MaxThreadsValue = Bounds.MaxThreads.front();
-  if (MaxThreadsValue < 0)
-    MaxThreadsValue = std::max(
-        int32_t(getGridValue(T, Kernel).GV_Default_WG_Size), Bounds.MinThreads);
-
   if (MaxThreadsValue > 0)
     writeThreadBoundsForKernel(T, *Kernel, Bounds.MinThreads, MaxThreadsValue);
 
