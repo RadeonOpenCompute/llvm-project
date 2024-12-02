@@ -3861,23 +3861,31 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
     if (loopWrappers.size() == 1) {
       // Convert a standalone DISTRIBUTE construct.
       // Static is the default.
+      llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
+      bool isGPU = ompBuilder->Config.isGPU();
+      // TODO: Unify host and target lowering for standalone DISTRIBUTE
+      if (!isGPU) {
+        auto loopNestConversionResult = convertLoopNestHelper(
+            *loopOp, builder, moduleTranslation, "omp.distribute.region");
+        if (!loopNestConversionResult)
+          return llvm::make_error<PreviouslyReportedError>();
+
+        builder.restoreIP(std::get<InsertPointTy>(*loopNestConversionResult));
+        return llvm::Error::success();
+      }
+      // TODO: Add support for clauses which are valid for DISTRIBUTE construct
       auto schedule = omp::ClauseScheduleKind::Static;
-
-      // Find the loop configuration.
-      llvm::Value *step =
-          moduleTranslation.lookupValue(loopOp.getLoopSteps()[0]);
-      llvm::Value *chunk = nullptr;
-
-      // TODO: Handle doacross loops when the ordered clause has a parameter.
       bool isOrdered = false;
       std::optional<omp::ScheduleModifier> scheduleMod;
       bool isSimd = false;
       llvm::omp::WorksharingLoopType workshareLoopType =
           llvm::omp::WorksharingLoopType::DistributeStaticLoop;
       bool loopNeedsBarier = true;
+      llvm::Value *chunk = nullptr;
       auto loopNestConversionResult = generateOMPWorkshareLoop(
           opInst, builder, moduleTranslation, loopOp, chunk, isOrdered, isSimd,
           schedule, scheduleMod, loopNeedsBarier, workshareLoopType);
+
       if (loopNestConversionResult.failed())
         return llvm::createStringError(
             "Cannot generate LLVM IR for distribute loop");
