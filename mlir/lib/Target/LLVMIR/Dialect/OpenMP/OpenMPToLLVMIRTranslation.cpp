@@ -1921,67 +1921,14 @@ convertOmpTaskwaitOp(omp::TaskwaitOp twOp, llvm::IRBuilderBase &builder,
   return success();
 }
 
-/// Converts an OpenMP workshare loop into LLVM IR using OpenMPIRBuilder.
-static LogicalResult
-convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
-                 LLVM::ModuleTranslation &moduleTranslation) {
-  llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP =
-      findAllocaInsertPoint(builder, moduleTranslation);
-
+static LogicalResult generateOMPWorkshareLoop(
+    Operation &opInst, llvm::IRBuilderBase &builder,
+    LLVM::ModuleTranslation &moduleTranslation, omp::LoopNestOp &loopOp,
+    llvm::Value *chunk, bool isOrdered, bool isSimd,
+    omp::ClauseScheduleKind &schedule,
+    std::optional<omp::ScheduleModifier> &scheduleMod, bool loopNeedsBarier,
+    llvm::omp::WorksharingLoopType workshareLoopType) {
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
-  // FIXME: This ignores any other nested wrappers (e.g. omp.simd).
-  auto wsloopOp = cast<omp::WsloopOp>(opInst);
-  if (failed(checkImplementationStatus(opInst)))
-    return failure();
-
-  auto loopOp = cast<omp::LoopNestOp>(wsloopOp.getWrappedLoop());
-
-  llvm::ArrayRef<bool> isByRef = getIsByRef(wsloopOp.getReductionByref());
-  assert(isByRef.size() == wsloopOp.getNumReductionVars());
-
-  // Static is the default.
-  auto schedule =
-      wsloopOp.getScheduleKind().value_or(omp::ClauseScheduleKind::Static);
-
-  // Find the loop configuration.
-  llvm::Value *step = moduleTranslation.lookupValue(loopOp.getLoopSteps()[0]);
-  llvm::Type *ivType = step->getType();
-  llvm::Value *chunk = nullptr;
-  if (wsloopOp.getScheduleChunk()) {
-    llvm::Value *chunkVar =
-        moduleTranslation.lookupValue(wsloopOp.getScheduleChunk());
-    chunk = builder.CreateSExtOrTrunc(chunkVar, ivType);
-  }
-
-  SmallVector<omp::DeclareReductionOp> reductionDecls;
-  collectReductionDecls(wsloopOp, reductionDecls);
-
-  SmallVector<llvm::Value *> privateReductionVariables(
-      wsloopOp.getNumReductionVars());
-  DenseMap<Value, llvm::Value *> reductionVariableMap;
-
-  MutableArrayRef<BlockArgument> reductionArgs =
-      cast<omp::BlockArgOpenMPOpInterface>(opInst).getReductionBlockArgs();
-
-  if (failed(allocAndInitializeReductionVars(
-          wsloopOp, reductionArgs, builder, moduleTranslation, redAllocaIP,
-          reductionDecls, privateReductionVariables, reductionVariableMap,
-          isByRef)))
-    return failure();
-
-  // TODO: Replace this with proper composite translation support.
-  // Currently, all nested wrappers are ignored, so 'do/for simd' will be
-  // treated the same as a standalone 'do/for'. This is allowed by the spec,
-  // since it's equivalent to always using a SIMD length of 1.
-  if (failed(convertIgnoredWrappers(loopOp, wsloopOp, moduleTranslation)))
-    return failure();
-
-  // Store the mapping between reduction variables and their private copies on
-  // ModuleTranslation stack. It can be then recovered when translating
-  // omp.reduce operations in a separate call.
-  LLVM::ModuleTranslation::SaveStack<OpenMPVarMappingStackFrame> mappingGuard(
-      moduleTranslation, reductionVariableMap);
-
   // Set up the source location value for OpenMP runtime.
   llvm::OpenMPIRBuilder::LocationDescription ompLoc(builder);
 
@@ -2070,27 +2017,13 @@ convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
   llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
       findAllocaInsertPoint(builder, moduleTranslation);
 
-  // TODO: Handle doacross loops when the ordered clause has a parameter.
-  bool isOrdered = wsloopOp.getOrdered().has_value();
-  std::optional<omp::ScheduleModifier> scheduleMod = wsloopOp.getScheduleMod();
-  bool isSimd = wsloopOp.getScheduleSimd();
-
-  bool distributeCodeGen = opInst.getParentOfType<omp::DistributeOp>();
-  bool parallelCodeGen = opInst.getParentOfType<omp::ParallelOp>();
-  llvm::omp::WorksharingLoopType workshareLoopType;
-  if (distributeCodeGen && parallelCodeGen) {
-    workshareLoopType = llvm::omp::WorksharingLoopType::DistributeForStaticLoop;
-  } else if (distributeCodeGen) {
-    workshareLoopType = llvm::omp::WorksharingLoopType::DistributeStaticLoop;
-  } else {
-    workshareLoopType = llvm::omp::WorksharingLoopType::ForStaticLoop;
-  }
-  llvm::OpenMPIRBuilder::InsertPointOrErrorTy wsloopIP = ompBuilder->applyWorkshareLoop(
-      ompLoc.DL, loopInfo, allocaIP, !wsloopOp.getNowait(),
-      convertToScheduleKind(schedule), chunk, isSimd,
-      scheduleMod == omp::ScheduleModifier::monotonic,
-      scheduleMod == omp::ScheduleModifier::nonmonotonic, isOrdered,
-      workshareLoopType);
+  llvm::OpenMPIRBuilder::InsertPointOrErrorTy wsloopIP =
+      ompBuilder->applyWorkshareLoop(
+          ompLoc.DL, loopInfo, allocaIP, loopNeedsBarier,
+          convertToScheduleKind(schedule), chunk, isSimd,
+          scheduleMod == omp::ScheduleModifier::monotonic,
+          scheduleMod == omp::ScheduleModifier::nonmonotonic, isOrdered,
+          workshareLoopType);
 
   if (failed(handleError(wsloopIP, opInst)))
     return failure();
@@ -2100,8 +2033,94 @@ convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
   // potential further loop transformations. Use the insertion point stored
   // before collapsing loops instead.
   builder.restoreIP(afterIP);
+  return success();
+}
 
+/// Converts an OpenMP workshare loop into LLVM IR using OpenMPIRBuilder.
+static LogicalResult
+convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
+                 LLVM::ModuleTranslation &moduleTranslation) {
+  llvm::OpenMPIRBuilder::InsertPointTy redAllocaIP =
+      findAllocaInsertPoint(builder, moduleTranslation);
+
+  // FIXME: This ignores any other nested wrappers (e.g. omp.simd).
+  auto wsloopOp = cast<omp::WsloopOp>(opInst);
+  if (failed(checkImplementationStatus(opInst)))
+    return failure();
+
+  auto loopOp = cast<omp::LoopNestOp>(wsloopOp.getWrappedLoop());
+
+  llvm::ArrayRef<bool> isByRef = getIsByRef(wsloopOp.getReductionByref());
+  assert(isByRef.size() == wsloopOp.getNumReductionVars());
+
+  // Static is the default.
+  auto schedule =
+      wsloopOp.getScheduleKind().value_or(omp::ClauseScheduleKind::Static);
+
+  // Find the loop configuration.
+  llvm::Value *step = moduleTranslation.lookupValue(loopOp.getLoopSteps()[0]);
+  llvm::Type *ivType = step->getType();
+  llvm::Value *chunk = nullptr;
+  if (wsloopOp.getScheduleChunk()) {
+    llvm::Value *chunkVar =
+        moduleTranslation.lookupValue(wsloopOp.getScheduleChunk());
+    chunk = builder.CreateSExtOrTrunc(chunkVar, ivType);
+  }
+
+  SmallVector<omp::DeclareReductionOp> reductionDecls;
+  collectReductionDecls(wsloopOp, reductionDecls);
+
+  SmallVector<llvm::Value *> privateReductionVariables(
+      wsloopOp.getNumReductionVars());
+  DenseMap<Value, llvm::Value *> reductionVariableMap;
+
+  MutableArrayRef<BlockArgument> reductionArgs =
+      cast<omp::BlockArgOpenMPOpInterface>(opInst).getReductionBlockArgs();
+
+  if (failed(allocAndInitializeReductionVars(
+          wsloopOp, reductionArgs, builder, moduleTranslation, redAllocaIP,
+          reductionDecls, privateReductionVariables, reductionVariableMap,
+          isByRef)))
+    return failure();
+
+  // TODO: Replace this with proper composite translation support.
+  // Currently, all nested wrappers are ignored, so 'do/for simd' will be
+  // treated the same as a standalone 'do/for'. This is allowed by the spec,
+  // since it's equivalent to always using a SIMD length of 1.
+  if (failed(convertIgnoredWrappers(loopOp, wsloopOp, moduleTranslation)))
+    return failure();
+
+  // Store the mapping between reduction variables and their private copies on
+  // ModuleTranslation stack. It can be then recovered when translating
+  // omp.reduce operations in a separate call.
+  LLVM::ModuleTranslation::SaveStack<OpenMPVarMappingStackFrame> mappingGuard(
+      moduleTranslation, reductionVariableMap);
+
+  // TODO: Handle doacross loops when the ordered clause has a parameter.
+  bool isOrdered = wsloopOp.getOrdered().has_value();
+  std::optional<omp::ScheduleModifier> scheduleMod = wsloopOp.getScheduleMod();
+  bool isSimd = wsloopOp.getScheduleSimd();
+  auto distributeParentOp = dyn_cast<omp::DistributeOp>(opInst.getParentOp());
+  //  bool distributeCodeGen = opInst.getParentOfType<omp::DistributeOp>();
+  llvm::omp::WorksharingLoopType workshareLoopType =
+      llvm::omp::WorksharingLoopType::ForStaticLoop;
+  if (distributeParentOp) {
+    if (isa<omp::ParallelOp>(distributeParentOp->getParentOp()))
+      workshareLoopType =
+          llvm::omp::WorksharingLoopType::DistributeForStaticLoop;
+    else
+      workshareLoopType = llvm::omp::WorksharingLoopType::DistributeStaticLoop;
+  }
+  bool loopNeedsBarier = !wsloopOp.getNowait();
+  auto workshareLoopGenCodeResult = generateOMPWorkshareLoop(
+      opInst, builder, moduleTranslation, loopOp, chunk, isOrdered, isSimd,
+      schedule, scheduleMod, loopNeedsBarier, workshareLoopType);
+
+  if (workshareLoopGenCodeResult.failed())
+    return failure();
   // Process the reductions if required.
+  llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
+      findAllocaInsertPoint(builder, moduleTranslation);
   return createReductionsAndCleanup(
       wsloopOp, builder, moduleTranslation, allocaIP, reductionDecls,
       privateReductionVariables, isByRef, wsloopOp.getNowait(),
@@ -3841,12 +3860,27 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
 
     if (loopWrappers.size() == 1) {
       // Convert a standalone DISTRIBUTE construct.
-      auto loopNestConversionResult = convertLoopNestHelper(
-          *loopOp, builder, moduleTranslation, "omp.distribute.region");
-      if (!loopNestConversionResult)
-        return llvm::make_error<PreviouslyReportedError>();
+      // Static is the default.
+      auto schedule = omp::ClauseScheduleKind::Static;
 
-      builder.restoreIP(std::get<InsertPointTy>(*loopNestConversionResult));
+      // Find the loop configuration.
+      llvm::Value *step =
+          moduleTranslation.lookupValue(loopOp.getLoopSteps()[0]);
+      llvm::Value *chunk = nullptr;
+
+      // TODO: Handle doacross loops when the ordered clause has a parameter.
+      bool isOrdered = false;
+      std::optional<omp::ScheduleModifier> scheduleMod;
+      bool isSimd = false;
+      llvm::omp::WorksharingLoopType workshareLoopType =
+          llvm::omp::WorksharingLoopType::DistributeStaticLoop;
+      bool loopNeedsBarier = true;
+      auto loopNestConversionResult = generateOMPWorkshareLoop(
+          opInst, builder, moduleTranslation, loopOp, chunk, isOrdered, isSimd,
+          schedule, scheduleMod, loopNeedsBarier, workshareLoopType);
+      if (loopNestConversionResult.failed())
+        return llvm::createStringError(
+            "Cannot generate LLVM IR for distribute loop");
     } else {
       // Convert a DISTRIBUTE leaf as part of a composite construct.
       mlir::Region &reg = distributeOp.getRegion();
