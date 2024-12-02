@@ -4434,8 +4434,7 @@ static void createTargetLoopWorkshareCall(
   // FIXME(JAN): The trip count is 1 larger than it should be for GPU, this may
   // not be the right way to fix it, but this works for now.
   if (OMPBuilder->Config.isGPU()) {
-    if (LoopType != WorksharingLoopType::DistributeStaticLoop)
-      Builder.restoreIP({InsertBlock, std::prev(InsertBlock->end())});
+    Builder.restoreIP({InsertBlock, std::prev(InsertBlock->end())});
     LLVMContext &Ctx = M.getContext();
     Type *IVTy = TripCountOrig->getType();
     Type *InternalIVTy = IVTy->getIntegerBitWidth() <= 32
