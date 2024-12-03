@@ -3887,8 +3887,7 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
           schedule, scheduleMod, loopNeedsBarier, workshareLoopType);
 
       if (loopNestConversionResult.failed())
-        return llvm::createStringError(
-            "Cannot generate LLVM IR for distribute loop");
+        return llvm::make_error<PreviouslyReportedError>();
     } else {
       // Convert a DISTRIBUTE leaf as part of a composite construct.
       mlir::Region &reg = distributeOp.getRegion();
