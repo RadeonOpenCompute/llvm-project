@@ -20,6 +20,7 @@
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Cuda.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Frontend/OpenMP/OMPDeviceConstants.h"
 #include "llvm/Frontend/OpenMP/OMPGridValues.h"
 
 using namespace clang;
@@ -751,7 +752,11 @@ void CGOpenMPRuntimeGPU::emitKernelInit(const OMPExecutableDirective &D,
       Bounds.MinTeams, Bounds.MaxTeams.emplace_back(-1));
 
   CGBuilderTy &Bld = CGF.Builder;
-  Bld.restoreIP(OMPBuilder.createTargetInit(Bld, IsSPMD, Bounds));
+  Bld.restoreIP(OMPBuilder.createTargetInit(
+      Bld,
+      IsSPMD ? llvm::omp::OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_SPMD
+             : llvm::omp::OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC,
+      Bounds));
   if (!IsSPMD)
     emitGenericVarsProlog(CGF, EST.Loc);
 }

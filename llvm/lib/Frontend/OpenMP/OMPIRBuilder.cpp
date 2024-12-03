@@ -6201,7 +6201,7 @@ CallInst *OpenMPIRBuilder::createCachedThreadPrivate(
 }
 
 OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createTargetInit(
-    const LocationDescription &Loc, bool IsSPMD,
+    const LocationDescription &Loc, omp::OMPTgtExecModeFlags ExecFlags,
     const llvm::OpenMPIRBuilder::TargetKernelDefaultBounds &Bounds) {
   assert(!Bounds.MaxThreads.empty() && !Bounds.MaxTeams.empty() &&
          "expected num_threads and num_teams to be specified");
@@ -6211,9 +6211,9 @@ OpenMPIRBuilder::InsertPointTy OpenMPIRBuilder::createTargetInit(
   uint32_t SrcLocStrSize;
   Constant *SrcLocStr = getOrCreateSrcLocStr(Loc, SrcLocStrSize);
   Constant *Ident = getOrCreateIdent(SrcLocStr, SrcLocStrSize);
-  Constant *IsSPMDVal = ConstantInt::getSigned(
-      Int8, IsSPMD ? OMP_TGT_EXEC_MODE_SPMD : OMP_TGT_EXEC_MODE_GENERIC_SPMD);
-  Constant *UseGenericStateMachineVal = ConstantInt::getSigned(Int8, !IsSPMD);
+  Constant *IsSPMDVal = ConstantInt::getSigned(Int8, ExecFlags);
+  Constant *UseGenericStateMachineVal =
+      ConstantInt::getSigned(Int8, ExecFlags != omp::OMP_TGT_EXEC_MODE_SPMD);
   Constant *MayUseNestedParallelismVal = ConstantInt::getSigned(Int8, true);
   Constant *DebugIndentionLevelVal = ConstantInt::getSigned(Int16, 0);
 
@@ -6848,21 +6848,21 @@ static void emitUsed(StringRef Name, std::vector<llvm::WeakTrackingVH> &List,
 
 static void
 emitExecutionMode(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
-                  StringRef FunctionName, bool Mode,
+                  StringRef FunctionName, omp::OMPTgtExecModeFlags ExecFlags,
                   std::vector<llvm::WeakTrackingVH> &LLVMCompilerUsed) {
   auto Int8Ty = Type::getInt8Ty(Builder.getContext());
-  auto *GVMode = new llvm::GlobalVariable(
-      OMPBuilder.M, Int8Ty, /*isConstant=*/true,
-      llvm::GlobalValue::WeakAnyLinkage,
-      llvm::ConstantInt::get(Int8Ty, Mode ? OMP_TGT_EXEC_MODE_SPMD
-                                          : OMP_TGT_EXEC_MODE_GENERIC_SPMD),
-      Twine(FunctionName, "_exec_mode"));
+  auto *GVMode =
+      new llvm::GlobalVariable(OMPBuilder.M, Int8Ty, /*isConstant=*/true,
+                               llvm::GlobalValue::WeakAnyLinkage,
+                               llvm::ConstantInt::get(Int8Ty, ExecFlags),
+                               Twine(FunctionName, "_exec_mode"));
   GVMode->setVisibility(llvm::GlobalVariable::ProtectedVisibility);
   LLVMCompilerUsed.emplace_back(GVMode);
 }
 
 static Expected<Function *> createOutlinedFunction(
-    OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder, bool IsSPMD,
+    OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
+    omp::OMPTgtExecModeFlags ExecFlags,
     const OpenMPIRBuilder::TargetKernelDefaultBounds &DefaultBounds,
     StringRef FuncName, SmallVectorImpl<Value *> &Inputs,
     OpenMPIRBuilder::TargetBodyGenCallbackTy &CBFunc,
@@ -6906,7 +6906,8 @@ static Expected<Function *> createOutlinedFunction(
 
   if (OMPBuilder.Config.isTargetDevice()) {
     std::vector<llvm::WeakTrackingVH> LLVMCompilerUsed;
-    emitExecutionMode(OMPBuilder, Builder, FuncName, IsSPMD, LLVMCompilerUsed);
+    emitExecutionMode(OMPBuilder, Builder, FuncName, ExecFlags,
+                      LLVMCompilerUsed);
     Type *Int8PtrTy = Type::getInt8Ty(Builder.getContext())->getPointerTo();
     emitUsed("llvm.compiler.used", LLVMCompilerUsed, Int8PtrTy, OMPBuilder.M);
   }
@@ -6950,7 +6951,7 @@ static Expected<Function *> createOutlinedFunction(
   // Insert target init call in the device compilation pass.
   if (OMPBuilder.Config.isTargetDevice())
     Builder.restoreIP(
-        OMPBuilder.createTargetInit(Builder, IsSPMD, DefaultBounds));
+        OMPBuilder.createTargetInit(Builder, ExecFlags, DefaultBounds));
 
   BasicBlock *UserCodeEntryBB = Builder.GetInsertBlock();
 
@@ -7146,8 +7147,9 @@ static Function *emitTargetTaskProxyFunction(OpenMPIRBuilder &OMPBuilder,
 }
 
 static Error emitTargetOutlinedFunction(
-    OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder, bool IsSPMD,
-    bool IsOffloadEntry, TargetRegionEntryInfo &EntryInfo,
+    OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
+    omp::OMPTgtExecModeFlags ExecFlags, bool IsOffloadEntry,
+    TargetRegionEntryInfo &EntryInfo,
     const OpenMPIRBuilder::TargetKernelDefaultBounds &DefaultBounds,
     Function *&OutlinedFn, Constant *&OutlinedFnID,
     SmallVectorImpl<Value *> &Inputs,
@@ -7156,7 +7158,7 @@ static Error emitTargetOutlinedFunction(
 
   OpenMPIRBuilder::FunctionGenCallback &&GenerateOutlinedFunction =
       [&](StringRef EntryFnName) {
-        return createOutlinedFunction(OMPBuilder, Builder, IsSPMD,
+        return createOutlinedFunction(OMPBuilder, Builder, ExecFlags,
                                       DefaultBounds, EntryFnName, Inputs,
                                       CBFunc, ArgAccessorFuncCB);
       };
@@ -7652,9 +7654,9 @@ emitTargetCall(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
 }
 
 OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTarget(
-    const LocationDescription &Loc, bool IsSPMD, bool IsOffloadEntry,
-    Value *IfCond, InsertPointTy AllocaIP, InsertPointTy CodeGenIP,
-    TargetRegionEntryInfo &EntryInfo,
+    const LocationDescription &Loc, omp::OMPTgtExecModeFlags ExecFlags,
+    bool IsOffloadEntry, Value *IfCond, InsertPointTy AllocaIP,
+    InsertPointTy CodeGenIP, TargetRegionEntryInfo &EntryInfo,
     const TargetKernelDefaultBounds &DefaultBounds,
     const TargetKernelRuntimeBounds &RuntimeBounds,
     SmallVectorImpl<Value *> &Args, GenMapInfoCallbackTy GenMapInfoCB,
@@ -7673,7 +7675,7 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTarget(
   // the target region itself is generated using the callbacks CBFunc
   // and ArgAccessorFuncCB
   if (Error Err = emitTargetOutlinedFunction(
-          *this, Builder, IsSPMD, IsOffloadEntry, EntryInfo, DefaultBounds,
+          *this, Builder, ExecFlags, IsOffloadEntry, EntryInfo, DefaultBounds,
           OutlinedFn, OutlinedFnID, Args, CBFunc, ArgAccessorFuncCB))
     return Err;
 

@@ -2780,10 +2780,10 @@ public:
   /// Create a runtime call for kmpc_target_init
   ///
   /// \param Loc The insert and source location description.
-  /// \param IsSPMD Flag to indicate if the kernel is an SPMD kernel or not.
+  /// \param ExecFlags Kernel execution flags.
   /// \param Bounds The default kernel lanuch bounds.
   InsertPointTy createTargetInit(
-      const LocationDescription &Loc, bool IsSPMD,
+      const LocationDescription &Loc, omp::OMPTgtExecModeFlags ExecFlags,
       const llvm::OpenMPIRBuilder::TargetKernelDefaultBounds &Bounds);
 
   /// Create a runtime call for kmpc_target_deinit
@@ -2943,7 +2943,7 @@ public:
   /// Generator for '#omp target'
   ///
   /// \param Loc where the target data construct was encountered.
-  /// \param IsSPMD whether this is an SPMD target launch.
+  /// \param ExecFlags kernel execution flags.
   /// \param IsOffloadEntry whether it is an offload entry.
   /// \param IfCond value of the IF clause for the TARGET construct or nullptr.
   /// \param CodeGenIP The insertion point where the call to the outlined
@@ -2960,8 +2960,9 @@ public:
   // dependency information as passed in the depend clause.
   // \param HasNowait Whether the target construct has a `nowait` clause or not.
   InsertPointOrErrorTy createTarget(
-      const LocationDescription &Loc, bool IsSPMD, bool IsOffloadEntry,
-      Value *IfCond, OpenMPIRBuilder::InsertPointTy AllocaIP,
+      const LocationDescription &Loc, omp::OMPTgtExecModeFlags ExecFlags,
+      bool IsOffloadEntry, Value *IfCond,
+      OpenMPIRBuilder::InsertPointTy AllocaIP,
       OpenMPIRBuilder::InsertPointTy CodeGenIP,
       TargetRegionEntryInfo &EntryInfo,
       const TargetKernelDefaultBounds &DefaultBounds,

@@ -6207,9 +6207,10 @@ TEST_F(OpenMPIRBuilderTest, TargetRegion) {
   RuntimeBounds.TeamsThreadLimit.push_back(nullptr);
   RuntimeBounds.MaxTeams.push_back(nullptr);
   OpenMPIRBuilder::InsertPointOrErrorTy AfterIP = OMPBuilder.createTarget(
-      OmpLoc, /*IsSPMD=*/false, /*IsOffloadEntry=*/true, /*IfCond=*/nullptr,
-      Builder.saveIP(), Builder.saveIP(), EntryInfo, DefaultBounds,
-      RuntimeBounds, Inputs, GenMapInfoCB, BodyGenCB, SimpleArgAccessorCB);
+      OmpLoc, omp::OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC,
+      /*IsOffloadEntry=*/true, /*IfCond=*/nullptr, Builder.saveIP(),
+      Builder.saveIP(), EntryInfo, DefaultBounds, RuntimeBounds, Inputs,
+      GenMapInfoCB, BodyGenCB, SimpleArgAccessorCB);
   assert(AfterIP && "unexpected error");
   Builder.restoreIP(*AfterIP);
   OMPBuilder.finalize();
@@ -6326,9 +6327,10 @@ TEST_F(OpenMPIRBuilderTest, TargetRegionDevice) {
   RuntimeBounds.TeamsThreadLimit.push_back(nullptr);
   RuntimeBounds.MaxTeams.push_back(nullptr);
   OpenMPIRBuilder::InsertPointOrErrorTy AfterIP = OMPBuilder.createTarget(
-      Loc, /*IsSPMD=*/false, /*IsOffloadEntry=*/true, /*IfCond=*/nullptr,
-      EntryIP, EntryIP, EntryInfo, DefaultBounds, RuntimeBounds, CapturedArgs,
-      GenMapInfoCB, BodyGenCB, SimpleArgAccessorCB);
+      Loc, omp::OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC,
+      /*IsOffloadEntry=*/true, /*IfCond=*/nullptr, EntryIP, EntryIP, EntryInfo,
+      DefaultBounds, RuntimeBounds, CapturedArgs, GenMapInfoCB, BodyGenCB,
+      SimpleArgAccessorCB);
   assert(AfterIP && "unexpected error");
   Builder.restoreIP(*AfterIP);
 
@@ -6484,9 +6486,10 @@ TEST_F(OpenMPIRBuilderTest, ConstantAllocaRaise) {
   RuntimeBounds.TeamsThreadLimit.push_back(nullptr);
   RuntimeBounds.MaxTeams.push_back(nullptr);
   OpenMPIRBuilder::InsertPointOrErrorTy AfterIP = OMPBuilder.createTarget(
-      Loc, /*IsSPMD=*/false, /*IsOffloadEntry=*/true, /*IfCond=*/nullptr,
-      EntryIP, EntryIP, EntryInfo, DefaultBounds, RuntimeBounds, CapturedArgs,
-      GenMapInfoCB, BodyGenCB, SimpleArgAccessorCB);
+      Loc, omp::OMPTgtExecModeFlags::OMP_TGT_EXEC_MODE_GENERIC,
+      /*IsOffloadEntry=*/true, /*IfCond=*/nullptr, EntryIP, EntryIP, EntryInfo,
+      DefaultBounds, RuntimeBounds, CapturedArgs, GenMapInfoCB, BodyGenCB,
+      SimpleArgAccessorCB);
   assert(AfterIP && "unexpected error");
   Builder.restoreIP(*AfterIP);
 
