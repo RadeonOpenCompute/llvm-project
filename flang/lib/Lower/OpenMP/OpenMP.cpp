@@ -1314,14 +1314,23 @@ static void genBodyOfTargetOp(
     for (mlir::Value val : valuesDefinedAbove) {
       mlir::Operation *valOp = val.getDefiningOp();
       assert(valOp != nullptr);
-      if (mlir::isMemoryEffectFree(valOp)) {
+
+      // NOTE: We skip BoxDimsOp's as the lesser of two evils is to map the
+      // indices separately, as the alternative is to eventually map the Box,
+      // which comes with a fairly large overhead comparatively. We could be
+      // more robust about this and check using a BackWardsSlice to see if we
+      // run the risk of mapping a box.
+      if (mlir::isMemoryEffectFree(valOp) &&
+          !mlir::isa<fir::BoxDimsOp>(valOp)) {
         mlir::Operation *clonedOp = valOp->clone();
         entryBlock->push_front(clonedOp);
-        assert(clonedOp->getNumResults() == 1);
-        val.replaceUsesWithIf(clonedOp->getResult(0),
-                              [entryBlock](mlir::OpOperand &use) {
-                                return use.getOwner()->getBlock() == entryBlock;
-                              });
+
+        auto replace = [entryBlock](mlir::OpOperand &use) {
+          return use.getOwner()->getBlock() == entryBlock;
+        };
+
+        valOp->getResults().replaceUsesWithIf(clonedOp->getResults(), replace);
+        valOp->replaceUsesWithIf(clonedOp, replace);
       } else {
         auto savedIP = firOpBuilder.getInsertionPoint();
         firOpBuilder.setInsertionPointAfter(valOp);
@@ -1329,9 +1338,36 @@ static void genBodyOfTargetOp(
             firOpBuilder.createTemporary(val.getLoc(), val.getType());
         firOpBuilder.createStoreWithConvert(copyVal.getLoc(), val, copyVal);
 
-        llvm::SmallVector<mlir::Value> bounds;
+        lower::AddrAndBoundsInfo info = lower::getDataOperandBaseAddr(
+            firOpBuilder, val, /*isOptional=*/false, val.getLoc());
+        llvm::SmallVector<mlir::Value> bounds =
+            Fortran::lower::genImplicitBoundsOps<mlir::omp::MapBoundsOp,
+                                                 mlir::omp::MapBoundsType>(
+                firOpBuilder, info,
+                hlfir::translateToExtendedValue(val.getLoc(), firOpBuilder,
+                                                hlfir::Entity{val})
+                    .first,
+                /*dataExvIsAssumedSize=*/false, val.getLoc());
+
         std::stringstream name;
         firOpBuilder.setInsertionPoint(targetOp);
+
+        llvm::omp::OpenMPOffloadMappingFlags mapFlag =
+            llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_IMPLICIT;
+        mlir::omp::VariableCaptureKind captureKind =
+            mlir::omp::VariableCaptureKind::ByRef;
+
+        mlir::Type eleType = copyVal.getType();
+        if (auto refType =
+                mlir::dyn_cast<fir::ReferenceType>(copyVal.getType()))
+          eleType = refType.getElementType();
+
+        if (fir::isa_trivial(eleType) || fir::isa_char(eleType)) {
+          captureKind = mlir::omp::VariableCaptureKind::ByCopy;
+        } else if (!fir::isa_builtin_cptr_type(eleType)) {
+          mapFlag |= llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_TO;
+        }
+
         mlir::Value mapOp = createMapInfoOp(
             firOpBuilder, copyVal.getLoc(), copyVal,
             /*varPtrPtr=*/mlir::Value{}, name.str(), bounds,
@@ -1339,8 +1375,8 @@ static void genBodyOfTargetOp(
             /*membersIndex=*/mlir::ArrayAttr{},
             static_cast<
                 std::underlying_type_t<llvm::omp::OpenMPOffloadMappingFlags>>(
-                llvm::omp::OpenMPOffloadMappingFlags::OMP_MAP_IMPLICIT),
-            mlir::omp::VariableCaptureKind::ByCopy, copyVal.getType());
+                mapFlag),
+            captureKind, copyVal.getType());
 
         // Get the index of the first non-map argument before modifying mapVars,
         // then append an element to mapVars and an associated entry block
@@ -2110,7 +2146,6 @@ genTargetOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
   dsp.processStep1();
   if (enableDelayedPrivatizationStaging)
     dsp.processStep2(&clauseOps);
-
   // 5.8.1 Implicit Data-Mapping Attribute Rules
   // The following code follows the implicit data-mapping rules to map all the
   // symbols used inside the region that do not have explicit data-environment
@@ -2217,7 +2252,6 @@ genTargetOp(lower::AbstractConverter &converter, lower::SymMap &symTable,
 
   llvm::SmallVector<mlir::Value> mapBaseValues;
   extractMappedBaseValues(clauseOps.mapVars, mapBaseValues);
-
   EntryBlockArgs args;
   args.hostEvalVars = clauseOps.hostEvalVars;
   // TODO: Add in_reduction syms and vars.
