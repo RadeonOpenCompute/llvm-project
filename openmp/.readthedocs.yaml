@@ -6,7 +6,7 @@ version: 2
 sphinx:
   configuration: openmp/docs/conf.py
 
-formats: [htmlzip, pdf, epub]
+formats: []
 
 python:
   install:
