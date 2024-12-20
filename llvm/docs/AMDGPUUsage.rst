@@ -614,9 +614,7 @@ greater than or equal to the version in which the processor was added to the gen
                                                                                                 - ``gfx1151``
 
                                                                                                 SALU floating point instructions
-                                                                                                and single-use VGPR hint
-                                                                                                instructions are not available
-                                                                                                on:
+                                                                                                are not available on:
 
                                                                                                 - ``gfx1150``
                                                                                                 - ``gfx1151``
