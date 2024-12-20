@@ -449,9 +449,10 @@ static void parseCodeGenArgs(Fortran::frontend::CodeGenOptions &opts,
     opts.Underscoring = 0;
   }
 
-  if (args.hasFlag(clang::driver::options::OPT_fno_offload_global_filtering,
-                   clang::driver::options::OPT_foffload_global_filtering, false)) {
-    opts.OffloadGlobalFiltering = 0;
+  if (args.hasFlag(clang::driver::options::OPT_foffload_global_filtering,
+                   clang::driver::options::OPT_fno_offload_global_filtering,
+                   false)) {
+    opts.OffloadGlobalFiltering = 1;
   }
 
   parseDoConcurrentMapping(opts, args, diags);
