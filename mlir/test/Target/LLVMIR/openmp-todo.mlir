@@ -175,8 +175,7 @@ llvm.func @sections_private(%x : !llvm.ptr) {
 // -----
 
 llvm.func @simd_linear(%lb : i32, %ub : i32, %step : i32, %x : !llvm.ptr) {
-  // expected-error@below {{not yet implemented: Unhandled clause linear in omp.simd operation}}
-  // expected-error@below {{LLVM Translation failed for operation: omp.simd}}
+  // expected-warning@below {{simd clauses ignored}}
   omp.simd linear(%x = %step : !llvm.ptr) {
     omp.loop_nest (%iv) : i32 = (%lb) to (%ub) step (%step) {
       omp.yield
@@ -188,8 +187,7 @@ llvm.func @simd_linear(%lb : i32, %ub : i32, %step : i32, %x : !llvm.ptr) {
 // -----
 
 llvm.func @simd_nontemporal(%lb : i32, %ub : i32, %step : i32, %x : !llvm.ptr) {
-  // expected-error@below {{not yet implemented: Unhandled clause nontemporal in omp.simd operation}}
-  // expected-error@below {{LLVM Translation failed for operation: omp.simd}}
+  // expected-warning@below {{simd clauses ignored}}
   omp.simd nontemporal(%x : !llvm.ptr) {
     omp.loop_nest (%iv) : i32 = (%lb) to (%ub) step (%step) {
       omp.yield
@@ -207,8 +205,7 @@ omp.private {type = private} @x.privatizer : !llvm.ptr alloc {
   omp.yield(%1 : !llvm.ptr)
 }
 llvm.func @simd_private(%lb : i32, %ub : i32, %step : i32, %x : !llvm.ptr) {
-  // expected-error@below {{not yet implemented: Unhandled clause privatization in omp.simd operation}}
-  // expected-error@below {{LLVM Translation failed for operation: omp.simd}}
+  // expected-warning@below {{simd clauses ignored}}
   omp.simd private(@x.privatizer %x -> %arg0 : !llvm.ptr) {
     omp.loop_nest (%iv) : i32 = (%lb) to (%ub) step (%step) {
       omp.yield
@@ -237,8 +234,7 @@ atomic {
   omp.yield
 }
 llvm.func @simd_reduction(%lb : i32, %ub : i32, %step : i32, %x : !llvm.ptr) {
-  // expected-error@below {{not yet implemented: Unhandled clause reduction in omp.simd operation}}
-  // expected-error@below {{LLVM Translation failed for operation: omp.simd}}
+  // expected-warning@below {{simd clauses ignored}}
   omp.simd reduction(@add_f32 %x -> %prv : !llvm.ptr) {
     omp.loop_nest (%iv) : i32 = (%lb) to (%ub) step (%step) {
       omp.yield

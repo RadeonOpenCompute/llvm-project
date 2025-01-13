@@ -32,6 +32,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/ReplaceConstant.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -525,7 +526,8 @@ static llvm::omp::ProcBindKind getProcBindKind(omp::ClauseProcBindKind kind) {
 /// been mapped to LLVM IR values.
 static LogicalResult
 convertIgnoredWrapper(omp::LoopWrapperInterface opInst,
-                      LLVM::ModuleTranslation &moduleTranslation) {
+                      LLVM::ModuleTranslation &moduleTranslation,
+                      const char *warningFmt) {
   // Map block arguments directly to the LLVM value associated to the
   // corresponding operand. This is semantically equivalent to this wrapper not
   // being present.
@@ -542,11 +544,11 @@ convertIgnoredWrapper(omp::LoopWrapperInterface opInst,
         forwardArgs(blockArgIface.getPrivateBlockArgs(), op.getPrivateVars());
         forwardArgs(blockArgIface.getReductionBlockArgs(),
                     op.getReductionVars());
-        op.emitWarning() << "simd information on composite construct discarded";
+        op.emitWarning() << llvm::formatv(warningFmt, "simd");
         return success();
       })
       .Default([&](Operation *op) {
-        return op->emitError() << "cannot ignore nested wrapper";
+        return op->emitError() << "cannot ignore wrapper";
       });
 }
 
@@ -567,7 +569,9 @@ convertIgnoredWrappers(omp::LoopNestOp loopOp,
   for (auto it =
            std::next(std::find(wrappers.rbegin(), wrappers.rend(), parentOp));
        it != wrappers.rend(); ++it) {
-    if (failed(convertIgnoredWrapper(*it, moduleTranslation)))
+    if (failed(convertIgnoredWrapper(
+            *it, moduleTranslation,
+            "{0} information on composite construct discarded")))
       return failure();
   }
 
@@ -2518,7 +2522,8 @@ convertOmpSimd(Operation &opInst, llvm::IRBuilderBase &builder,
 
   // This is needed to make sure that uses of entry block arguments for clauses
   // that are not going to be translated are mapped to the outside values.
-  if (failed(convertIgnoredWrapper(simdOp, moduleTranslation)))
+  if (failed(convertIgnoredWrapper(simdOp, moduleTranslation,
+                                   "{0} clauses ignored")))
     return failure();
 
   auto loopNestConversionResult = convertLoopNestHelper(
