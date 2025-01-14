@@ -271,8 +271,10 @@ static void parseCodeGenArgs(Fortran::frontend::CodeGenOptions &opts,
   if (args.hasFlag(clang::driver::options::OPT_floop_versioning,
                    clang::driver::options::OPT_fno_loop_versioning, false))
     opts.LoopVersioning = 1;
-
-  opts.AliasAnalysis = opts.OptimizationLevel > 0;
+  if (args.getLastArg(clang::driver::options::OPT_fno_add_alias_tags))
+    opts.AliasAnalysis = false;
+  else
+    opts.AliasAnalysis = opts.OptimizationLevel > 0;
 
   // -mframe-pointer=none/non-leaf/all option.
   if (const llvm::opt::Arg *a =
