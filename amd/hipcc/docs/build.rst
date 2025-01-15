@@ -1,5 +1,5 @@
 .. meta::
-  :description: building HIPCC from source files
+  :description: Building HIPCC from source files
   :keywords: HIPCC, ROCm, HIP tools, HIP compiler
 
 .. _hipcc_build:
