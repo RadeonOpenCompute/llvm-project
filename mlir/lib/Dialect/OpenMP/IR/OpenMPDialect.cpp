@@ -2388,7 +2388,6 @@ LogicalResult DistributeOp::verifyRegions() {
     if (!isComposite())
       return emitError()
              << "'omp.composite' attribute missing from composite wrapper";
-
     // Check for the allowed leaf constructs that may appear in a composite
     // construct directly after DISTRIBUTE.
     if (isa<WsloopOp>(nested)) {
