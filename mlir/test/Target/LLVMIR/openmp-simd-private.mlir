@@ -18,6 +18,9 @@ omp.private {type = private} @i_privatizer : !llvm.ptr alloc {
 // CHECK:         br label %[[ENTRY:.*]]
 
 // CHECK:       [[ENTRY]]:
+// CHECK:         br label %[[OMP_SIMD_REGION:.*]]
+
+// CHECK:       [[OMP_SIMD_REGION]]:
 // CHECK:         br label %[[OMP_LOOP_PREHEADER:.*]]
 
 // CHECK:       [[OMP_LOOP_PREHEADER]]:
@@ -34,9 +37,9 @@ omp.private {type = private} @i_privatizer : !llvm.ptr alloc {
 // CHECK:       [[OMP_LOOP_BODY]]:
 // CHECK:         %[[IV_UPDATE:.*]] = mul i32 %[[OMP_LOOP_IV]], 1
 // CHECK:         %[[IV_UPDATE_2:.*]] = add i32 %[[IV_UPDATE]], 1
-// CHECK:         br label %[[OMP_SIMD_REGION:.*]]
+// CHECK:         br label %[[OMP_LOOP_NEST_REGION:.*]]
 
-// CHECK:       [[OMP_SIMD_REGION]]:
+// CHECK:       [[OMP_LOOP_NEST_REGION]]:
 // CHECK:         store i32 %[[IV_UPDATE_2]], ptr %[[PRIV_I]], align 4
 // CHECK:         %[[DUMMY_VAL:.*]] = load float, ptr %[[DUMMY]], align 4
 // CHECK:         %[[PRIV_I_VAL:.*]] = load i32, ptr %[[PRIV_I]], align 4
@@ -90,7 +93,7 @@ omp.private {type = private} @dummy_privatizer : !llvm.ptr alloc {
 // CHECK:         %[[PRIV_DUMMY:.*]] = alloca float, i64 1, align 4
 // CHECK:         %[[PRIV_I:.*]] = alloca i32, i64 1, align 4
 
-// CHECK:       omp.simd.region:
+// CHECK:       omp.loop_nest.region:
 // CHECK-NOT:     br label
 // CHECK:         store i32 %{{.*}}, ptr %[[PRIV_I]], align 4
 // CHECK:        %{{.*}} = load float, ptr %[[PRIV_DUMMY]], align 4

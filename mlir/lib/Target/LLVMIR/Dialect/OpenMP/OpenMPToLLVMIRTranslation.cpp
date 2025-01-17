@@ -128,6 +128,16 @@ char PreviouslyReportedError::ID = 0;
 
 } // namespace
 
+/// Stack of \see llvm::CanonicalLoopInfo to represent the collapsed canonical
+/// loop corresponding to each \c omp.loop_nest operation currently being
+/// translated.
+///
+/// The last element will hold information for the innermost (i.e. most recently
+/// translated) \c omp.loop_nest. Elements will be inserted when translating
+/// these operations, and they must then be removed after all their associated
+/// loop wrappers have finished processing the collapsed loop.
+static llvm::SmallVector<llvm::CanonicalLoopInfo *> loopNestInfos;
+
 /// Looks up from the operation from and returns the PrivateClauseOp with
 /// name symbolName
 static omp::PrivateClauseOp findPrivatizer(Operation *from,
@@ -553,30 +563,6 @@ convertIgnoredWrapper(omp::LoopWrapperInterface opInst,
       });
 }
 
-/// Helper function to call \c convertIgnoredWrapper() for all wrappers of the
-/// given \c loopOp nested inside of \c parentOp. This has the effect of mapping
-/// entry block arguments defined by these operations to outside values.
-///
-/// It must be called after block arguments of \c parentOp have already been
-/// mapped themselves.
-static LogicalResult
-convertIgnoredWrappers(omp::LoopNestOp loopOp,
-                       omp::LoopWrapperInterface parentOp,
-                       LLVM::ModuleTranslation &moduleTranslation) {
-  SmallVector<omp::LoopWrapperInterface> wrappers;
-  loopOp.gatherWrappers(wrappers);
-
-  // Process wrappers nested inside of `parentOp` from outermost to innermost.
-  for (auto it =
-           std::next(std::find(wrappers.rbegin(), wrappers.rend(), parentOp));
-       it != wrappers.rend(); ++it) {
-    if (failed(convertIgnoredWrapper(*it, moduleTranslation)))
-      return failure();
-  }
-
-  return success();
-}
-
 /// Populate a set of previously created llvm.alloca instructions that are only
 /// used inside of the given region but defined outside of it. Allocations of
 /// non-primitive types are skipped by this function.
@@ -621,19 +607,16 @@ static void getSinkableAllocas(LLVM::ModuleTranslation &moduleTranslation,
   }
 }
 
-// TODO: Make this a top-level conversion function (i.e. part of the switch
-// statement in `convertHostOrTargetOperation`) independent from parent
-// worksharing operations.
-static std::optional<
-    std::tuple<llvm::OpenMPIRBuilder::LocationDescription,
-               llvm::IRBuilderBase::InsertPoint, llvm::CanonicalLoopInfo *>>
-convertLoopNestHelper(omp::LoopNestOp loopOp, llvm::IRBuilderBase &builder,
-                      LLVM::ModuleTranslation &moduleTranslation,
-                      StringRef blockName) {
+static LogicalResult
+convertOmpLoopNest(Operation &opInst, llvm::IRBuilderBase &builder,
+                   LLVM::ModuleTranslation &moduleTranslation) {
+  auto loopOp = cast<omp::LoopNestOp>(opInst);
+
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
 
   // Set up the source location value for OpenMP runtime.
   llvm::OpenMPIRBuilder::LocationDescription ompLoc(builder);
+  llvm::CanonicalLoopInfo *&loopInfo = loopNestInfos.emplace_back();
 
   SetVector<llvm::AllocaInst *> allocasToSink;
   getSinkableAllocas(moduleTranslation, loopOp.getRegion(), allocasToSink);
@@ -663,12 +646,12 @@ convertLoopNestHelper(omp::LoopNestOp loopOp, llvm::IRBuilderBase &builder,
       builder.CreateLifetimeStart(alloca, builder.getInt64(size));
     }
 
-    llvm::Expected<llvm::BasicBlock *> cont = convertOmpOpRegions(
-        loopOp.getRegion(), blockName, builder, moduleTranslation);
-    if (!cont)
-      return cont.takeError();
+    llvm::Expected<llvm::BasicBlock *> regionBlock = convertOmpOpRegions(
+        loopOp.getRegion(), "omp.loop_nest.region", builder, moduleTranslation);
+    if (!regionBlock)
+      return regionBlock.takeError();
 
-    builder.SetInsertPoint(*cont, (*cont)->begin());
+    builder.SetInsertPoint(*regionBlock, (*regionBlock)->begin());
 
     for (auto *alloca : allocasToSink) {
       unsigned size = alloca->getAllocatedType()->getPrimitiveSizeInBits() / 8;
@@ -706,18 +689,23 @@ convertLoopNestHelper(omp::LoopNestOp loopOp, llvm::IRBuilderBase &builder,
             /*IsSigned=*/true, loopOp.getLoopInclusive(), computeIP);
 
     if (failed(handleError(loopResult, *loopOp)))
-      return std::nullopt;
+      return failure();
 
     loopInfos.push_back(*loopResult);
   }
 
   // Collapse loops. Store the insertion point because LoopInfos may get
   // invalidated.
-  llvm::IRBuilderBase::InsertPoint afterIP = loopInfos.front()->getAfterIP();
-  llvm::CanonicalLoopInfo *loopInfo =
-      ompBuilder->collapseLoops(ompLoc.DL, loopInfos, {});
+  llvm::OpenMPIRBuilder::InsertPointTy afterIP =
+      loopInfos.front()->getAfterIP();
+  loopInfo = ompBuilder->collapseLoops(ompLoc.DL, loopInfos, {});
 
-  return std::make_tuple(ompLoc, afterIP, loopInfo);
+  // Continue building IR after the loop. Note that the LoopInfo returned by
+  // `collapseLoops` points inside the outermost loop and is intended for
+  // potential further loop transformations. Use the insertion point stored
+  // before collapsing loops instead.
+  builder.restoreIP(afterIP);
+  return success();
 }
 
 /// Converts an OpenMP 'masked' operation into LLVM IR using OpenMPIRBuilder.
@@ -2077,19 +2065,22 @@ convertOmpTaskwaitOp(omp::TaskwaitOp twOp, llvm::IRBuilderBase &builder,
 
 static LogicalResult generateOMPWorkshareLoop(
     Operation &opInst, llvm::IRBuilderBase &builder,
-    LLVM::ModuleTranslation &moduleTranslation, omp::LoopNestOp &loopOp,
-    llvm::Value *chunk, bool isOrdered, bool isSimd,
-    omp::ClauseScheduleKind &schedule,
+    LLVM::ModuleTranslation &moduleTranslation, llvm::Value *chunk,
+    bool isOrdered, bool isSimd, omp::ClauseScheduleKind &schedule,
     std::optional<omp::ScheduleModifier> &scheduleMod, bool loopNeedsBarier,
     llvm::omp::WorksharingLoopType workshareLoopType) {
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
+  llvm::OpenMPIRBuilder::LocationDescription ompLoc(builder);
 
-  auto loopNestConversionResult = convertLoopNestHelper(
-      loopOp, builder, moduleTranslation, "omp.wsloop.region");
-  if (!loopNestConversionResult)
+  llvm::Expected<llvm::BasicBlock *> regionBlock = convertOmpOpRegions(
+      opInst.getRegion(0), "omp.wsloop.region", builder, moduleTranslation);
+
+  if (failed(handleError(regionBlock, opInst)))
     return failure();
 
-  auto [ompLoc, afterIP, loopInfo] = *loopNestConversionResult;
+  builder.SetInsertPoint(*regionBlock, (*regionBlock)->begin());
+  llvm::CanonicalLoopInfo *loopInfo = loopNestInfos.pop_back_val();
+
   llvm::OpenMPIRBuilder::InsertPointTy allocaIP =
       findAllocaInsertPoint(builder, moduleTranslation);
 
@@ -2101,22 +2092,13 @@ static LogicalResult generateOMPWorkshareLoop(
           scheduleMod == omp::ScheduleModifier::nonmonotonic, isOrdered,
           workshareLoopType);
 
-  if (failed(handleError(wsloopIP, opInst)))
-    return failure();
-
-  // Continue building IR after the loop. Note that the LoopInfo returned by
-  // `collapseLoops` points inside the outermost loop and is intended for
-  // potential further loop transformations. Use the insertion point stored
-  // before collapsing loops instead.
-  builder.restoreIP(afterIP);
-  return success();
+  return handleError(wsloopIP, opInst);
 }
 
 /// Converts an OpenMP workshare loop into LLVM IR using OpenMPIRBuilder.
 static LogicalResult
 convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
                  LLVM::ModuleTranslation &moduleTranslation) {
-  // FIXME: This ignores any other nested wrappers (e.g. omp.simd).
   auto wsloopOp = cast<omp::WsloopOp>(opInst);
   if (failed(checkImplementationStatus(opInst)))
     return failure();
@@ -2196,13 +2178,6 @@ convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
                                reductionVariableMap, isByRef, deferredStores)))
     return failure();
 
-  // TODO: Replace this with proper composite translation support.
-  // Currently, all nested wrappers are ignored, so 'do/for simd' will be
-  // treated the same as a standalone 'do/for'. This is allowed by the spec,
-  // since it's equivalent to always using a SIMD length of 1.
-  if (failed(convertIgnoredWrappers(loopOp, wsloopOp, moduleTranslation)))
-    return failure();
-
   // Store the mapping between reduction variables and their private copies on
   // ModuleTranslation stack. It can be then recovered when translating
   // omp.reduce operations in a separate call.
@@ -2226,11 +2201,9 @@ convertOmpWsloop(Operation &opInst, llvm::IRBuilderBase &builder,
   }
 
   bool loopNeedsBarier = !wsloopOp.getNowait();
-  auto workshareLoopGenCodeResult = generateOMPWorkshareLoop(
-      opInst, builder, moduleTranslation, loopOp, chunk, isOrdered, isSimd,
-      schedule, scheduleMod, loopNeedsBarier, workshareLoopType);
-
-  if (workshareLoopGenCodeResult.failed())
+  if (failed(generateOMPWorkshareLoop(opInst, builder, moduleTranslation, chunk,
+                                      isOrdered, isSimd, schedule, scheduleMod,
+                                      loopNeedsBarier, workshareLoopType)))
     return failure();
 
   // Process the reductions if required.
@@ -2443,7 +2416,19 @@ convertOmpSimd(Operation &opInst, llvm::IRBuilderBase &builder,
                LLVM::ModuleTranslation &moduleTranslation) {
   llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
   auto simdOp = cast<omp::SimdOp>(opInst);
-  auto loopOp = cast<omp::LoopNestOp>(simdOp.getWrappedLoop());
+
+  // TODO: Replace this with proper composite translation support.
+  // Currently, simd information on composite constructs is ignored, so e.g.
+  // 'do/for simd' will be treated the same as a standalone 'do/for'. This is
+  // allowed by the spec, since it's equivalent to always using a SIMD length of
+  // 1.
+  if (simdOp.isComposite()) {
+    if (failed(convertIgnoredWrapper(simdOp, moduleTranslation)))
+      return failure();
+
+    return inlineConvertOmpRegions(simdOp.getRegion(), "omp.simd.region",
+                                   builder, moduleTranslation);
+  }
 
   if (failed(checkImplementationStatus(opInst)))
     return failure();
@@ -2478,13 +2463,6 @@ convertOmpSimd(Operation &opInst, llvm::IRBuilderBase &builder,
   if (handleError(afterAllocas, opInst).failed())
     return failure();
 
-  auto loopNestConversionResult = convertLoopNestHelper(
-      loopOp, builder, moduleTranslation, "omp.simd.region");
-  if (!loopNestConversionResult)
-    return failure();
-
-  auto [ompLoc, afterIP, loopInfo] = *loopNestConversionResult;
-
   llvm::ConstantInt *simdlen = nullptr;
   if (std::optional<uint64_t> simdlenVar = simdOp.getSimdlen())
     simdlen = builder.getInt64(simdlenVar.value());
@@ -2507,19 +2485,26 @@ convertOmpSimd(Operation &opInst, llvm::IRBuilderBase &builder,
       assert(ty->isPointerTy() && "Invalid type for aligned variable");
       assert(alignment && "Invalid alignment value");
       auto curInsert = builder.saveIP();
-      builder.SetInsertPoint(sourceBlock->getTerminator());
+      builder.SetInsertPoint(sourceBlock);
       llvmVal = builder.CreateLoad(ty, llvmVal);
       builder.restoreIP(curInsert);
       alignedVars[llvmVal] = alignment;
     }
   }
+
+  llvm::Expected<llvm::BasicBlock *> regionBlock = convertOmpOpRegions(
+      simdOp.getRegion(), "omp.simd.region", builder, moduleTranslation);
+
+  if (failed(handleError(regionBlock, opInst)))
+    return failure();
+
+  builder.SetInsertPoint(*regionBlock, (*regionBlock)->begin());
+  llvm::CanonicalLoopInfo *loopInfo = loopNestInfos.pop_back_val();
   ompBuilder->applySimd(loopInfo, alignedVars,
                         simdOp.getIfExpr()
                             ? moduleTranslation.lookupValue(simdOp.getIfExpr())
                             : nullptr,
                         order, simdlen, safelen);
-
-  builder.restoreIP(afterIP);
 
   return cleanupPrivateVars(builder, moduleTranslation, simdOp.getLoc(),
                             llvmPrivateVars, privateDecls);
@@ -4150,11 +4135,6 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
   LLVM::ModuleTranslation::SaveStack<OpenMPVarMappingStackFrame> mappingGuard(
       moduleTranslation, reductionVariableMap);
 
-  auto loopOp = cast<omp::LoopNestOp>(distributeOp.getWrappedLoop());
-
-  SmallVector<omp::LoopWrapperInterface> loopWrappers;
-  loopOp.gatherWrappers(loopWrappers);
-
   using InsertPointTy = llvm::OpenMPIRBuilder::InsertPointTy;
   auto bodyGenCB = [&](InsertPointTy allocaIP,
                        InsertPointTy codeGenIP) -> llvm::Error {
@@ -4166,22 +4146,24 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
     // DistributeOp has only one region associated with it.
     builder.restoreIP(codeGenIP);
 
-    if (loopWrappers.size() == 1) {
+    if (!distributeOp.isComposite() ||
+        isa<omp::SimdOp>(distributeOp.getNestedWrapper())) {
       // Convert a standalone DISTRIBUTE construct.
-      // Static is the default.
       llvm::OpenMPIRBuilder *ompBuilder = moduleTranslation.getOpenMPBuilder();
       bool isGPU = ompBuilder->Config.isGPU();
       // TODO: Unify host and target lowering for standalone DISTRIBUTE
       if (!isGPU) {
-        auto loopNestConversionResult = convertLoopNestHelper(
-            loopOp, builder, moduleTranslation, "omp.distribute.region");
-        if (!loopNestConversionResult)
-          return llvm::make_error<PreviouslyReportedError>();
-
-        builder.restoreIP(std::get<InsertPointTy>(*loopNestConversionResult));
+        llvm::Expected<llvm::BasicBlock *> regionBlock = convertOmpOpRegions(
+            distributeOp.getRegion(), "omp.distribute.region", builder,
+            moduleTranslation);
+        if (!regionBlock)
+          return regionBlock.takeError();
+        builder.SetInsertPoint(*regionBlock, (*regionBlock)->begin());
+        loopNestInfos.pop_back();
         return llvm::Error::success();
       }
       // TODO: Add support for clauses which are valid for DISTRIBUTE construct
+      // Static schedule is the default.
       auto schedule = omp::ClauseScheduleKind::Static;
       bool isOrdered = false;
       std::optional<omp::ScheduleModifier> scheduleMod;
@@ -4191,10 +4173,10 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
       bool loopNeedsBarier = true;
       llvm::Value *chunk = nullptr;
       auto loopNestConversionResult = generateOMPWorkshareLoop(
-          opInst, builder, moduleTranslation, loopOp, chunk, isOrdered, isSimd,
+          opInst, builder, moduleTranslation, chunk, isOrdered, isSimd,
           schedule, scheduleMod, loopNeedsBarier, workshareLoopType);
 
-      if (loopNestConversionResult.failed())
+      if (failed(loopNestConversionResult))
         return llvm::make_error<PreviouslyReportedError>();
     } else {
       // Convert a DISTRIBUTE leaf as part of a composite construct.
@@ -4204,6 +4186,8 @@ convertOmpDistribute(Operation &opInst, llvm::IRBuilderBase &builder,
       if (!regionBlock)
         return regionBlock.takeError();
       builder.SetInsertPoint((*regionBlock)->getTerminator());
+      // Do not remove the last element from loopNestInfos in this case because
+      // this is already done during translation of the nested omp.wsloop.
     }
     return llvm::Error::success();
   };
@@ -5240,6 +5224,9 @@ convertHostOrTargetOperation(Operation *op, llvm::IRBuilderBase &builder,
       })
       .Case([&](omp::DistributeOp) {
         return convertOmpDistribute(*op, builder, moduleTranslation);
+      })
+      .Case([&](omp::LoopNestOp) {
+        return convertOmpLoopNest(*op, builder, moduleTranslation);
       })
       .Case<omp::MapInfoOp, omp::MapBoundsOp, omp::PrivateClauseOp>(
           [&](auto op) {
